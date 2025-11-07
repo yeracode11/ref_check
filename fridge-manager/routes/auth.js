@@ -1,0 +1,69 @@
+const express = require('express');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const { generateToken, JWT_SECRET } = require('../middleware/auth');
+
+const router = express.Router();
+
+// POST /api/auth/login
+router.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password are required' });
+    }
+
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    if (!user.active) {
+      return res.status(403).json({ error: 'Account is disabled' });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    const token = generateToken(user);
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    return res.json({
+      token,
+      user: userObj,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Login failed', details: err.message });
+  }
+});
+
+// GET /api/auth/me - get current user info (protected)
+router.get('/me', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    jwt.verify(token, JWT_SECRET, async (err, decoded) => {
+      if (err) {
+        return res.status(403).json({ error: 'Invalid or expired token' });
+      }
+      const user = await User.findById(decoded.id).select('-password');
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      return res.json(user);
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to get user info', details: err.message });
+  }
+});
+
+module.exports = router;
+

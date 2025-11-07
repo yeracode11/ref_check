@@ -1,0 +1,100 @@
+const express = require('express');
+const Checkin = require('../models/Checkin');
+
+const router = express.Router();
+
+function parseDate(dateString) {
+  if (!dateString) return undefined;
+  const d = new Date(dateString);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+// POST /api/checkins
+// body: { managerId, fridgeId, photos?, location: { lat, lng } | { type:'Point', coordinates:[lng,lat] }, address?, notes?, visitedAt? }
+router.post('/', async (req, res) => {
+  try {
+    const { managerId, fridgeId } = req.body;
+    if (!managerId || !fridgeId) {
+      return res.status(400).json({ error: 'managerId and fridgeId are required' });
+    }
+
+    let location = req.body.location;
+    if (!location) {
+      return res.status(400).json({ error: 'location is required' });
+    }
+
+    // Normalize location to GeoJSON Point
+    if (location && typeof location.lat === 'number' && typeof location.lng === 'number') {
+      location = { type: 'Point', coordinates: [location.lng, location.lat] };
+    }
+
+    if (!location.type || !Array.isArray(location.coordinates) || location.coordinates.length !== 2) {
+      return res.status(400).json({ error: 'location must be GeoJSON Point or {lat,lng}' });
+    }
+
+    const checkin = await Checkin.create({
+      managerId,
+      fridgeId,
+      photos: Array.isArray(req.body.photos) ? req.body.photos : [],
+      location,
+      address: req.body.address,
+      notes: req.body.notes,
+      visitedAt: req.body.visitedAt ? new Date(req.body.visitedAt) : undefined,
+    });
+
+    return res.status(201).json(checkin);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to create checkin', details: err.message });
+  }
+});
+
+// GET /api/checkins
+// query: managerId?, fridgeId?, from?, to?, nearLat?, nearLng?, nearKm?
+router.get('/', async (req, res) => {
+  try {
+    const { managerId, fridgeId } = req.query;
+    const from = parseDate(req.query.from);
+    const to = parseDate(req.query.to);
+    const nearLat = req.query.nearLat ? Number(req.query.nearLat) : undefined;
+    const nearLng = req.query.nearLng ? Number(req.query.nearLng) : undefined;
+    const nearKm = req.query.nearKm ? Number(req.query.nearKm) : 5; // default 5km
+
+    const filter = {};
+    if (managerId) filter.managerId = managerId;
+    if (fridgeId) filter.fridgeId = fridgeId;
+    if (from || to) {
+      filter.visitedAt = {};
+      if (from) filter.visitedAt.$gte = from;
+      if (to) filter.visitedAt.$lte = to;
+    }
+
+    if (typeof nearLat === 'number' && typeof nearLng === 'number') {
+      filter.location = {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [nearLng, nearLat] },
+          $maxDistance: Math.max(0, nearKm) * 1000,
+        },
+      };
+    }
+
+    const items = await Checkin.find(filter).sort({ visitedAt: -1, _id: -1 }).limit(500);
+    return res.json(items);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch checkins', details: err.message });
+  }
+});
+
+// GET /api/checkins/:id
+router.get('/:id', async (req, res) => {
+  try {
+    const item = await Checkin.findById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    return res.json(item);
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid id', details: err.message });
+  }
+});
+
+module.exports = router;
+
+
