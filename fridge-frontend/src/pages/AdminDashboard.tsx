@@ -288,9 +288,6 @@ export default function AdminDashboard() {
       <Card>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-900">Карта холодильников (Тараз)</h2>
-          <p className="text-xs text-slate-500">
-            Используется Yandex Maps; убедитесь, что задан VITE_YANDEX_MAPS_API_KEY
-          </p>
         </div>
         <AdminFridgeMap fridges={filteredFridges} />
       </Card>

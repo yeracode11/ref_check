@@ -75,11 +75,46 @@ export function AdminFridgeMap({ fridges }: Props) {
             controls: ['zoomControl', 'typeSelector', 'fullscreenControl'],
           });
 
+          // Создаём кастомный layout для кластеров с цветами по статусу
+          const clusterIconLayout = ymaps.templateLayoutFactory.createClass(
+            '<div class="cluster-icon" style="background-color: {{ properties.color }}; width: 40px; height: 40px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">{{ properties.geoObjects.length }}</div>',
+            {
+              build: function() {
+                clusterIconLayout.superclass.build.call(this);
+                const cluster = this.getData().object;
+                const geoObjects = cluster.getGeoObjects();
+                
+                // Определяем приоритетный статус (самый свежий)
+                let priorityStatus = 'never';
+                geoObjects.forEach((obj: any) => {
+                  const status = obj.properties.get('status');
+                  if (status === 'today') priorityStatus = 'today';
+                  else if (status === 'week' && priorityStatus !== 'today') priorityStatus = 'week';
+                  else if (status === 'old' && priorityStatus === 'never') priorityStatus = 'old';
+                });
+                
+                // Устанавливаем цвет кластера
+                let clusterColor = '#999999'; // серый по умолчанию
+                if (priorityStatus === 'today') clusterColor = '#28a745'; // зелёный
+                else if (priorityStatus === 'week') clusterColor = '#ffc107'; // жёлтый
+                else if (priorityStatus === 'old') clusterColor = '#dc3545'; // красный
+                
+                this.getData().properties.set('color', clusterColor);
+                this.getData().properties.set('geoObjects', geoObjects);
+              }
+            }
+          );
+
           const clusterer = new ymaps.Clusterer({
-            preset: 'islands#invertedBlueClusterIcons',
             groupByCoordinates: false,
             clusterDisableClickZoom: false,
             clusterOpenBalloonOnClick: true,
+            clusterIconLayout: clusterIconLayout,
+            clusterIconShape: {
+              type: 'Circle',
+              coordinates: [0, 0],
+              radius: 20
+            },
           });
 
           map.geoObjects.add(clusterer);
@@ -109,8 +144,13 @@ export function AdminFridgeMap({ fridges }: Props) {
               balloonContentHeader: `<strong>${f.name}</strong>`,
               balloonContentBody: `<div>Код: ${f.code}</div>${
                 f.address ? `<div>Адрес: ${f.address}</div>` : ''
-              }`,
+              }<div>Статус: ${
+                f.status === 'today' ? 'Сегодня' :
+                f.status === 'week' ? 'Неделя' :
+                f.status === 'old' ? 'Давно' : 'Нет отметок'
+              }</div>`,
               hintContent: f.name,
+              status: f.status, // Сохраняем статус для кластеризации
             },
             {
               preset,
