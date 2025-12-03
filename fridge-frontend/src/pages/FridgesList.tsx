@@ -22,12 +22,14 @@ type Fridge = {
 };
 
 const ITEMS_PER_PAGE = 30; // Количество элементов на странице
+const SEARCH_DEBOUNCE_MS = 500; // Задержка перед поиском (мс)
 
 export default function FridgesList() {
   const [items, setItems] = useState<Fridge[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [selectedCityId, setSelectedCityId] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState(''); // Ввод пользователя
+  const [searchQuery, setSearchQuery] = useState(''); // Фактический запрос для поиска
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [citiesLoading, setCitiesLoading] = useState(true);
@@ -36,6 +38,7 @@ export default function FridgesList() {
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
   const observerTarget = useRef<HTMLDivElement | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Загрузка городов
   useEffect(() => {
@@ -107,6 +110,26 @@ export default function FridgesList() {
       }
     }
   }, [selectedCityId, showOnlyActive, searchQuery]);
+
+  // Debounce для поиска - обновляем searchQuery после задержки
+  useEffect(() => {
+    // Очищаем предыдущий таймер
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Устанавливаем новый таймер
+    searchTimeoutRef.current = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    // Очистка при размонтировании
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchInput]);
 
   // Загрузка при изменении фильтров
   useEffect(() => {
@@ -225,14 +248,29 @@ export default function FridgesList() {
                 </svg>
                 <input
                   type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="По названию, коду, адресу..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Поиск при нажатии Enter (без задержки)
+                    if (e.key === 'Enter') {
+                      if (searchTimeoutRef.current) {
+                        clearTimeout(searchTimeoutRef.current);
+                      }
+                      setSearchQuery(searchInput.trim());
+                    }
+                  }}
+                  placeholder="По названию, коду, адресу... (Enter для поиска)"
                   className="w-full rounded-lg border border-slate-300 pl-10 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent bg-white"
                 />
-                {searchQuery && (
+                {searchInput && (
                   <button
-                    onClick={() => setSearchQuery('')}
+                    onClick={() => {
+                      setSearchInput('');
+                      setSearchQuery('');
+                      if (searchTimeoutRef.current) {
+                        clearTimeout(searchTimeoutRef.current);
+                      }
+                    }}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
                     aria-label="Очистить поиск"
                   >
