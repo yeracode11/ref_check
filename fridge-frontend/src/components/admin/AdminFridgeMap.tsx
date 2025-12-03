@@ -1,4 +1,10 @@
 import { useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+// @ts-ignore - leaflet.markercluster расширяет L namespace
+import 'leaflet.markercluster';
 
 type AdminFridgeForMap = {
   id: string;
@@ -13,185 +19,154 @@ type Props = {
   fridges: AdminFridgeForMap[];
 };
 
-declare global {
-  interface Window {
-    ymaps?: any;
-  }
+// Иконки для разных статусов
+function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never'): L.DivIcon {
+  let color = '#999999'; // серый по умолчанию
+  if (status === 'today') color = '#28a745'; // зелёный
+  else if (status === 'week') color = '#ffc107'; // жёлтый
+  else if (status === 'old') color = '#dc3545'; // красный
+
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  });
 }
 
-const YMAPS_URL = `https://api-maps.yandex.ru/2.1/?apikey=${
-  import.meta.env.VITE_YANDEX_MAPS_API_KEY || ''
-}&lang=ru_RU`;
-
-let ymapsLoadingPromise: Promise<any> | null = null;
-
-function loadYMaps(): Promise<any> {
-  if (window.ymaps) {
-    return Promise.resolve(window.ymaps);
-  }
-  if (ymapsLoadingPromise) {
-    return ymapsLoadingPromise;
-  }
-
-  ymapsLoadingPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = YMAPS_URL;
-    script.async = true;
-    script.onload = () => {
-      if (window.ymaps) {
-        window.ymaps.ready(() => resolve(window.ymaps));
-      } else {
-        reject(new Error('Yandex Maps API не загрузился'));
-      }
-    };
-    script.onerror = () => reject(new Error('Ошибка загрузки Yandex Maps API'));
-    document.body.appendChild(script);
-  });
-
-  return ymapsLoadingPromise;
+// Функция для определения цвета кластера по статусам
+function getClusterColor(statuses: string[]): string {
+  if (statuses.includes('today')) return '#28a745'; // зелёный
+  if (statuses.includes('week')) return '#ffc107'; // жёлтый
+  if (statuses.includes('old')) return '#dc3545'; // красный
+  return '#999999'; // серый
 }
 
 export function AdminFridgeMap({ fridges }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const clustererRef = useRef<any>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const markersRef = useRef<L.MarkerClusterGroup | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!mapRef.current) return;
 
-    (async () => {
-      if (!mapRef.current) return;
+    // Инициализация карты
+    if (!mapInstanceRef.current) {
+      // Центр Тараза (примерные координаты)
+      const center: [number, number] = [42.8996, 71.3696];
+      
+      const map = L.map(mapRef.current, {
+        center,
+        zoom: 12,
+        zoomControl: true,
+      });
 
+      // Добавляем тайлы OpenStreetMap
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Создаём кластеризатор с кастомными стилями
+      const markers = L.markerClusterGroup({
+        chunkedLoading: true,
+        maxClusterRadius: 50,
+        iconCreateFunction: (cluster) => {
+          const childMarkers = cluster.getAllChildMarkers();
+          const statuses = childMarkers.map((m: any) => m.options.status || 'never');
+          const color = getClusterColor(statuses);
+          const count = childMarkers.length;
+
+          return L.divIcon({
+            className: 'custom-cluster',
+            html: `<div style="background-color: ${color}; width: 40px; height: 40px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">${count}</div>`,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
+          });
+        },
+      });
+
+      map.addLayer(markers);
+      mapInstanceRef.current = map;
+      markersRef.current = markers;
+    }
+
+    // Обновляем маркеры
+    const markers = markersRef.current;
+    if (!markers) return;
+
+    markers.clearLayers();
+
+    const bounds: L.LatLngBoundsExpression = [];
+
+    fridges.forEach((f) => {
+      if (!f.location || !Array.isArray(f.location.coordinates)) return;
+      const [lng, lat] = f.location.coordinates;
+      if (lat === 0 && lng === 0) return; // пропускаем временные координаты
+
+      // Leaflet использует [lat, lng], а у нас [lng, lat] из GeoJSON
+      const position: [number, number] = [lat, lng];
+      bounds.push(position);
+
+      const icon = getMarkerIcon(f.status);
+      const marker = L.marker(position, { icon, status: f.status } as any);
+
+      const popupContent = `
+        <div style="min-width: 200px;">
+          <strong>${f.name}</strong><br/>
+          <div>Код: ${f.code}</div>
+          ${f.address ? `<div>Адрес: ${f.address}</div>` : ''}
+          <div>Статус: ${
+            f.status === 'today' ? 'Сегодня' :
+            f.status === 'week' ? 'Неделя' :
+            f.status === 'old' ? 'Давно' : 'Нет отметок'
+          }</div>
+        </div>
+      `;
+
+      marker.bindPopup(popupContent);
+      markers.addLayer(marker);
+    });
+
+    // Устанавливаем границы карты, чтобы показать все маркеры
+    if (bounds.length > 0 && mapInstanceRef.current) {
       try {
-        const ymaps = await loadYMaps();
-        if (cancelled || !mapRef.current) return;
-
-        if (!mapInstanceRef.current) {
-          // Центр Тараза (примерные координаты)
-          const center: [number, number] = [42.8996, 71.3696];
-          const map = new ymaps.Map(mapRef.current, {
-            center,
-            zoom: 12,
-            controls: ['zoomControl', 'typeSelector', 'fullscreenControl'],
-          });
-
-          // Создаём кастомный layout для кластеров с цветами по статусу
-          const clusterIconLayout = ymaps.templateLayoutFactory.createClass(
-            '<div class="cluster-icon" style="background-color: {{ properties.color }}; width: 40px; height: 40px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">{{ properties.geoObjects.length }}</div>',
-            {
-              build: function() {
-                clusterIconLayout.superclass.build.call(this);
-                const cluster = this.getData().object;
-                const geoObjects = cluster.getGeoObjects();
-                
-                // Определяем приоритетный статус (самый свежий)
-                // Если хотя бы один отмечен сегодня → зелёный
-                // Иначе если хотя бы один за неделю → жёлтый
-                // Иначе если хотя бы один давно → красный
-                // Иначе → серый
-                let hasToday = false;
-                let hasWeek = false;
-                let hasOld = false;
-                
-                geoObjects.forEach((obj: any) => {
-                  const status = obj.properties.get('status');
-                  if (status === 'today') hasToday = true;
-                  else if (status === 'week') hasWeek = true;
-                  else if (status === 'old') hasOld = true;
-                });
-                
-                // Устанавливаем цвет кластера по приоритету
-                let clusterColor = '#999999'; // серый по умолчанию
-                if (hasToday) {
-                  clusterColor = '#28a745'; // зелёный - если хотя бы один отмечен сегодня
-                } else if (hasWeek) {
-                  clusterColor = '#ffc107'; // жёлтый - если есть отмеченные за неделю
-                } else if (hasOld) {
-                  clusterColor = '#dc3545'; // красный - если есть старые отметки
-                }
-                
-                this.getData().properties.set('color', clusterColor);
-                this.getData().properties.set('geoObjects', geoObjects);
-              }
-            }
-          );
-
-          const clusterer = new ymaps.Clusterer({
-            groupByCoordinates: false,
-            clusterDisableClickZoom: false,
-            clusterOpenBalloonOnClick: true,
-            clusterIconLayout: clusterIconLayout,
-            clusterIconShape: {
-              type: 'Circle',
-              coordinates: [0, 0],
-              radius: 20
-            },
-          });
-
-          map.geoObjects.add(clusterer);
-          mapInstanceRef.current = map;
-          clustererRef.current = clusterer;
-        }
-
-        // Обновляем маркеры
-        const clusterer = clustererRef.current;
-        clusterer.removeAll();
-
-        const placemarks: any[] = [];
-
-        fridges.forEach((f) => {
-          if (!f.location || !Array.isArray(f.location.coordinates)) return;
-          const [lng, lat] = f.location.coordinates;
-          if (lat === 0 && lng === 0) return; // пропускаем временные координаты
-
-          let preset = 'islands#grayCircleIcon';
-          if (f.status === 'today') preset = 'islands#greenCircleIcon';
-          else if (f.status === 'week') preset = 'islands#yellowCircleIcon';
-          else if (f.status === 'old') preset = 'islands#redCircleIcon';
-
-          const placemark = new window.ymaps.Placemark(
-            [lat, lng],
-            {
-              balloonContentHeader: `<strong>${f.name}</strong>`,
-              balloonContentBody: `<div>Код: ${f.code}</div>${
-                f.address ? `<div>Адрес: ${f.address}</div>` : ''
-              }<div>Статус: ${
-                f.status === 'today' ? 'Сегодня' :
-                f.status === 'week' ? 'Неделя' :
-                f.status === 'old' ? 'Давно' : 'Нет отметок'
-              }</div>`,
-              hintContent: f.name,
-              status: f.status, // Сохраняем статус для кластеризации
-            },
-            {
-              preset,
-            }
-          );
-
-          placemarks.push(placemark);
+        mapInstanceRef.current.fitBounds(bounds as L.LatLngBoundsExpression, {
+          padding: [40, 40],
+          maxZoom: 15,
         });
-
-        if (placemarks.length > 0) {
-          clusterer.add(placemarks);
-          const map = mapInstanceRef.current;
-          map.setBounds(clusterer.getBounds(), { checkZoomRange: true, zoomMargin: 40 });
-        }
       } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error('Не удалось инициализировать карту Яндекс:', e);
+        // Если не удалось установить границы, просто центрируем на первом маркере
+        if (bounds.length > 0) {
+          mapInstanceRef.current.setView(bounds[0] as [number, number], 12);
+        }
       }
-    })();
+    }
 
     return () => {
-      cancelled = true;
+      // Очистка при размонтировании
+      if (markers) {
+        markers.clearLayers();
+      }
     };
   }, [fridges]);
 
   return (
     <div className="w-full h-[480px] rounded-lg overflow-hidden border border-slate-200">
       <div ref={mapRef} className="w-full h-full" />
+      <style>{`
+        .custom-marker {
+          background: transparent !important;
+          border: none !important;
+        }
+        .custom-cluster {
+          background: transparent !important;
+          border: none !important;
+        }
+        .leaflet-popup-content-wrapper {
+          border-radius: 8px;
+        }
+      `}</style>
     </div>
   );
 }
-
-
