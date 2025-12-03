@@ -1,10 +1,14 @@
 import pandas as pd
 from pymongo import MongoClient
 import uuid
+import certifi
 
-# Подключение к MongoDB
-client = MongoClient("mongodb://localhost:27017/")
-db = client["fridge_manager"]  # Используем правильное имя БД
+# Подключение к MongoDB (Atlas)
+client = MongoClient(
+    "mongodb+srv://eracode11:Erasoft04@cluster0.jncxfdw.mongodb.net/fridge_manager?retryWrites=true&w=majority&appName=Cluster0",
+    tlsCAFile=certifi.where(),
+)
+db = client["fridge_manager"]
 collection = db["fridges"]
 cities_collection = db["cities"]
 

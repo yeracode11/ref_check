@@ -1,9 +1,14 @@
 import sys
 from pymongo import MongoClient
 import bcrypt
+import certifi
 
-# Подключение к MongoDB
-client = MongoClient("mongodb://localhost:27017/")
+# Подключение к MongoDB (Atlas)
+client = MongoClient(
+    "mongodb+srv://eracode11:Erasoft04@cluster0.jncxfdw.mongodb.net/fridge_manager?retryWrites=true&w=majority&appName=Cluster0",
+    tlsCAFile=certifi.where(),  # важно для SSL
+)
+
 db = client["fridge_manager"]
 collection = db["users"]
 

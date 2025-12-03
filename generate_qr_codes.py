@@ -10,10 +10,10 @@ from PIL import Image, ImageDraw, ImageFont
 from pymongo import MongoClient
 
 # Настройки
-MONGO_URI = "mongodb://localhost:27017/"
+MONGO_URI = "mongodb+srv://eracode11:Erasoft04@cluster0.jncxfdw.mongodb.net/?appName=Cluster0"
 DB_NAME = "fridge_manager"
 OUTPUT_DIR = "qr_codes"
-BASE_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")  # Можно задать через переменную окружения
+BASE_URL = os.getenv("FRONTEND_URL", "https://fridge-frontend.onrender.com")  # Можно задать через переменную окружения
 
 # Создаем директорию для QR-кодов
 os.makedirs(OUTPUT_DIR, exist_ok=True)
