@@ -17,9 +17,12 @@ type RouteParams = {
 };
 
 export default function CheckinPage() {
-  const { code } = useParams<RouteParams>();
+  const { code: rawCode } = useParams<RouteParams>();
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  // Декодируем код из URL (на случай неправильной кодировки)
+  const code = rawCode ? decodeURIComponent(rawCode) : null;
 
   const [fridge, setFridge] = useState<Fridge | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,18 +43,40 @@ export default function CheckinPage() {
     let alive = true;
     (async () => {
       try {
-        const res = await api.get(`/api/fridges?code=${encodeURIComponent(code)}`);
+        // Пробуем найти холодильник по коду
+        // Сначала пробуем с текущим кодом
+        let res = await api.get(`/api/fridges?code=${encodeURIComponent(code)}`);
         if (!alive) return;
-        const data: Fridge[] = res.data;
-        setFridge(data[0] || null);
-        if (!data[0]) {
-          setError('Холодильник с таким кодом не найден');
-        } else if (data[0].address) {
+        let data: Fridge[] = res.data;
+        
+        // Если не нашли, пробуем декодировать код ещё раз (на случай двойного кодирования)
+        if ((!data || data.length === 0) && code.includes('%')) {
+          try {
+            const decodedCode = decodeURIComponent(code);
+            res = await api.get(`/api/fridges?code=${encodeURIComponent(decodedCode)}`);
+            if (!alive) return;
+            data = res.data;
+          } catch {
+            // Игнорируем ошибку декодирования
+          }
+        }
+        
+        if (!data || data.length === 0) {
+          setError(`Холодильник с кодом "${code}" не найден. Проверьте правильность кода в QR-коде.`);
+          setLoading(false);
+          return;
+        }
+        
+        setFridge(data[0]);
+        if (data[0].address) {
           setAddress(data[0].address);
         }
+        setError(null);
       } catch (e: any) {
         if (!alive) return;
-        setError(e?.response?.data?.error || e?.message || 'Не удалось загрузить данные холодильника');
+        const errorMsg = e?.response?.data?.error || e?.message || 'Не удалось загрузить данные холодильника';
+        setError(errorMsg);
+        console.error('Ошибка загрузки холодильника:', e);
       } finally {
         if (alive) setLoading(false);
       }
@@ -129,23 +154,54 @@ export default function CheckinPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <div className="text-slate-500">Загрузка данных холодильника...</div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="flex flex-col items-center gap-3">
+          <div className="text-slate-500">Загрузка данных холодильника...</div>
+          {code && (
+            <div className="text-xs text-slate-400 font-mono">Код: {code}</div>
+          )}
+        </div>
       </div>
     );
   }
 
   if (error && !fridge) {
     return (
-      <Card className="max-w-xl mx-auto mt-10 bg-red-50 border-red-200">
-        <h1 className="text-xl font-semibold mb-2">Ошибка</h1>
-        <p className="text-red-700 text-sm">{error}</p>
-      </Card>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 px-4">
+        <Card className="max-w-xl w-full bg-red-50 border-red-200">
+          <h1 className="text-xl font-semibold mb-2 text-red-900">Ошибка</h1>
+          <p className="text-red-700 text-sm mb-4">{error}</p>
+          {code && (
+            <div className="text-xs text-red-600 font-mono bg-red-100 p-2 rounded mb-4">
+              Код из URL: {code}
+            </div>
+          )}
+          <Button onClick={() => navigate('/')} variant="secondary">
+            Вернуться на главную
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <Card className="max-w-md w-full">
+          <h1 className="text-xl font-semibold mb-2">Требуется авторизация</h1>
+          <p className="text-slate-600 text-sm mb-4">
+            Для отметки по холодильнику необходимо войти в систему.
+          </p>
+          <Button onClick={() => navigate('/login')} className="w-full">
+            Войти
+          </Button>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-2xl mx-auto px-4 py-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Отметка по холодильнику</h1>
         {fridge && (
@@ -153,6 +209,9 @@ export default function CheckinPage() {
             Холодильник: <span className="font-medium">{fridge.name}</span>{' '}
             <Badge variant="info">#{fridge.code}</Badge>
           </p>
+        )}
+        {!fridge && code && (
+          <p className="text-slate-400 text-sm mt-1">Код: {code}</p>
         )}
       </div>
 

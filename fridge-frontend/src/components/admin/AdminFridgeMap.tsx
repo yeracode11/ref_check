@@ -85,19 +85,30 @@ export function AdminFridgeMap({ fridges }: Props) {
                 const geoObjects = cluster.getGeoObjects();
                 
                 // Определяем приоритетный статус (самый свежий)
-                let priorityStatus = 'never';
+                // Если хотя бы один отмечен сегодня → зелёный
+                // Иначе если хотя бы один за неделю → жёлтый
+                // Иначе если хотя бы один давно → красный
+                // Иначе → серый
+                let hasToday = false;
+                let hasWeek = false;
+                let hasOld = false;
+                
                 geoObjects.forEach((obj: any) => {
                   const status = obj.properties.get('status');
-                  if (status === 'today') priorityStatus = 'today';
-                  else if (status === 'week' && priorityStatus !== 'today') priorityStatus = 'week';
-                  else if (status === 'old' && priorityStatus === 'never') priorityStatus = 'old';
+                  if (status === 'today') hasToday = true;
+                  else if (status === 'week') hasWeek = true;
+                  else if (status === 'old') hasOld = true;
                 });
                 
-                // Устанавливаем цвет кластера
+                // Устанавливаем цвет кластера по приоритету
                 let clusterColor = '#999999'; // серый по умолчанию
-                if (priorityStatus === 'today') clusterColor = '#28a745'; // зелёный
-                else if (priorityStatus === 'week') clusterColor = '#ffc107'; // жёлтый
-                else if (priorityStatus === 'old') clusterColor = '#dc3545'; // красный
+                if (hasToday) {
+                  clusterColor = '#28a745'; // зелёный - если хотя бы один отмечен сегодня
+                } else if (hasWeek) {
+                  clusterColor = '#ffc107'; // жёлтый - если есть отмеченные за неделю
+                } else if (hasOld) {
+                  clusterColor = '#dc3545'; // красный - если есть старые отметки
+                }
                 
                 this.getData().properties.set('color', clusterColor);
                 this.getData().properties.set('geoObjects', geoObjects);

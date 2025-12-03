@@ -1,6 +1,5 @@
 import pandas as pd
 from pymongo import MongoClient
-import uuid
 import certifi
 
 # Подключение к MongoDB (Atlas)
@@ -88,12 +87,8 @@ print(f"📊 Строк с адресами: {len(df)}")
 # Преобразуем в записи для MongoDB
 records = []
 for idx, row in df.iterrows():
-    # Генерируем уникальный код
-    contract_num = str(row.get('contract_number', '')).strip()
-    if contract_num and contract_num != 'nan':
-        code = f"FR-{contract_num}-{idx+1:04d}"
-    else:
-        code = f"FR-{uuid.uuid4().hex[:8].upper()}"
+    # Генерируем простой числовой код (1, 2, 3...)
+    code = str(idx + 1)
     
     # Получаем адрес из колонки "Адрес"
     address = str(row.get('address', '')).strip()

@@ -319,7 +319,7 @@ export default function AdminDashboard() {
             </div>
             <div className="flex justify-center mb-4">
               <QRCode
-                value={`${window.location.origin}/checkin/${selectedQRFridge.code}`}
+                value={`${window.location.origin}/checkin/${encodeURIComponent(selectedQRFridge.code)}`}
                 title={selectedQRFridge.name}
                 code={selectedQRFridge.code}
                 size={200}
