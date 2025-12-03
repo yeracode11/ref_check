@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
-import { LoadingCard, EmptyState } from '../components/ui/Loading';
+import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 
 type City = {
   _id: string;
@@ -21,16 +21,21 @@ type Fridge = {
   cityId?: City | string;
 };
 
+const ITEMS_PER_PAGE = 30; // Количество элементов на странице
+
 export default function FridgesList() {
   const [items, setItems] = useState<Fridge[]>([]);
-  const [allItems, setAllItems] = useState<Fridge[]>([]); // Все загруженные холодильники
   const [cities, setCities] = useState<City[]>([]);
   const [selectedCityId, setSelectedCityId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [citiesLoading, setCitiesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showOnlyActive, setShowOnlyActive] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const observerTarget = useRef<HTMLDivElement | null>(null);
 
   // Загрузка городов
   useEffect(() => {
@@ -53,8 +58,8 @@ export default function FridgesList() {
     return () => { alive = false; };
   }, []);
 
-  // Загрузка холодильников
-  useEffect(() => {
+  // Загрузка холодильников (с пагинацией)
+  const loadFridges = useCallback(async (skip = 0, reset = false) => {
     if (!selectedCityId) {
       setItems([]);
       setLoading(false);
@@ -62,50 +67,77 @@ export default function FridgesList() {
     }
 
     let alive = true;
-    setLoading(true);
-    (async () => {
-      try {
-        const params = new URLSearchParams();
-        if (showOnlyActive) params.append('active', 'true');
-        params.append('cityId', selectedCityId);
-        
-        const res = await api.get(`/api/fridges?${params.toString()}`);
-        if (!alive) return;
-        setAllItems(res.data);
-        setItems(res.data);
-        setError(null);
-      } catch (e: any) {
-        if (!alive) return;
-        setError(e?.message || 'Failed to load');
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, [selectedCityId, showOnlyActive]);
-
-  // Фильтрация по поисковому запросу
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setItems(allItems);
-      return;
+    if (reset) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
     }
 
-    const query = searchQuery.toLowerCase().trim();
-    const filtered = allItems.filter((fridge) => {
-      const name = (fridge.name || '').toLowerCase();
-      const code = (fridge.code || '').toLowerCase();
-      const address = (fridge.address || '').toLowerCase();
-      const description = (fridge.description || '').toLowerCase();
+    try {
+      const params = new URLSearchParams();
+      if (showOnlyActive) params.append('active', 'true');
+      params.append('cityId', selectedCityId);
+      if (searchQuery.trim()) {
+        params.append('search', searchQuery.trim());
+      }
+      params.append('limit', String(ITEMS_PER_PAGE));
+      params.append('skip', String(skip));
       
-      return name.includes(query) || 
-             code.includes(query) || 
-             address.includes(query) ||
-             description.includes(query);
-    });
-    
-    setItems(filtered);
-  }, [searchQuery, allItems]);
+      const res = await api.get(`/api/fridges?${params.toString()}`);
+      if (!alive) return;
+
+      const { data, pagination } = res.data;
+      
+      if (reset) {
+        setItems(data);
+      } else {
+        setItems((prev) => [...prev, ...data]);
+      }
+      
+      setHasMore(pagination.hasMore);
+      setTotal(pagination.total);
+      setError(null);
+    } catch (e: any) {
+      if (!alive) return;
+      setError(e?.message || 'Failed to load');
+    } finally {
+      if (alive) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }, [selectedCityId, showOnlyActive, searchQuery]);
+
+  // Загрузка при изменении фильтров
+  useEffect(() => {
+    loadFridges(0, true);
+  }, [selectedCityId, showOnlyActive, searchQuery]);
+
+  // Бесконечный скролл
+  useEffect(() => {
+    if (!hasMore || loadingMore || loading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          loadFridges(items.length, false);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMore, loadingMore, loading, items.length]);
 
   if (loading) {
     return (
@@ -146,9 +178,9 @@ export default function FridgesList() {
         {!loading && (
           <p className="text-slate-500 mt-1">
             {searchQuery ? (
-              <>Найдено: <span className="font-medium">{items.length}</span> из {allItems.length}</>
+              <>Найдено: <span className="font-medium">{items.length}</span> из {total}</>
             ) : (
-              <>Всего: {items.length} • Активных: {activeCount} • Неактивных: {inactiveCount}</>
+              <>Показано: <span className="font-medium">{items.length}</span> из {total} • Активных: {activeCount} • Неактивных: {inactiveCount}</>
             )}
           </p>
         )}
@@ -241,41 +273,61 @@ export default function FridgesList() {
           description={searchQuery ? "Попробуйте изменить поисковый запрос" : `В городе "${selectedCity?.name || ''}" пока нет холодильников.`}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((f) => (
-            <Card key={f._id} className="hover:shadow-md transition-shadow">
-              <div className="space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-slate-900 text-lg mb-1">{f.name}</h3>
-                    <div className="text-sm text-slate-500 font-mono">#{f.code}</div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {items.map((f) => (
+              <Card key={f._id} className="hover:shadow-md transition-shadow">
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-slate-900 text-lg mb-1">{f.name}</h3>
+                      <div className="text-sm text-slate-500 font-mono">#{f.code}</div>
+                    </div>
+                    <Badge variant={f.active ? 'success' : 'error'}>
+                      {f.active ? 'Активен' : 'Неактивен'}
+                    </Badge>
                   </div>
-                  <Badge variant={f.active ? 'success' : 'error'}>
-                    {f.active ? 'Активен' : 'Неактивен'}
-                  </Badge>
+                  
+                  {f.address && (
+                    <div className="text-sm text-slate-600">
+                      <span className="text-slate-400">📍</span> {f.address}
+                    </div>
+                  )}
+                  
+                  {f.location && (
+                    <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded font-mono">
+                      {f.location.coordinates[1].toFixed(6)}, {f.location.coordinates[0].toFixed(6)}
+                    </div>
+                  )}
+                  
+                  {f.description && (
+                    <div className="text-sm text-slate-600 border-t pt-2">
+                      {f.description}
+                    </div>
+                  )}
                 </div>
-                
-                {f.address && (
-                  <div className="text-sm text-slate-600">
-                    <span className="text-slate-400">📍</span> {f.address}
-                  </div>
-                )}
-                
-                {f.location && (
-                  <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded font-mono">
-                    {f.location.coordinates[1].toFixed(6)}, {f.location.coordinates[0].toFixed(6)}
-                  </div>
-                )}
-                
-                {f.description && (
-                  <div className="text-sm text-slate-600 border-t pt-2">
-                    {f.description}
-                  </div>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
+              </Card>
+            ))}
+          </div>
+          
+          {/* Индикатор загрузки и триггер для бесконечного скролла */}
+          {hasMore && (
+            <div ref={observerTarget} className="flex justify-center py-8">
+              {loadingMore && (
+                <div className="flex flex-col items-center gap-3">
+                  <LoadingSpinner size="md" />
+                  <p className="text-slate-500 text-sm">Загрузка...</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {!hasMore && items.length > 0 && (
+            <div className="text-center py-6 text-slate-500 text-sm">
+              Все холодильники загружены
+            </div>
+          )}
+        </>
       )}
     </div>
   );

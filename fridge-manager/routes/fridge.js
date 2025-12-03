@@ -7,12 +7,23 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const {
-      active, nearLat, nearLng, nearKm, cityId, code,
+      active, nearLat, nearLng, nearKm, cityId, code, search, limit, skip,
     } = req.query;
     const filter = {};
     if (active !== undefined) filter.active = active === 'true';
     if (cityId) filter.cityId = cityId;
     if (code) filter.code = code;
+
+    // Поиск по нескольким полям (если передан search)
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(search.trim(), 'i');
+      filter.$or = [
+        { name: searchRegex },
+        { code: searchRegex },
+        { address: searchRegex },
+        { description: searchRegex },
+      ];
+    }
 
     const nearLatNum = nearLat ? Number(nearLat) : undefined;
     const nearLngNum = nearLng ? Number(nearLng) : undefined;
@@ -27,8 +38,29 @@ router.get('/', async (req, res) => {
       };
     }
 
-    const fridges = await Fridge.find(filter).populate('cityId', 'name code').sort({ createdAt: -1 });
-    return res.json(fridges);
+    // Пагинация
+    const limitNum = limit ? Math.max(1, Math.min(100, Number(limit))) : 50; // по умолчанию 50, максимум 100
+    const skipNum = skip ? Math.max(0, Number(skip)) : 0;
+
+    // Получаем общее количество для пагинации
+    const total = await Fridge.countDocuments(filter);
+
+    // Получаем данные с пагинацией
+    const fridges = await Fridge.find(filter)
+      .populate('cityId', 'name code')
+      .sort({ createdAt: -1 })
+      .limit(limitNum)
+      .skip(skipNum);
+
+    return res.json({
+      data: fridges,
+      pagination: {
+        total,
+        limit: limitNum,
+        skip: skipNum,
+        hasMore: skipNum + fridges.length < total,
+      },
+    });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch fridges', details: err.message });
   }
