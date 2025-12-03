@@ -19,6 +19,13 @@ function authenticateToken(req, res, next) {
   });
 }
 
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
+}
+
 function generateToken(user) {
   return jwt.sign(
     { id: user._id, username: user.username, role: user.role },
@@ -27,5 +34,5 @@ function generateToken(user) {
   );
 }
 
-module.exports = { authenticateToken, generateToken, JWT_SECRET };
+module.exports = { authenticateToken, requireAdmin, generateToken, JWT_SECRET };
 

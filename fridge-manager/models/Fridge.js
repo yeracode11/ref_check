@@ -24,6 +24,7 @@ const FridgeSchema = new mongoose.Schema(
   {
     code: { type: String, required: true, unique: true, index: true },
     name: { type: String, required: true },
+    cityId: { type: mongoose.Schema.Types.ObjectId, ref: 'City', index: true },
     location: { type: GeoPointSchema, index: '2dsphere', required: true },
     address: { type: String },
     description: { type: String },

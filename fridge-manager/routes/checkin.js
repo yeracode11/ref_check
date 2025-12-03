@@ -1,5 +1,7 @@
 const express = require('express');
 const Checkin = require('../models/Checkin');
+const Fridge = require('../models/Fridge');
+const { getNextSequence } = require('../models/Counter');
 
 const router = express.Router();
 
@@ -32,7 +34,9 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'location must be GeoJSON Point or {lat,lng}' });
     }
 
+    const id = await getNextSequence('checkin');
     const checkin = await Checkin.create({
+      id,
       managerId,
       fridgeId,
       photos: Array.isArray(req.body.photos) ? req.body.photos : [],
@@ -41,6 +45,26 @@ router.post('/', async (req, res) => {
       notes: req.body.notes,
       visitedAt: req.body.visitedAt ? new Date(req.body.visitedAt) : undefined,
     });
+
+    // Обновляем местоположение и адрес холодильника по последней отметке
+    // fridgeId в чек-ине должен совпадать с code в модели Fridge
+    try {
+      await Fridge.findOneAndUpdate(
+        { code: fridgeId },
+        {
+          $set: {
+            location,
+            // Если менеджер передал новый адрес — обновим его; иначе не трогаем старый
+            ...(req.body.address ? { address: req.body.address } : {}),
+          },
+        },
+        { new: true }
+      );
+    } catch (updateErr) {
+      // Не падаем, если не нашли холодильник или ошибка обновления, просто логируем
+      // eslint-disable-next-line no-console
+      console.error('Failed to update fridge location from checkin:', updateErr);
+    }
 
     return res.status(201).json(checkin);
   } catch (err) {
@@ -77,7 +101,7 @@ router.get('/', async (req, res) => {
       };
     }
 
-    const items = await Checkin.find(filter).sort({ visitedAt: -1, _id: -1 }).limit(500);
+    const items = await Checkin.find(filter).sort({ visitedAt: -1, id: -1 }).limit(500);
     return res.json(items);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch checkins', details: err.message });
@@ -87,7 +111,11 @@ router.get('/', async (req, res) => {
 // GET /api/checkins/:id
 router.get('/:id', async (req, res) => {
   try {
-    const item = await Checkin.findById(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid id format' });
+    }
+    const item = await Checkin.findOne({ id });
     if (!item) return res.status(404).json({ error: 'Not found' });
     return res.json(item);
   } catch (err) {

@@ -6,9 +6,13 @@ const router = express.Router();
 // GET /api/fridges
 router.get('/', async (req, res) => {
   try {
-    const { active, nearLat, nearLng, nearKm } = req.query;
+    const {
+      active, nearLat, nearLng, nearKm, cityId, code,
+    } = req.query;
     const filter = {};
     if (active !== undefined) filter.active = active === 'true';
+    if (cityId) filter.cityId = cityId;
+    if (code) filter.code = code;
 
     const nearLatNum = nearLat ? Number(nearLat) : undefined;
     const nearLngNum = nearLng ? Number(nearLng) : undefined;
@@ -23,7 +27,7 @@ router.get('/', async (req, res) => {
       };
     }
 
-    const fridges = await Fridge.find(filter).sort({ createdAt: -1 });
+    const fridges = await Fridge.find(filter).populate('cityId', 'name code').sort({ createdAt: -1 });
     return res.json(fridges);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch fridges', details: err.message });

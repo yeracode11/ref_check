@@ -22,6 +22,7 @@ const GeoPointSchema = new mongoose.Schema(
 
 const CheckinSchema = new mongoose.Schema(
   {
+    id: { type: Number, unique: true, index: true, required: true },
     managerId: { type: String, required: true, index: true },
     fridgeId: { type: String, required: true, index: true },
     photos: { type: [String], default: [] },
@@ -33,6 +34,15 @@ const CheckinSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Checkin', CheckinSchema);
+// Remove _id from JSON output, use id instead
+CheckinSchema.set('toJSON', {
+  transform: function (doc, ret) {
+    ret.id = ret.id;
+    delete ret._id;
+    delete ret.__v;
+    return ret;
+  },
+});
 
+module.exports = mongoose.model('Checkin', CheckinSchema);
 
