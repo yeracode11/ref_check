@@ -71,7 +71,7 @@ export default function NewCheckin() {
       }
 
       const res = await api.post('/api/checkins', {
-        managerId: user?.username || user?.id?.toString(),
+        managerId: user?.username || user?._id || '',
         fridgeId,
         notes: notes || undefined,
         address: address || undefined,

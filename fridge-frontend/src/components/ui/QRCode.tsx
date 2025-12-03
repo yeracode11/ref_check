@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { QRCodeSVG } from 'react-qr-code';
+import QRCodeSVG from 'react-qr-code';
 import { Button } from './Card';
 
 type QRCodeProps = {
