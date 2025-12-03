@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../shared/apiClient';
-import { Card, Badge } from '../components/uipy/Card';
+import { Card, Badge } from '../components/ui/Card';
 import { LoadingSpinner, LoadingCard, EmptyState } from '../components/ui/Loading';
 
 type Checkin = {
