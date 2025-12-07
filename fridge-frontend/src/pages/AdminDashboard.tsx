@@ -51,6 +51,7 @@ export default function AdminDashboard() {
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<{ imported: number; duplicates: number; errors: number; total: number } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const observerTarget = useRef<HTMLDivElement | null>(null);
 
   // Загрузка всех холодильников для карты и статистики
@@ -204,6 +205,7 @@ export default function AdminDashboard() {
     try {
       setImporting(true);
       setImportResult(null);
+      setUploadProgress(0);
 
       const formData = new FormData();
       formData.append('file', importFile);
@@ -213,10 +215,17 @@ export default function AdminDashboard() {
         headers: {
           // Не устанавливаем Content-Type - axios сделает это автоматически для FormData
         },
+        timeout: 300000, // 5 минут
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percentCompleted);
+          }
+        },
       });
 
+      setUploadProgress(100);
       setImportResult(response.data);
-      setImportFile(null);
 
       // Перезагружаем данные
       if (user && user.role === 'admin') {
@@ -228,17 +237,37 @@ export default function AdminDashboard() {
       }
 
       alert(`Импорт завершен!\nИмпортировано: ${response.data.imported}\nДубликаты: ${response.data.duplicates}\nОшибки: ${response.data.errors}`);
+      
+      // Очищаем файл после успешного импорта
+      setImportFile(null);
+      setUploadProgress(0);
     } catch (e: any) {
       console.error('Ошибка импорта:', e);
-      const errorMessage = e?.response?.data?.error || e?.response?.data?.details || e?.message || 'Неизвестная ошибка';
-      alert('Ошибка при импорте файла: ' + errorMessage);
       
-      // Если это CORS ошибка, показываем более понятное сообщение
-      if (e?.message?.includes('CORS') || e?.code === 'ERR_NETWORK') {
-        console.error('CORS или сетевая ошибка. Проверьте настройки CORS на сервере.');
+      // Проверяем тип ошибки
+      let errorMessage = 'Неизвестная ошибка';
+      if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
+        errorMessage = 'Превышено время ожидания. Файл слишком большой или сервер не отвечает. Попробуйте уменьшить размер файла или повторите попытку позже.';
+      } else if (e?.message?.includes('CORS') || e?.code === 'ERR_NETWORK') {
+        errorMessage = 'Сетевая ошибка. Проверьте подключение к интернету и настройки CORS на сервере.';
+      } else if (e?.response?.data?.error) {
+        errorMessage = e.response.data.error;
+        if (e.response.data.details) {
+          errorMessage += ': ' + e.response.data.details;
+        }
+      } else if (e?.message) {
+        errorMessage = e.message;
       }
+      
+      alert('Ошибка при импорте файла: ' + errorMessage);
     } finally {
       setImporting(false);
+      // Не сбрасываем прогресс сразу, чтобы пользователь видел, что загрузка завершилась
+      setTimeout(() => {
+        if (!importing) {
+          setUploadProgress(0);
+        }
+      }, 2000);
     }
   };
 
@@ -327,33 +356,55 @@ export default function AdminDashboard() {
               />
             </label>
             {importFile && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-600 max-w-[150px] truncate">{importFile.name}</span>
-                <button
-                  onClick={handleImportExcel}
-                  disabled={importing}
-                  className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                >
-                  {importing ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Импорт...
-                    </>
-                  ) : (
-                    'Загрузить'
-                  )}
-                </button>
-                <button
-                  onClick={() => setImportFile(null)}
-                  disabled={importing}
-                  className="px-2 py-1.5 text-slate-600 hover:text-slate-800 disabled:opacity-50"
-                  title="Отменить"
-                >
-                  ✕
-                </button>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-600 max-w-[150px] truncate">{importFile.name}</span>
+                  <span className="text-xs text-slate-500">
+                    ({(importFile.size / 1024 / 1024).toFixed(2)} MB)
+                  </span>
+                  <button
+                    onClick={handleImportExcel}
+                    disabled={importing}
+                    className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                  >
+                    {importing ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Импорт...
+                      </>
+                    ) : (
+                      'Загрузить'
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setImportFile(null);
+                      setUploadProgress(0);
+                    }}
+                    disabled={importing}
+                    className="px-2 py-1.5 text-slate-600 hover:text-slate-800 disabled:opacity-50"
+                    title="Отменить"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {importing && uploadProgress > 0 && (
+                  <div className="w-full max-w-md">
+                    <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
+                      <span>Загрузка файла...</span>
+                      <span>{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${uploadProgress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -2,7 +2,10 @@ import axios from 'axios';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
-export const api = axios.create({ baseURL });
+export const api = axios.create({ 
+  baseURL,
+  timeout: 300000, // 5 минут для больших файлов
+});
 
 // Add token to requests if available
 api.interceptors.request.use((config) => {

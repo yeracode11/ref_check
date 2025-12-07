@@ -213,7 +213,7 @@ router.post('/import-fridges', authenticateToken, requireAdmin, (req, res, next)
     if (err) {
       console.error('Multer upload error:', err);
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер: 10MB' });
+        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер: 100MB' });
       }
       return res.status(400).json({ error: 'Ошибка загрузки файла', details: err.message });
     }
