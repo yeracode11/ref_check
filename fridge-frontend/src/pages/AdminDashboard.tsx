@@ -47,6 +47,10 @@ export default function AdminDashboard() {
   const [selectedQRFridge, setSelectedQRFridge] = useState<AdminFridge | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [totalFridges, setTotalFridges] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<{ imported: number; duplicates: number; errors: number; total: number } | null>(null);
   const observerTarget = useRef<HTMLDivElement | null>(null);
 
   // Загрузка всех холодильников для карты и статистики
@@ -154,6 +158,83 @@ export default function AdminDashboard() {
     };
   }, [hasMore, loadingMore, loading, fridges.length, loadFridges]);
 
+  // Функция для экспорта холодильников в Excel
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true);
+      const response = await api.get('/api/admin/export-fridges', {
+        responseType: 'blob', // Важно для скачивания файла
+      });
+      
+      // Создаем ссылку для скачивания
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Получаем имя файла из заголовка Content-Disposition
+      const contentDisposition = response.headers['content-disposition'];
+      let fileName = 'холодильники.xlsx';
+      if (contentDisposition) {
+        const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (fileNameMatch && fileNameMatch[1]) {
+          fileName = decodeURIComponent(fileNameMatch[1].replace(/['"]/g, ''));
+        }
+      }
+      
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Ошибка экспорта:', e);
+      alert('Ошибка при экспорте файла: ' + (e?.message || 'Неизвестная ошибка'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Функция для импорта холодильников из Excel
+  const handleImportExcel = async () => {
+    if (!importFile) {
+      alert('Пожалуйста, выберите файл для импорта');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      setImportResult(null);
+
+      const formData = new FormData();
+      formData.append('file', importFile);
+
+      const response = await api.post('/api/admin/import-fridges', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      setImportResult(response.data);
+      setImportFile(null);
+
+      // Перезагружаем данные
+      if (user && user.role === 'admin') {
+        const [fridgeStatusRes] = await Promise.all([
+          api.get('/api/admin/fridge-status?all=true'),
+        ]);
+        setAllFridges(fridgeStatusRes.data);
+        loadFridges(0, true);
+      }
+
+      alert(`Импорт завершен!\nИмпортировано: ${response.data.imported}\nДубликаты: ${response.data.duplicates}\nОшибки: ${response.data.errors}`);
+    } catch (e: any) {
+      console.error('Ошибка импорта:', e);
+      alert('Ошибка при импорте файла: ' + (e?.response?.data?.error || e?.message || 'Неизвестная ошибка'));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   if (!user || user.role !== 'admin') {
     return (
       <EmptyState
@@ -217,9 +298,82 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Админ-панель</h1>
-        <p className="text-slate-500 mt-1">Мониторинг холодильников и посещений</p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Админ-панель</h1>
+          <p className="text-slate-500 mt-1">Мониторинг холодильников и посещений</p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Импорт */}
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <span>Импорт из Excel</span>
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                className="hidden"
+                disabled={importing}
+              />
+            </label>
+            {importFile && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600 max-w-[150px] truncate">{importFile.name}</span>
+                <button
+                  onClick={handleImportExcel}
+                  disabled={importing}
+                  className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                >
+                  {importing ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Импорт...
+                    </>
+                  ) : (
+                    'Загрузить'
+                  )}
+                </button>
+                <button
+                  onClick={() => setImportFile(null)}
+                  disabled={importing}
+                  className="px-2 py-1.5 text-slate-600 hover:text-slate-800 disabled:opacity-50"
+                  title="Отменить"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Экспорт */}
+          <button
+            onClick={handleExportExcel}
+            disabled={exporting || allFridges.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
+          >
+            {exporting ? (
+              <>
+                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Экспорт...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Экспорт в Excel</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
