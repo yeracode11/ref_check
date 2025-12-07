@@ -3,7 +3,7 @@ const multer = require('multer');
 const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
 const City = require('../models/City');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireAdminOrAccountant } = require('../middleware/auth');
 const XLSX = require('xlsx');
 
 // Настройка multer для загрузки файлов в память
@@ -75,23 +75,44 @@ router.get('/fridge-status', authenticateToken, requireAdmin, async (req, res) =
     const result = fridges.map((f) => {
       const lastVisit = lastByFridgeId.get(f.code) || null; // fridgeId у нас = code в Checkin
 
-      let status = 'never';
+      // Определяем статус визита
+      let visitStatus = 'never';
       if (lastVisit) {
         const diffDays = (now - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24);
-        if (diffDays < 1) status = 'today'; // 🟢
-        else if (diffDays < 7) status = 'week'; // 🟡
-        else status = 'old'; // 🔴
+        if (diffDays < 1) visitStatus = 'today';
+        else if (diffDays < 7) visitStatus = 'week';
+        else visitStatus = 'old';
+      }
+
+      // Определяем статус для отображения на карте
+      // warehouse/returned = желтый (приоритет)
+      // installed + today = зеленый
+      // installed + week = желтый (но не склад)
+      // installed + old = красный
+      // installed + never = серый
+      let status;
+      const warehouseStatus = f.warehouseStatus || 'warehouse';
+      
+      if (warehouseStatus === 'warehouse' || warehouseStatus === 'returned') {
+        status = 'warehouse'; // желтый - на складе или возврат
+      } else {
+        // installed - используем visitStatus
+        status = visitStatus;
       }
 
       return {
         id: f._id,
         code: f.code,
+        serialNumber: f.serialNumber,
         name: f.name,
         address: f.address,
         city: f.cityId || null,
         location: f.location,
         lastVisit,
-        status,
+        status, // комбинированный статус для цвета
+        warehouseStatus, // статус склада
+        visitStatus, // статус последнего визита
+        clientInfo: f.clientInfo || null,
       };
     });
 
@@ -431,8 +452,10 @@ router.post('/fridges', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Создаем холодильник с временными координатами (0, 0)
+    // По умолчанию статус = 'warehouse' (на складе)
     const fridge = await Fridge.create({
       code,
+      serialNumber: req.body.serialNumber || null, // Заводской номер
       name: name.substring(0, 200),
       cityId: city._id,
       address: address || null,
@@ -442,6 +465,13 @@ router.post('/fridges', authenticateToken, requireAdmin, async (req, res) => {
         coordinates: [0.0, 0.0], // Временные координаты, обновятся при первой отметке
       },
       active: true,
+      warehouseStatus: 'warehouse', // На складе по умолчанию
+      statusHistory: [{
+        status: 'warehouse',
+        changedAt: new Date(),
+        changedBy: req.user.id,
+        notes: 'Создан на складе',
+      }],
     });
 
     const populatedFridge = await Fridge.findById(fridge._id).populate('cityId', 'name code');

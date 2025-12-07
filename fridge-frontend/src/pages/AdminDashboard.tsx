@@ -6,15 +6,29 @@ import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loadin
 import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
 import { QRCode } from '../components/ui/QRCode';
 
+type ClientInfo = {
+  name?: string;
+  inn?: string;
+  contractNumber?: string;
+  contactPhone?: string;
+  contactPerson?: string;
+  installDate?: string;
+  notes?: string;
+};
+
 type AdminFridge = {
   id: string;
   code: string;
+  serialNumber?: string;
   name: string;
   address?: string;
   city?: { name: string; code: string } | null;
   location?: { type: 'Point'; coordinates: [number, number] };
   lastVisit?: string | null;
-  status: 'today' | 'week' | 'old' | 'never';
+  status: 'today' | 'week' | 'old' | 'never' | 'warehouse';
+  warehouseStatus?: 'warehouse' | 'installed' | 'returned';
+  visitStatus?: 'today' | 'week' | 'old' | 'never';
+  clientInfo?: ClientInfo | null;
 };
 
 type Checkin = {
@@ -323,25 +337,31 @@ export default function AdminDashboard() {
         location: response.data.location,
         status: 'never',
       };
+      
+      // Сбрасываем состояние загрузки сразу, чтобы показать QR-код
+      setCreatingFridge(false);
       setSelectedQRFridge(createdFridge);
       setShowAddFridgeModal(false);
       
       // Очищаем форму
       setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
 
-      // Перезагружаем данные
-      const [fridgeStatusRes] = await Promise.all([
-        api.get('/api/admin/fridge-status?all=true'),
-      ]);
-      setAllFridges(fridgeStatusRes.data);
-      loadFridges(0, true);
-
-      alert(`Холодильник "${response.data.name}" успешно создан! Код: ${response.data.code}`);
+      // Перезагружаем данные в фоне (не блокируя UI)
+      (async () => {
+        try {
+          const [fridgeStatusRes] = await Promise.all([
+            api.get('/api/admin/fridge-status?all=true'),
+          ]);
+          setAllFridges(fridgeStatusRes.data);
+          loadFridges(0, true);
+        } catch (e) {
+          console.error('Ошибка обновления данных после создания:', e);
+        }
+      })();
     } catch (e: any) {
       console.error('Ошибка создания холодильника:', e);
       const errorMessage = e?.response?.data?.error || e?.message || 'Неизвестная ошибка';
       alert('Ошибка при создании холодильника: ' + errorMessage);
-    } finally {
       setCreatingFridge(false);
     }
   };
@@ -399,9 +419,11 @@ export default function AdminDashboard() {
       })
     : fridges;
 
+  const warehouseFridges = filteredAllFridges.filter((f) => f.status === 'warehouse').length;
   const todayFridges = filteredAllFridges.filter((f) => f.status === 'today').length;
   const weekFridges = filteredAllFridges.filter((f) => f.status === 'week').length;
   const oldFridges = filteredAllFridges.filter((f) => f.status === 'old').length;
+  const neverFridges = filteredAllFridges.filter((f) => f.status === 'never').length;
   const totalCheckins = checkins.length;
   const uniqueManagers = new Set(checkins.map((c) => c.managerId)).size;
 
@@ -524,7 +546,10 @@ export default function AdminDashboard() {
         <Card>
           <p className="text-sm text-slate-500">Всего холодильников</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{allFridges.length}</p>
-          <p className="text-xs text-slate-500 mt-2 space-x-2">
+          <div className="text-xs text-slate-500 mt-2 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-orange-500" /> На складе: {warehouseFridges}
+            </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Сегодня: {todayFridges}
             </span>
@@ -534,7 +559,10 @@ export default function AdminDashboard() {
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Давно: {oldFridges}
             </span>
-          </p>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-slate-400" /> Нет отметок: {neverFridges}
+            </span>
+          </div>
         </Card>
         <Card>
           <p className="text-sm text-slate-500">Всего отметок</p>
@@ -629,7 +657,10 @@ export default function AdminDashboard() {
               {filteredFridges.map((f) => {
                 let statusLabel = 'Нет отметок';
                 let statusColor = 'bg-slate-200 text-slate-700';
-                if (f.status === 'today') {
+                if (f.status === 'warehouse') {
+                  statusLabel = f.warehouseStatus === 'returned' ? 'Возврат' : 'На складе';
+                  statusColor = 'bg-orange-100 text-orange-700';
+                } else if (f.status === 'today') {
                   statusLabel = 'Сегодня';
                   statusColor = 'bg-green-100 text-green-700';
                 } else if (f.status === 'week') {

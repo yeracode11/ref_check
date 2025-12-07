@@ -19,8 +19,18 @@ export default function App() {
     { path: '/fridges', label: 'Холодильники', icon: '🧊' },
     { path: '/admin', label: 'Админ', icon: '🛠️' },
   ];
+
+  // Для бухгалтера показываем Холодильники и Управление
+  const accountantNavItems = [
+    { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+    { path: '/accountant', label: 'Управление', icon: '📊' },
+  ];
   
-  const navItems = user?.role === 'admin' ? adminNavItems : baseNavItems;
+  const navItems = user?.role === 'admin' 
+    ? adminNavItems 
+    : user?.role === 'accountant' 
+      ? accountantNavItems 
+      : baseNavItems;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -29,7 +39,7 @@ export default function App() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link 
-              to={user?.role === 'admin' ? '/fridges' : '/'} 
+              to={user?.role === 'admin' || user?.role === 'accountant' ? '/fridges' : '/'} 
               className="flex items-center gap-2" 
               onClick={() => setMobileMenuOpen(false)}
             >

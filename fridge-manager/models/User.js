@@ -6,7 +6,8 @@ const UserSchema = new mongoose.Schema(
     username: { type: String, required: true, unique: true, index: true },
     email: { type: String, required: true, unique: true, index: true },
     password: { type: String, required: true },
-    role: { type: String, enum: ['manager', 'admin'], default: 'manager', index: true },
+    role: { type: String, enum: ['manager', 'admin', 'accountant'], default: 'manager', index: true },
+    cityId: { type: mongoose.Schema.Types.ObjectId, ref: 'City', index: true }, // Город бухгалтера
     fullName: { type: String },
     phone: { type: String },
     active: { type: Boolean, default: true },

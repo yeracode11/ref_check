@@ -22,12 +22,22 @@ export function LoadingCard() {
   );
 }
 
-export function EmptyState({ icon, title, description }: { icon: string; title: string; description: string }) {
+type EmptyStateProps = {
+  icon?: string;
+  title?: string;
+  description?: string;
+  message?: string; // short alternative prop
+};
+
+export function EmptyState({ icon = '📭', title, description, message }: EmptyStateProps) {
+  const displayTitle = title || message || 'Пусто';
+  const displayDescription = description || '';
+
   return (
     <div className="text-center py-12">
       <div className="text-6xl mb-4">{icon}</div>
-      <h3 className="text-lg font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-slate-500">{description}</p>
+      <h3 className="text-lg font-semibold text-slate-900 mb-2">{displayTitle}</h3>
+      {displayDescription && <p className="text-slate-500">{displayDescription}</p>}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import FridgesList from './pages/FridgesList';
 import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import CheckinPage from './pages/CheckinPage';
+import AccountantDashboard from './pages/AccountantDashboard';
 
 const router = createBrowserRouter([
   {
@@ -43,6 +44,7 @@ const router = createBrowserRouter([
           },
           { path: 'fridges', element: <FridgesList /> },
           { path: 'admin', element: <AdminDashboard /> },
+          { path: 'accountant', element: <AccountantDashboard /> },
           { path: 'checkin/:code', element: <CheckinPage /> },
         ],
       },

@@ -26,13 +26,27 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+function requireAccountant(req, res, next) {
+  if (!req.user || (req.user.role !== 'accountant' && req.user.role !== 'admin')) {
+    return res.status(403).json({ error: 'Accountant or Admin access required' });
+  }
+  return next();
+}
+
+function requireAdminOrAccountant(req, res, next) {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'accountant')) {
+    return res.status(403).json({ error: 'Admin or Accountant access required' });
+  }
+  return next();
+}
+
 function generateToken(user) {
   return jwt.sign(
-    { id: user._id, username: user.username, role: user.role },
+    { id: user._id, username: user.username, role: user.role, cityId: user.cityId },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
 }
 
-module.exports = { authenticateToken, requireAdmin, generateToken, JWT_SECRET };
+module.exports = { authenticateToken, requireAdmin, requireAccountant, requireAdminOrAccountant, generateToken, JWT_SECRET };
 

@@ -11,7 +11,8 @@ type AdminFridgeForMap = {
   name: string;
   code: string;
   address?: string;
-  status: 'today' | 'week' | 'old' | 'never';
+  status: 'today' | 'week' | 'old' | 'never' | 'warehouse';
+  warehouseStatus?: 'warehouse' | 'installed' | 'returned';
   location?: { type: 'Point'; coordinates: [number, number] };
 };
 
@@ -20,9 +21,15 @@ type Props = {
 };
 
 // Иконки для разных статусов
-function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never'): L.DivIcon {
+// warehouse (на складе/возврат) = оранжево-желтый
+// today (установлен + сегодня) = зеленый
+// week (установлен + неделя) = желтый
+// old (установлен + давно) = красный
+// never = серый
+function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse'): L.DivIcon {
   let color = '#999999'; // серый по умолчанию
-  if (status === 'today') color = '#28a745'; // зелёный
+  if (status === 'warehouse') color = '#ff9800'; // оранжевый (склад/возврат)
+  else if (status === 'today') color = '#28a745'; // зелёный
   else if (status === 'week') color = '#ffc107'; // жёлтый
   else if (status === 'old') color = '#dc3545'; // красный
 
@@ -37,6 +44,7 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never'): L.DivIcon {
 // Функция для определения цвета кластера по статусам
 function getClusterColor(statuses: string[]): string {
   if (statuses.includes('today')) return '#28a745'; // зелёный
+  if (statuses.includes('warehouse')) return '#ff9800'; // оранжевый (склад)
   if (statuses.includes('week')) return '#ffc107'; // жёлтый
   if (statuses.includes('old')) return '#dc3545'; // красный
   return '#999999'; // серый
@@ -111,16 +119,20 @@ export function AdminFridgeMap({ fridges }: Props) {
       const icon = getMarkerIcon(f.status);
       const marker = L.marker(position, { icon, status: f.status } as any);
 
+      const warehouseLabel = f.warehouseStatus === 'warehouse' ? 'На складе' :
+                            f.warehouseStatus === 'returned' ? 'Возврат на склад' :
+                            'Установлен';
+      const visitLabel = f.status === 'today' ? 'Сегодня' :
+                         f.status === 'week' ? 'Неделя' :
+                         f.status === 'old' ? 'Давно' :
+                         f.status === 'warehouse' ? warehouseLabel : 'Нет отметок';
+
       const popupContent = `
         <div style="min-width: 200px;">
           <strong>${f.name}</strong><br/>
           <div>Код: ${f.code}</div>
           ${f.address ? `<div>Адрес: ${f.address}</div>` : ''}
-          <div>Статус: ${
-            f.status === 'today' ? 'Сегодня' :
-            f.status === 'week' ? 'Неделя' :
-            f.status === 'old' ? 'Давно' : 'Нет отметок'
-          }</div>
+          <div>Статус: ${visitLabel}</div>
         </div>
       `;
 

@@ -20,15 +20,46 @@ const GeoPointSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Информация о клиенте (ИП/организация)
+const ClientInfoSchema = new mongoose.Schema(
+  {
+    name: { type: String }, // Название ИП/организации
+    inn: { type: String }, // ИНН
+    contractNumber: { type: String }, // Номер договора
+    contactPhone: { type: String }, // Контактный телефон
+    contactPerson: { type: String }, // Контактное лицо
+    installDate: { type: Date }, // Дата установки
+    notes: { type: String }, // Примечания
+  },
+  { _id: false }
+);
+
 const FridgeSchema = new mongoose.Schema(
   {
     code: { type: String, required: true, unique: true, index: true },
+    serialNumber: { type: String, index: true }, // Заводской номер холодильника
     name: { type: String, required: true },
     cityId: { type: mongoose.Schema.Types.ObjectId, ref: 'City', index: true },
     location: { type: GeoPointSchema, index: '2dsphere', required: true },
     address: { type: String },
     description: { type: String },
     active: { type: Boolean, default: true },
+    // Статус склада: 'warehouse' (на складе), 'installed' (установлен у клиента), 'returned' (возврат на склад)
+    warehouseStatus: { 
+      type: String, 
+      enum: ['warehouse', 'installed', 'returned'], 
+      default: 'warehouse',
+      index: true 
+    },
+    // Информация о клиенте (заполняется при установке)
+    clientInfo: { type: ClientInfoSchema },
+    // История изменений статуса
+    statusHistory: [{
+      status: { type: String, enum: ['warehouse', 'installed', 'returned'] },
+      changedAt: { type: Date, default: Date.now },
+      changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      notes: { type: String },
+    }],
   },
   { timestamps: true }
 );

@@ -5,8 +5,9 @@ type User = {
   _id: string;
   username: string;
   email: string;
-  role: 'manager' | 'admin';
+  role: 'manager' | 'admin' | 'accountant';
   fullName?: string;
+  cityId?: string;
 };
 
 type AuthContextType = {

@@ -21,9 +21,9 @@ export default function LoginPage() {
       // После успешного логина определяем, куда редиректить
       let redirectTo = from;
       
-      // Если админ и пытается зайти на главную или /new, редиректим на /fridges
+      // Если админ или бухгалтер и пытается зайти на главную или /new, редиректим на /fridges
       // Но если пришел с /checkin/:code, оставляем этот путь
-      if (userData?.role === 'admin' && (from === '/' || from === '/new')) {
+      if ((userData?.role === 'admin' || userData?.role === 'accountant') && (from === '/' || from === '/new')) {
         redirectTo = '/fridges';
       }
       

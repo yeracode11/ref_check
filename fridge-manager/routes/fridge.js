@@ -7,12 +7,13 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const {
-      active, nearLat, nearLng, nearKm, cityId, code, search, limit, skip,
+      active, nearLat, nearLng, nearKm, cityId, code, search, limit, skip, warehouseStatus,
     } = req.query;
     const filter = {};
     if (active !== undefined) filter.active = active === 'true';
     if (cityId) filter.cityId = cityId;
     if (code) filter.code = code;
+    if (warehouseStatus) filter.warehouseStatus = warehouseStatus;
 
     // Поиск по нескольким полям (если передан search)
     if (search && search.trim()) {
