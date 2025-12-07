@@ -208,9 +208,10 @@ export default function AdminDashboard() {
       const formData = new FormData();
       formData.append('file', importFile);
 
+      // Axios автоматически установит правильный Content-Type для FormData с boundary
       const response = await api.post('/api/admin/import-fridges', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          // Не устанавливаем Content-Type - axios сделает это автоматически для FormData
         },
       });
 
@@ -229,7 +230,13 @@ export default function AdminDashboard() {
       alert(`Импорт завершен!\nИмпортировано: ${response.data.imported}\nДубликаты: ${response.data.duplicates}\nОшибки: ${response.data.errors}`);
     } catch (e: any) {
       console.error('Ошибка импорта:', e);
-      alert('Ошибка при импорте файла: ' + (e?.response?.data?.error || e?.message || 'Неизвестная ошибка'));
+      const errorMessage = e?.response?.data?.error || e?.response?.data?.details || e?.message || 'Неизвестная ошибка';
+      alert('Ошибка при импорте файла: ' + errorMessage);
+      
+      // Если это CORS ошибка, показываем более понятное сообщение
+      if (e?.message?.includes('CORS') || e?.code === 'ERR_NETWORK') {
+        console.error('CORS или сетевая ошибка. Проверьте настройки CORS на сервере.');
+      }
     } finally {
       setImporting(false);
     }

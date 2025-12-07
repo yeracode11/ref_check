@@ -7,7 +7,26 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const XLSX = require('xlsx');
 
 // Настройка multer для загрузки файлов в память
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB максимум
+  },
+  fileFilter: (req, file, cb) => {
+    // Проверяем тип файла
+    const allowedMimes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel', // .xls
+      'application/octet-stream', // иногда Excel файлы имеют этот тип
+    ];
+    
+    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls)$/i)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Неподдерживаемый тип файла. Разрешены только .xlsx и .xls файлы.'));
+    }
+  },
+});
 
 const router = express.Router();
 
@@ -188,10 +207,22 @@ router.get('/export-fridges', authenticateToken, requireAdmin, async (req, res) 
 
 // POST /api/admin/import-fridges
 // Импорт холодильников из Excel файла
-router.post('/import-fridges', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+router.post('/import-fridges', authenticateToken, requireAdmin, (req, res, next) => {
+  // Обработка загрузки файла с обработкой ошибок
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      console.error('Multer upload error:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер: 10MB' });
+      }
+      return res.status(400).json({ error: 'Ошибка загрузки файла', details: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'Файл не загружен' });
+      return res.status(400).json({ error: 'Файл не загружен. Убедитесь, что вы выбрали файл.' });
     }
 
     // Читаем Excel файл из буфера
