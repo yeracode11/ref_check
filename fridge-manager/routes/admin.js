@@ -10,7 +10,7 @@ const XLSX = require('xlsx');
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB максимум
+    fileSize: 100 * 1024 * 1024, // 10MB максимум
   },
   fileFilter: (req, file, cb) => {
     // Проверяем тип файла
