@@ -468,7 +468,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR }: Props) {
                           {c.notes && (
                             <p className="text-sm text-slate-500 mt-1 italic">{c.notes}</p>
                           )}
-                          {c.location && (
+                          {c.location && c.location.lat !== undefined && c.location.lng !== undefined && (
                             <p className="text-xs text-slate-400 mt-1 font-mono">
                               {c.location.lat.toFixed(6)}, {c.location.lng.toFixed(6)}
                             </p>
