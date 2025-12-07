@@ -486,6 +486,25 @@ router.post('/fridges', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/fridges/:id
+// Получить детальную информацию о холодильнике
+router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const fridge = await Fridge.findById(id)
+      .populate('cityId', 'name code')
+      .populate('statusHistory.changedBy', 'username fullName');
+    
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    return res.json(fridge);
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка получения данных', details: err.message });
+  }
+});
+
 // GET /api/admin/fridges/:id/checkins
 // История посещений конкретного холодильника
 router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant, async (req, res) => {
