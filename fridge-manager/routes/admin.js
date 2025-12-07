@@ -386,6 +386,76 @@ router.post('/import-fridges', authenticateToken, requireAdmin, (req, res, next)
   }
 });
 
+// POST /api/admin/fridges
+// Создание нового холодильника (только для админа, с автогенерацией кода)
+router.post('/fridges', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { name, address, description, cityId } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Название холодильника обязательно' });
+    }
+
+    // Получаем или создаем город Тараз, если cityId не указан
+    let city;
+    if (cityId) {
+      city = await City.findById(cityId);
+      if (!city) {
+        return res.status(400).json({ error: 'Город не найден' });
+      }
+    } else {
+      city = await City.findOne({ code: 'taras' });
+      if (!city) {
+        city = await City.create({
+          name: 'Тараз',
+          code: 'taras',
+          active: true,
+        });
+      }
+    }
+
+    // Генерируем уникальный код
+    let codeCounter = 1;
+    const maxFridge = await Fridge.findOne().sort({ code: -1 });
+    if (maxFridge && maxFridge.code) {
+      const maxCode = parseInt(maxFridge.code, 10);
+      if (!isNaN(maxCode)) {
+        codeCounter = maxCode + 1;
+      }
+    }
+
+    let code = String(codeCounter);
+    while (await Fridge.findOne({ code })) {
+      codeCounter++;
+      code = String(codeCounter);
+    }
+
+    // Создаем холодильник с временными координатами (0, 0)
+    const fridge = await Fridge.create({
+      code,
+      name: name.substring(0, 200),
+      cityId: city._id,
+      address: address || null,
+      description: description ? description.substring(0, 500) : null,
+      location: {
+        type: 'Point',
+        coordinates: [0.0, 0.0], // Временные координаты, обновятся при первой отметке
+      },
+      active: true,
+    });
+
+    const populatedFridge = await Fridge.findById(fridge._id).populate('cityId', 'name code');
+
+    return res.status(201).json(populatedFridge);
+  } catch (err) {
+    console.error('Ошибка создания холодильника:', err);
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Холодильник с таким кодом уже существует' });
+    }
+    return res.status(500).json({ error: 'Ошибка создания холодильника', details: err.message });
+  }
+});
+
 module.exports = router;
 
 

@@ -52,7 +52,33 @@ export default function AdminDashboard() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<{ imported: number; duplicates: number; errors: number; total: number } | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [showAddFridgeModal, setShowAddFridgeModal] = useState(false);
+  const [newFridge, setNewFridge] = useState({ name: '', address: '', description: '', cityId: '' });
+  const [creatingFridge, setCreatingFridge] = useState(false);
+  const [cities, setCities] = useState<Array<{ _id: string; name: string; code: string }>>([]);
   const observerTarget = useRef<HTMLDivElement | null>(null);
+
+  // Загрузка городов
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get('/api/cities?active=true');
+        if (!alive) return;
+        setCities(res.data);
+        // Устанавливаем первый город по умолчанию
+        if (res.data.length > 0 && !newFridge.cityId) {
+          setNewFridge(prev => ({ ...prev, cityId: res.data[0]._id }));
+        }
+      } catch (e: any) {
+        console.error('Ошибка загрузки городов:', e);
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [user]);
 
   // Загрузка всех холодильников для карты и статистики
   useEffect(() => {
@@ -271,6 +297,55 @@ export default function AdminDashboard() {
     }
   };
 
+  // Функция для создания нового холодильника
+  const handleCreateFridge = async () => {
+    if (!newFridge.name.trim()) {
+      alert('Пожалуйста, укажите название холодильника');
+      return;
+    }
+
+    try {
+      setCreatingFridge(true);
+      const response = await api.post('/api/admin/fridges', {
+        name: newFridge.name.trim(),
+        address: newFridge.address.trim() || undefined,
+        description: newFridge.description.trim() || undefined,
+        cityId: newFridge.cityId || undefined,
+      });
+
+      // Показываем QR-код для нового холодильника
+      const createdFridge: AdminFridge = {
+        id: response.data._id,
+        code: response.data.code,
+        name: response.data.name,
+        address: response.data.address,
+        city: response.data.cityId,
+        location: response.data.location,
+        status: 'never',
+      };
+      setSelectedQRFridge(createdFridge);
+      setShowAddFridgeModal(false);
+      
+      // Очищаем форму
+      setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
+
+      // Перезагружаем данные
+      const [fridgeStatusRes] = await Promise.all([
+        api.get('/api/admin/fridge-status?all=true'),
+      ]);
+      setAllFridges(fridgeStatusRes.data);
+      loadFridges(0, true);
+
+      alert(`Холодильник "${response.data.name}" успешно создан! Код: ${response.data.code}`);
+    } catch (e: any) {
+      console.error('Ошибка создания холодильника:', e);
+      const errorMessage = e?.response?.data?.error || e?.message || 'Неизвестная ошибка';
+      alert('Ошибка при создании холодильника: ' + errorMessage);
+    } finally {
+      setCreatingFridge(false);
+    }
+  };
+
   if (!user || user.role !== 'admin') {
     return (
       <EmptyState
@@ -340,6 +415,16 @@ export default function AdminDashboard() {
           <p className="text-slate-500 mt-1">Мониторинг холодильников и посещений</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          {/* Добавить холодильник */}
+          <button
+            onClick={() => setShowAddFridgeModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Добавить холодильник</span>
+          </button>
           {/* Импорт */}
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
@@ -614,6 +699,103 @@ export default function AdminDashboard() {
         </div>
         <AdminFridgeMap fridges={filteredAllFridges} />
       </Card>
+
+      {/* Модальное окно для добавления холодильника */}
+      {showAddFridgeModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowAddFridgeModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-900">Добавить холодильник</h3>
+              <button
+                onClick={() => setShowAddFridgeModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Название <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newFridge.name}
+                  onChange={(e) => setNewFridge({ ...newFridge, name: e.target.value })}
+                  placeholder="Введите название холодильника"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Город
+                </label>
+                <select
+                  value={newFridge.cityId}
+                  onChange={(e) => setNewFridge({ ...newFridge, cityId: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {cities.map((city) => (
+                    <option key={city._id} value={city._id}>
+                      {city.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Адрес
+                </label>
+                <input
+                  type="text"
+                  value={newFridge.address}
+                  onChange={(e) => setNewFridge({ ...newFridge, address: e.target.value })}
+                  placeholder="Введите адрес (опционально)"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Описание
+                </label>
+                <textarea
+                  value={newFridge.description}
+                  onChange={(e) => setNewFridge({ ...newFridge, description: e.target.value })}
+                  placeholder="Введите описание (опционально)"
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleCreateFridge}
+                  disabled={creatingFridge || !newFridge.name.trim()}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {creatingFridge ? 'Создание...' : 'Создать'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddFridgeModal(false);
+                    setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
+                  }}
+                  disabled={creatingFridge}
+                  className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 disabled:opacity-50 transition-colors font-medium"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Модальное окно для QR-кода */}
       {selectedQRFridge && (
