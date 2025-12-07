@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { Badge } from './ui/Card';
 import { QRCode } from './ui/QRCode';
 import { api } from '../shared/apiClient';
+import { useAuth } from '../contexts/AuthContext';
 
 type ClientInfo = {
   name?: string;
@@ -53,6 +54,8 @@ type Props = {
   fridgeId: string;
   onClose: () => void;
   onShowQR?: (fridge: FridgeDetail) => void;
+  onDeleted?: () => void; // Callback после удаления
+  onUpdated?: () => void; // Callback после обновления
 };
 
 function formatDate(dateString: string) {
@@ -163,7 +166,10 @@ function MiniMap({ location, name }: { location: { coordinates: [number, number]
   );
 }
 
-export function FridgeDetailModal({ fridgeId, onClose, onShowQR }: Props) {
+export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUpdated }: Props) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  
   const [fridge, setFridge] = useState<FridgeDetail | null>(null);
   const [checkins, setCheckins] = useState<CheckinItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -171,6 +177,11 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [showQR, setShowQR] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'history'>('info');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', serialNumber: '', address: '', description: '' });
+  const [saving, setSaving] = useState(false);
 
   // Загрузка истории посещений
   const loadCheckins = async () => {
@@ -487,16 +498,39 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-slate-200 bg-slate-50">
-          <button
-            onClick={() => setShowQR(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-            </svg>
-            QR-код
-          </button>
+        <div className="flex items-center justify-between p-4 border-t border-slate-200 bg-slate-50 gap-2 flex-wrap">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowQR(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              📱 QR-код
+            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => {
+                    setEditForm({
+                      name: fridge.name,
+                      serialNumber: fridge.serialNumber || '',
+                      address: fridge.address || '',
+                      description: fridge.description || '',
+                    });
+                    setShowEditModal(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm font-medium"
+                >
+                  ✏️ Редактировать
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                >
+                  🗑️ Удалить
+                </button>
+              </>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors text-sm font-medium"
@@ -527,6 +561,135 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR }: Props) {
               <p className="text-sm text-slate-500 mt-4 text-center">
                 Отсканируйте QR-код для отметки посещения
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Модальное окно подтверждения удаления */}
+        {showDeleteConfirm && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center">
+            <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить холодильник?</h3>
+              <p className="text-slate-600 text-sm mb-4">
+                Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> (#{fridge.code})?
+                Все связанные отметки также будут удалены. Это действие нельзя отменить.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    try {
+                      setDeleting(true);
+                      await api.delete(`/api/admin/fridges/${fridge._id}`);
+                      setShowDeleteConfirm(false);
+                      onDeleted?.();
+                      onClose();
+                      alert('Холодильник удалён');
+                    } catch (e: any) {
+                      alert('Ошибка: ' + (e?.response?.data?.error || e.message));
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium"
+                >
+                  {deleting ? 'Удаление...' : '🗑️ Удалить'}
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                  className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Модальное окно редактирования */}
+        {showEditModal && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Редактировать холодильник</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Название</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Серийный номер</label>
+                  <input
+                    type="text"
+                    value={editForm.serialNumber}
+                    onChange={(e) => setEditForm({ ...editForm, serialNumber: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Адрес</label>
+                  <input
+                    type="text"
+                    value={editForm.address}
+                    onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Описание</label>
+                  <textarea
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={async () => {
+                      if (!editForm.name.trim()) {
+                        alert('Название обязательно');
+                        return;
+                      }
+                      try {
+                        setSaving(true);
+                        await api.patch(`/api/admin/fridges/${fridge._id}`, {
+                          name: editForm.name.trim(),
+                          serialNumber: editForm.serialNumber.trim() || null,
+                          address: editForm.address.trim() || null,
+                          description: editForm.description.trim() || null,
+                        });
+                        // Перезагружаем данные
+                        const res = await api.get(`/api/admin/fridges/${fridge._id}`);
+                        setFridge(res.data);
+                        setShowEditModal(false);
+                        onUpdated?.();
+                        alert('Холодильник обновлён');
+                      } catch (e: any) {
+                        alert('Ошибка: ' + (e?.response?.data?.error || e.message));
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    disabled={saving}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
+                  >
+                    {saving ? 'Сохранение...' : 'Сохранить'}
+                  </button>
+                  <button
+                    onClick={() => setShowEditModal(false)}
+                    disabled={saving}
+                    className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

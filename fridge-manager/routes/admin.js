@@ -1,8 +1,10 @@
 const express = require('express');
 const multer = require('multer');
+const bcrypt = require('bcrypt');
 const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
 const City = require('../models/City');
+const User = require('../models/User');
 const { authenticateToken, requireAdmin, requireAdminOrAccountant } = require('../middleware/auth');
 const XLSX = require('xlsx');
 
@@ -649,6 +651,246 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Analytics error:', err);
     return res.status(500).json({ error: 'Ошибка получения аналитики', details: err.message });
+  }
+});
+
+// ==========================================
+// УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ (только для админа)
+// ==========================================
+
+// GET /api/admin/users
+// Список всех пользователей
+router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { role, active, search } = req.query;
+    const filter = {};
+    
+    if (role) filter.role = role;
+    if (active !== undefined) filter.active = active === 'true';
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      filter.$or = [
+        { username: searchRegex },
+        { email: searchRegex },
+        { fullName: searchRegex },
+      ];
+    }
+
+    const users = await User.find(filter)
+      .select('-password')
+      .populate('cityId', 'name code')
+      .sort({ createdAt: -1 });
+
+    return res.json(users);
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка получения пользователей', details: err.message });
+  }
+});
+
+// GET /api/admin/users/:id
+// Получить пользователя по ID
+router.get('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('-password')
+      .populate('cityId', 'name code');
+    
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+
+    return res.json(user);
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка получения пользователя', details: err.message });
+  }
+});
+
+// POST /api/admin/users
+// Создать нового пользователя (бухгалтера, менеджера)
+router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { username, email, password, role, fullName, phone, cityId, active } = req.body;
+
+    // Валидация
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Обязательные поля: username, email, password' });
+    }
+
+    if (!['manager', 'accountant', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Некорректная роль. Допустимые: manager, accountant, admin' });
+    }
+
+    // Проверка уникальности
+    const existing = await User.findOne({ $or: [{ username }, { email }] });
+    if (existing) {
+      return res.status(400).json({ error: 'Пользователь с таким username или email уже существует' });
+    }
+
+    // Создаём пользователя (пароль хешируется в pre-save hook модели)
+    const user = await User.create({
+      username,
+      email,
+      password,
+      role,
+      fullName: fullName || username,
+      phone: phone || null,
+      cityId: cityId || null,
+      active: active !== false,
+    });
+
+    // Возвращаем без пароля
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    return res.status(201).json(userObj);
+  } catch (err) {
+    console.error('Ошибка создания пользователя:', err);
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Пользователь с таким username или email уже существует' });
+    }
+    return res.status(500).json({ error: 'Ошибка создания пользователя', details: err.message });
+  }
+});
+
+// PATCH /api/admin/users/:id
+// Обновить пользователя
+router.patch('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { username, email, password, role, fullName, phone, cityId, active } = req.body;
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+
+    // Нельзя редактировать самого себя (защита от удаления своего админа)
+    if (user._id.toString() === req.user.id) {
+      return res.status(400).json({ error: 'Нельзя редактировать свой аккаунт через этот интерфейс' });
+    }
+
+    // Обновляем поля
+    if (username !== undefined) user.username = username;
+    if (email !== undefined) user.email = email;
+    if (role !== undefined && ['manager', 'accountant', 'admin'].includes(role)) {
+      user.role = role;
+    }
+    if (fullName !== undefined) user.fullName = fullName;
+    if (phone !== undefined) user.phone = phone;
+    if (cityId !== undefined) user.cityId = cityId || null;
+    if (active !== undefined) user.active = active;
+
+    // Если передан новый пароль - обновляем (хешируется в pre-save)
+    if (password && password.length >= 6) {
+      user.password = password;
+    }
+
+    await user.save();
+
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    return res.json(userObj);
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Пользователь с таким username или email уже существует' });
+    }
+    return res.status(500).json({ error: 'Ошибка обновления пользователя', details: err.message });
+  }
+});
+
+// DELETE /api/admin/users/:id
+// Удалить пользователя
+router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+
+    // Нельзя удалить самого себя
+    if (user._id.toString() === req.user.id) {
+      return res.status(400).json({ error: 'Нельзя удалить свой аккаунт' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    return res.json({ message: 'Пользователь удалён', id: req.params.id });
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка удаления пользователя', details: err.message });
+  }
+});
+
+// ==========================================
+// ПОЛНОЕ УПРАВЛЕНИЕ ХОЛОДИЛЬНИКАМИ
+// ==========================================
+
+// PATCH /api/admin/fridges/:id
+// Редактировать холодильник
+router.patch('/fridges/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { name, serialNumber, address, description, cityId, active } = req.body;
+
+    const fridge = await Fridge.findById(req.params.id);
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    if (name !== undefined) fridge.name = name;
+    if (serialNumber !== undefined) fridge.serialNumber = serialNumber;
+    if (address !== undefined) fridge.address = address;
+    if (description !== undefined) fridge.description = description;
+    if (cityId !== undefined) fridge.cityId = cityId || null;
+    if (active !== undefined) fridge.active = active;
+
+    await fridge.save();
+
+    const populated = await Fridge.findById(fridge._id).populate('cityId', 'name code');
+    return res.json(populated);
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка обновления холодильника', details: err.message });
+  }
+});
+
+// DELETE /api/admin/fridges/:id
+// Удалить холодильник
+router.delete('/fridges/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const fridge = await Fridge.findById(req.params.id);
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    // Также удаляем связанные чек-ины
+    const deletedCheckins = await Checkin.deleteMany({ fridgeId: fridge.code });
+
+    await Fridge.findByIdAndDelete(req.params.id);
+
+    return res.json({ 
+      message: 'Холодильник удалён', 
+      id: req.params.id,
+      code: fridge.code,
+      deletedCheckins: deletedCheckins.deletedCount,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка удаления холодильника', details: err.message });
+  }
+});
+
+// DELETE /api/admin/fridges/:id/soft
+// Мягкое удаление (деактивация) холодильника
+router.delete('/fridges/:id/soft', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const fridge = await Fridge.findById(req.params.id);
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    fridge.active = false;
+    await fridge.save();
+
+    return res.json({ message: 'Холодильник деактивирован', id: req.params.id });
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка деактивации холодильника', details: err.message });
   }
 });
 
