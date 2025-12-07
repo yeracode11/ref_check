@@ -12,7 +12,7 @@ type User = {
 type AuthContextType = {
   user: User | null;
   token: string | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<User>;
   logout: () => void;
   loading: boolean;
 };
@@ -49,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(newToken);
     setUser(userData);
     localStorage.setItem('token', newToken);
+    return userData; // Возвращаем данные пользователя для использования после логина
   };
 
   const logout = () => {

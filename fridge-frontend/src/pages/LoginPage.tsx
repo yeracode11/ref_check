@@ -17,9 +17,17 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login(username, password);
-      // После успешного логина возвращаемся туда, откуда пришли (например, /checkin/FR-XXXX)
-      navigate(from, { replace: true });
+      const userData = await login(username, password);
+      // После успешного логина определяем, куда редиректить
+      let redirectTo = from;
+      
+      // Если админ и пытается зайти на главную или /new, редиректим на /fridges
+      // Но если пришел с /checkin/:code, оставляем этот путь
+      if (userData?.role === 'admin' && (from === '/' || from === '/new')) {
+        redirectTo = '/fridges';
+      }
+      
+      navigate(redirectTo, { replace: true });
     } catch (e: any) {
       setError(e?.response?.data?.error || e?.message || 'Ошибка входа');
     } finally {

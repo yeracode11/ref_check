@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../shared/apiClient';
 import { Card, Badge, Button } from '../components/ui/Card';
-import { LoadingCard, EmptyState } from '../components/ui/Loading';
+import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
 import { QRCode } from '../components/ui/QRCode';
 
@@ -33,15 +33,23 @@ function formatDate(dateString: string) {
   };
 }
 
+const ITEMS_PER_PAGE = 50; // Количество холодильников на странице
+
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const [fridges, setFridges] = useState<AdminFridge[]>([]);
+  const [fridges, setFridges] = useState<AdminFridge[]>([]); // Для списка (пагинация)
+  const [allFridges, setAllFridges] = useState<AdminFridge[]>([]); // Для карты (все)
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fridgeFilter, setFridgeFilter] = useState('');
   const [selectedQRFridge, setSelectedQRFridge] = useState<AdminFridge | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalFridges, setTotalFridges] = useState(0);
+  const observerTarget = useRef<HTMLDivElement | null>(null);
 
+  // Загрузка всех холодильников для карты и статистики
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       setLoading(false);
@@ -53,11 +61,11 @@ export default function AdminDashboard() {
       try {
         setLoading(true);
         const [fridgeStatusRes, checkinsRes] = await Promise.all([
-          api.get('/api/admin/fridge-status'),
+          api.get('/api/admin/fridge-status?all=true'), // Все для карты
           api.get('/api/checkins'),
         ]);
         if (!alive) return;
-        setFridges(fridgeStatusRes.data);
+        setAllFridges(fridgeStatusRes.data);
         setCheckins(checkinsRes.data);
         setError(null);
       } catch (e: any) {
@@ -72,6 +80,79 @@ export default function AdminDashboard() {
       alive = false;
     };
   }, [user]);
+
+  // Загрузка холодильников для списка (с пагинацией)
+  const loadFridges = useCallback(async (skip = 0, reset = false) => {
+    if (!user || user.role !== 'admin') return;
+
+    let alive = true;
+    if (reset) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.append('limit', String(ITEMS_PER_PAGE));
+      params.append('skip', String(skip));
+      
+      const res = await api.get(`/api/admin/fridge-status?${params.toString()}`);
+      if (!alive) return;
+
+      const { data, pagination } = res.data;
+      
+      if (reset) {
+        setFridges(data);
+      } else {
+        setFridges((prev) => [...prev, ...data]);
+      }
+      
+      setHasMore(pagination.hasMore);
+      setTotalFridges(pagination.total);
+      setError(null);
+    } catch (e: any) {
+      if (!alive) return;
+      setError(e?.message || 'Ошибка загрузки данных');
+    } finally {
+      if (alive) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }, [user]);
+
+  // Первоначальная загрузка списка холодильников
+  useEffect(() => {
+    if (user && user.role === 'admin') {
+      loadFridges(0, true);
+    }
+  }, [user, loadFridges]);
+
+  // Бесконечный скролл
+  useEffect(() => {
+    if (!hasMore || loadingMore || loading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadFridges(fridges.length, false);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [hasMore, loadingMore, loading, fridges.length, loadFridges]);
 
   if (!user || user.role !== 'admin') {
     return (
@@ -109,8 +190,16 @@ export default function AdminDashboard() {
     );
   }
 
-  const totalFridges = fridges.length;
+  // Статистика на основе всех холодильников (для карты)
   const filterQuery = fridgeFilter.trim().toLowerCase();
+  const filteredAllFridges = filterQuery
+    ? allFridges.filter((f) => {
+        const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
+        return text.includes(filterQuery);
+      })
+    : allFridges;
+
+  // Фильтрация загруженных холодильников для списка
   const filteredFridges = filterQuery
     ? fridges.filter((f) => {
         const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
@@ -118,14 +207,13 @@ export default function AdminDashboard() {
       })
     : fridges;
 
-  const todayFridges = filteredFridges.filter((f) => f.status === 'today').length;
-  const weekFridges = filteredFridges.filter((f) => f.status === 'week').length;
-  const oldFridges = filteredFridges.filter((f) => f.status === 'old').length;
+  const todayFridges = filteredAllFridges.filter((f) => f.status === 'today').length;
+  const weekFridges = filteredAllFridges.filter((f) => f.status === 'week').length;
+  const oldFridges = filteredAllFridges.filter((f) => f.status === 'old').length;
   const totalCheckins = checkins.length;
   const uniqueManagers = new Set(checkins.map((c) => c.managerId)).size;
 
   const recentCheckins = checkins.slice(0, 20);
-  const sampleFridges = filteredFridges.slice(0, 50);
 
   return (
     <div className="space-y-6">
@@ -138,7 +226,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <p className="text-sm text-slate-500">Всего холодильников</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{totalFridges}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{allFridges.length}</p>
           <p className="text-xs text-slate-500 mt-2 space-x-2">
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Сегодня: {todayFridges}
@@ -210,11 +298,13 @@ export default function AdminDashboard() {
           )}
         </Card>
 
-        {/* Fridges sample with status (для будущей карты) */}
+        {/* Fridges list with pagination */}
         <Card>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-slate-900">Холодильники (пример)</h2>
-            <Badge variant="info">{sampleFridges.length}</Badge>
+            <h2 className="font-semibold text-slate-900">Холодильники</h2>
+            <Badge variant="info">
+              {filteredFridges.length} {totalFridges > 0 && `из ${totalFridges}`}
+            </Badge>
           </div>
           <div className="mb-3">
             <input
@@ -225,7 +315,13 @@ export default function AdminDashboard() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent"
             />
           </div>
-          {sampleFridges.length === 0 ? (
+          {loading && fridges.length === 0 ? (
+            <div className="space-y-2">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <LoadingCard key={`fridge-loading-${i}`} />
+              ))}
+            </div>
+          ) : filteredFridges.length === 0 ? (
             <EmptyState
               icon="🧊"
               title="Нет холодильников"
@@ -233,7 +329,7 @@ export default function AdminDashboard() {
             />
           ) : (
             <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-              {sampleFridges.map((f) => {
+              {filteredFridges.map((f) => {
                 let statusLabel = 'Нет отметок';
                 let statusColor = 'bg-slate-200 text-slate-700';
                 if (f.status === 'today') {
@@ -279,17 +375,32 @@ export default function AdminDashboard() {
                   </div>
                 );
               })}
+              {/* Индикатор загрузки и триггер для бесконечного скролла */}
+              {hasMore && (
+                <div ref={observerTarget} className="py-4 flex justify-center">
+                  {loadingMore ? (
+                    <LoadingSpinner size="md" />
+                  ) : (
+                    <div className="text-xs text-slate-500">Загрузка...</div>
+                  )}
+                </div>
+              )}
+              {!hasMore && fridges.length > 0 && (
+                <div className="py-2 text-center text-xs text-slate-500">
+                  Загружено все ({fridges.length} из {totalFridges})
+                </div>
+              )}
             </div>
           )}
         </Card>
       </div>
 
-      {/* Карта холодильников (Яндекс) */}
+      {/* Карта холодильников */}
       <Card>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-900">Карта холодильников (Тараз)</h2>
         </div>
-        <AdminFridgeMap fridges={filteredFridges} />
+        <AdminFridgeMap fridges={filteredAllFridges} />
       </Card>
 
       {/* Модальное окно для QR-кода */}

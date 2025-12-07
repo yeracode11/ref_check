@@ -14,9 +14,13 @@ export default function App() {
     { path: '/new', label: 'Новая отметка', icon: '➕' },
   ];
 
-  const adminNavItem = { path: '/admin', label: 'Админ', icon: '🛠️' };
-  const navItems =
-    user?.role === 'admin' ? [...baseNavItems, adminNavItem] : baseNavItems;
+  // Для админа показываем только Холодильники и Админ
+  const adminNavItems = [
+    { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+    { path: '/admin', label: 'Админ', icon: '🛠️' },
+  ];
+  
+  const navItems = user?.role === 'admin' ? adminNavItems : baseNavItems;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -24,7 +28,11 @@ export default function App() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+            <Link 
+              to={user?.role === 'admin' ? '/fridges' : '/'} 
+              className="flex items-center gap-2" 
+              onClick={() => setMobileMenuOpen(false)}
+            >
               <span className="text-2xl">🧊</span>
               <span className="font-bold text-xl text-slate-900 hidden sm:inline">Fridge Manager</span>
               <span className="font-bold text-lg text-slate-900 sm:hidden">FM</span>

@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import './index.css';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRouteGuard from './components/AdminRouteGuard';
 import App from './App';
 import CheckinsList from './pages/CheckinsList';
 import NewCheckin from './pages/NewCheckin';
@@ -24,8 +25,22 @@ const router = createBrowserRouter([
         path: '/',
         element: <App />,
         children: [
-          { index: true, element: <CheckinsList /> },
-          { path: 'new', element: <NewCheckin /> },
+          { 
+            index: true, 
+            element: (
+              <AdminRouteGuard>
+                <CheckinsList />
+              </AdminRouteGuard>
+            ),
+          },
+          { 
+            path: 'new', 
+            element: (
+              <AdminRouteGuard>
+                <NewCheckin />
+              </AdminRouteGuard>
+            ),
+          },
           { path: 'fridges', element: <FridgesList /> },
           { path: 'admin', element: <AdminDashboard /> },
           { path: 'checkin/:code', element: <CheckinPage /> },
