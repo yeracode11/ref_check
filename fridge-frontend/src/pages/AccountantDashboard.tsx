@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../shared/apiClient';
-import { Card, Badge, Button } from '../components/ui/Card';
+import { Card, Badge } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { QRCode } from '../components/ui/QRCode';
+import { FridgeDetailModal } from '../components/FridgeDetailModal';
 
 type ClientInfo = {
   name?: string;
@@ -53,6 +54,7 @@ export default function AccountantDashboard() {
   const [showQRModal, setShowQRModal] = useState(false);
   
   const [selectedFridge, setSelectedFridge] = useState<Fridge | null>(null);
+  const [selectedFridgeDetailId, setSelectedFridgeDetailId] = useState<string | null>(null); // Для детального просмотра
   const [saving, setSaving] = useState(false);
 
   // Форма нового холодильника
@@ -371,6 +373,12 @@ export default function AccountantDashboard() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <button
+                    onClick={() => setSelectedFridgeDetailId(f._id)}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    👁️ Подробнее
+                  </button>
+                  <button
                     onClick={() => openQR(f)}
                     className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors"
                   >
@@ -652,6 +660,14 @@ export default function AccountantDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Модальное окно детального просмотра */}
+      {selectedFridgeDetailId && (
+        <FridgeDetailModal
+          fridgeId={selectedFridgeDetailId}
+          onClose={() => setSelectedFridgeDetailId(null)}
+        />
       )}
 
       {/* Модальное окно: QR-код */}

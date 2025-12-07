@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
+import { FridgeDetailModal } from '../components/FridgeDetailModal';
 
 type City = {
   _id: string;
@@ -32,6 +33,7 @@ export default function FridgesList() {
   const [searchQuery, setSearchQuery] = useState(''); // Фактический запрос для поиска
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [selectedFridgeId, setSelectedFridgeId] = useState<string | null>(null);
   const [citiesLoading, setCitiesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showOnlyActive, setShowOnlyActive] = useState(false);
@@ -314,7 +316,11 @@ export default function FridgesList() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {items.map((f) => (
-              <Card key={f._id} className="hover:shadow-md transition-shadow">
+              <Card 
+                key={f._id} 
+                className="hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
+                onClick={() => setSelectedFridgeId(f._id)}
+              >
                 <div className="space-y-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -332,7 +338,7 @@ export default function FridgesList() {
                     </div>
                   )}
                   
-                  {f.location && (
+                  {f.location && f.location.coordinates[0] !== 0 && (
                     <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded font-mono">
                       {f.location.coordinates[1].toFixed(6)}, {f.location.coordinates[0].toFixed(6)}
                     </div>
@@ -343,6 +349,15 @@ export default function FridgesList() {
                       {f.description}
                     </div>
                   )}
+                  
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setSelectedFridgeId(f._id); }}
+                      className="text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors font-medium"
+                    >
+                      👁️ Подробнее
+                    </button>
+                  </div>
                 </div>
               </Card>
             ))}
@@ -366,6 +381,14 @@ export default function FridgesList() {
             </div>
           )}
         </>
+      )}
+
+      {/* Модальное окно детального просмотра */}
+      {selectedFridgeId && (
+        <FridgeDetailModal
+          fridgeId={selectedFridgeId}
+          onClose={() => setSelectedFridgeId(null)}
+        />
       )}
     </div>
   );

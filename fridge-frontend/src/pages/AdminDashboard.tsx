@@ -5,6 +5,8 @@ import { Card, Badge, Button } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
 import { QRCode } from '../components/ui/QRCode';
+import { FridgeDetailModal } from '../components/FridgeDetailModal';
+import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 
 type ClientInfo = {
   name?: string;
@@ -59,6 +61,7 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [fridgeFilter, setFridgeFilter] = useState('');
   const [selectedQRFridge, setSelectedQRFridge] = useState<AdminFridge | null>(null);
+  const [selectedFridgeId, setSelectedFridgeId] = useState<string | null>(null); // Для детального просмотра
   const [hasMore, setHasMore] = useState(false);
   const [totalFridges, setTotalFridges] = useState(0);
   const [exporting, setExporting] = useState(false);
@@ -674,7 +677,8 @@ export default function AdminDashboard() {
                 return (
                   <div
                     key={f.id}
-                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex flex-col gap-1 bg-white"
+                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex flex-col gap-1 bg-white hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+                    onClick={() => setSelectedFridgeId(f.id)}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
@@ -692,9 +696,15 @@ export default function AdminDashboard() {
                         <span className="text-slate-400">📍</span> {f.address}
                       </p>
                     )}
-                    <div className="flex justify-end pt-1">
+                    <div className="flex justify-end gap-2 pt-1">
                       <button
-                        onClick={() => setSelectedQRFridge(f)}
+                        onClick={(e) => { e.stopPropagation(); setSelectedFridgeId(f.id); }}
+                        className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors"
+                      >
+                        👁️ Подробнее
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedQRFridge(f); }}
                         className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
                       >
                         📱 QR-код
@@ -730,6 +740,9 @@ export default function AdminDashboard() {
         </div>
         <AdminFridgeMap fridges={filteredAllFridges} />
       </Card>
+
+      {/* Аналитика */}
+      <AnalyticsPanel />
 
       {/* Модальное окно для добавления холодильника */}
       {showAddFridgeModal && (
@@ -826,6 +839,14 @@ export default function AdminDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Модальное окно детального просмотра холодильника */}
+      {selectedFridgeId && (
+        <FridgeDetailModal
+          fridgeId={selectedFridgeId}
+          onClose={() => setSelectedFridgeId(null)}
+        />
       )}
 
       {/* Модальное окно для QR-кода */}

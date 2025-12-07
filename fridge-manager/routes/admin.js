@@ -486,6 +486,153 @@ router.post('/fridges', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/fridges/:id/checkins
+// История посещений конкретного холодильника
+router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit = 50 } = req.query;
+
+    const fridge = await Fridge.findById(id);
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    // Получаем чек-ины по коду холодильника
+    const checkins = await Checkin.find({ fridgeId: fridge.code })
+      .sort({ visitedAt: -1 })
+      .limit(parseInt(limit, 10));
+
+    return res.json(checkins);
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка получения истории', details: err.message });
+  }
+});
+
+// GET /api/admin/analytics
+// Аналитика: посещения по дням, статистика по менеджерам, топ непосещаемых
+router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { days = 30 } = req.query;
+    const daysNum = parseInt(days, 10) || 30;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysNum);
+    startDate.setHours(0, 0, 0, 0);
+
+    // 1. Посещения по дням
+    const checkinsByDay = await Checkin.aggregate([
+      { $match: { visitedAt: { $gte: startDate } } },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$visitedAt' },
+            month: { $month: '$visitedAt' },
+            day: { $dayOfMonth: '$visitedAt' },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+    ]);
+
+    // Преобразуем в удобный формат
+    const dailyCheckins = checkinsByDay.map((item) => ({
+      date: `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${String(item._id.day).padStart(2, '0')}`,
+      count: item.count,
+    }));
+
+    // 2. Статистика по менеджерам
+    const managerStats = await Checkin.aggregate([
+      { $match: { visitedAt: { $gte: startDate } } },
+      {
+        $group: {
+          _id: '$managerId',
+          count: { $sum: 1 },
+          lastVisit: { $max: '$visitedAt' },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]);
+
+    // 3. Топ непосещаемых холодильников
+    const allFridges = await Fridge.find({ active: true }).select('code name address');
+    const lastCheckins = await Checkin.aggregate([
+      { $sort: { visitedAt: -1 } },
+      {
+        $group: {
+          _id: '$fridgeId',
+          lastVisit: { $first: '$visitedAt' },
+        },
+      },
+    ]);
+
+    const lastVisitMap = new Map();
+    lastCheckins.forEach((c) => lastVisitMap.set(c._id, c.lastVisit));
+
+    const fridgesWithLastVisit = allFridges.map((f) => ({
+      code: f.code,
+      name: f.name,
+      address: f.address,
+      lastVisit: lastVisitMap.get(f.code) || null,
+      daysSinceVisit: lastVisitMap.get(f.code)
+        ? Math.floor((Date.now() - new Date(lastVisitMap.get(f.code)).getTime()) / (1000 * 60 * 60 * 24))
+        : null,
+    }));
+
+    // Сортируем: сначала те, кто никогда не посещался, потом по давности
+    const topUnvisited = fridgesWithLastVisit
+      .sort((a, b) => {
+        if (a.lastVisit === null && b.lastVisit === null) return 0;
+        if (a.lastVisit === null) return -1;
+        if (b.lastVisit === null) return 1;
+        return new Date(a.lastVisit).getTime() - new Date(b.lastVisit).getTime();
+      })
+      .slice(0, 20);
+
+    // 4. Общая статистика
+    const totalFridges = await Fridge.countDocuments({ active: true });
+    const totalCheckins = await Checkin.countDocuments({ visitedAt: { $gte: startDate } });
+    const uniqueManagers = await Checkin.distinct('managerId', { visitedAt: { $gte: startDate } });
+    
+    // Холодильники по статусам
+    const fridgesByStatus = await Fridge.aggregate([
+      { $match: { active: true } },
+      {
+        $group: {
+          _id: '$warehouseStatus',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const statusCounts = {
+      warehouse: 0,
+      installed: 0,
+      returned: 0,
+    };
+    fridgesByStatus.forEach((s) => {
+      if (s._id) statusCounts[s._id] = s.count;
+    });
+
+    return res.json({
+      dailyCheckins,
+      managerStats,
+      topUnvisited,
+      summary: {
+        totalFridges,
+        totalCheckins,
+        uniqueManagers: uniqueManagers.length,
+        avgCheckinsPerDay: daysNum > 0 ? Math.round(totalCheckins / daysNum * 10) / 10 : 0,
+        fridgesByStatus: statusCounts,
+      },
+    });
+  } catch (err) {
+    console.error('Analytics error:', err);
+    return res.status(500).json({ error: 'Ошибка получения аналитики', details: err.message });
+  }
+});
+
 module.exports = router;
 
 
