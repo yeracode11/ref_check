@@ -77,7 +77,8 @@ export default function AdminDashboard() {
   const [creatingFridge, setCreatingFridge] = useState(false);
   const [cities, setCities] = useState<Array<{ _id: string; name: string; code: string }>>([]);
   const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>('all'); // 'all' для всех городов
-  const [showOnlyVisited, setShowOnlyVisited] = useState<boolean>(false); // Показывать только холодильники с отметками
+  // Показывать только холодильники с отметками (по умолчанию включено, чтобы очистить карту после удаления отметок)
+  const [showOnlyVisited, setShowOnlyVisited] = useState<boolean>(true);
   const observerTarget = useRef<HTMLDivElement | null>(null);
 
   // Загрузка городов
