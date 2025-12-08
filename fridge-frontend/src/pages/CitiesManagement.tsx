@@ -155,8 +155,10 @@ export default function CitiesManagement() {
     setFridgesError(null);
     
     try {
-      const res = await api.get(`/api/fridges?cityId=${city._id}&limit=1000`);
-      setFridges(res.data.data || res.data);
+      // Загружаем все холодильники города (до 10000 для админа)
+      const res = await api.get(`/api/fridges?cityId=${city._id}&limit=10000`);
+      const fridgesData = res.data.data || res.data;
+      setFridges(Array.isArray(fridgesData) ? fridgesData : []);
       setFridgesError(null);
     } catch (e: any) {
       setFridgesError(e?.response?.data?.error || e.message || 'Ошибка загрузки');
@@ -434,8 +436,13 @@ export default function CitiesManagement() {
                     <p className="text-sm text-blue-800">
                       Всего холодильников: <span className="font-semibold">{fridges.length}</span>
                     </p>
+                    {fridges.length > 100 && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        💡 Прокрутите список для просмотра всех холодильников
+                      </p>
+                    )}
                   </div>
-                  <div className="grid gap-3">
+                  <div className="grid gap-3 max-h-[60vh] overflow-y-auto pr-2">
                     {fridges.map((fridge) => (
                       <Card key={fridge._id} className="hover:shadow-md transition-shadow">
                         <div className="flex items-start justify-between gap-4">

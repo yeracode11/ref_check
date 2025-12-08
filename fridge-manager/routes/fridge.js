@@ -49,7 +49,10 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     // Пагинация
-    const limitNum = limit ? Math.max(1, Math.min(100, Number(limit))) : 50; // по умолчанию 50, максимум 100
+    // Для админа разрешаем загружать больше (до 10000), для остальных максимум 100
+    const isAdmin = req.user?.role === 'admin';
+    const maxLimit = isAdmin ? 10000 : 100;
+    const limitNum = limit ? Math.max(1, Math.min(maxLimit, Number(limit))) : 50;
     const skipNum = skip ? Math.max(0, Number(skip)) : 0;
 
     // Получаем общее количество для пагинации
