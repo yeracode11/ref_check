@@ -413,10 +413,14 @@ export default function AdminDashboard() {
   // Статистика на основе всех холодильников (для карты)
   const filterQuery = fridgeFilter.trim().toLowerCase();
   
-  // Фильтруем холодильники для карты: показываем только те, у которых есть отметки (status !== 'never')
-  // Если отметок нет, все холодильники будут иметь status = 'never', поэтому карта будет пустой автоматически
-  // Показываем все холодильники с отметками, включая те, что на складе (warehouse)
-  const fridgesWithCheckins = allFridges.filter(f => f.status !== 'never');
+  // Фильтруем холодильники для карты: показываем только те, у которых есть реальные отметки посещений
+  // Проверяем visitStatus (статус последнего визита), а не общий status
+  // Холодильники со статусом 'warehouse' без отметок не должны показываться
+  const fridgesWithCheckins = allFridges.filter(f => {
+    // Показываем только если есть реальная отметка посещения (visitStatus !== 'never')
+    // или если есть lastVisit (дата последнего посещения)
+    return f.visitStatus && f.visitStatus !== 'never' || f.lastVisit;
+  });
   
   const fridgesForMap: AdminFridge[] = filterQuery
     ? fridgesWithCheckins.filter((f) => {
