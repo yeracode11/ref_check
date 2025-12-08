@@ -92,7 +92,8 @@ router.get('/', authenticateToken, async (req, res) => {
     // Фильтрация по роли пользователя
     if (req.user.role === 'manager') {
       // Менеджеры видят только свои отметки
-      filter.managerId = req.user.id;
+      // Учитываем старые записи, где сохраняли username вместо _id
+      filter.managerId = { $in: [req.user.id, req.user.username] };
     } else if (req.user.role === 'accountant' && req.user.cityId) {
       // Бухгалтеры видят отметки только из своего города
       // Нужно найти все холодильники из их города
@@ -136,8 +137,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Not found' });
 
     // Проверка доступа
-    if (req.user.role === 'manager' && item.managerId !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
+    if (req.user.role === 'manager') {
+      if (item.managerId !== req.user.id && item.managerId !== req.user.username) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     } else if (req.user.role === 'accountant' && req.user.cityId) {
       // Проверить, что холодильник из города бухгалтера
       const fridge = await Fridge.findOne({ code: item.fridgeId });
