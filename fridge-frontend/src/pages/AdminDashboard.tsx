@@ -77,8 +77,7 @@ export default function AdminDashboard() {
   const [creatingFridge, setCreatingFridge] = useState(false);
   const [cities, setCities] = useState<Array<{ _id: string; name: string; code: string }>>([]);
   const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>('all'); // 'all' для всех городов
-  // Показывать только холодильники с отметками (по умолчанию включено, чтобы очистить карту после удаления отметок)
-  const [showOnlyVisited, setShowOnlyVisited] = useState<boolean>(true);
+  // Метки на карте отключены по требованию (показываем пустую карту)
   const observerTarget = useRef<HTMLDivElement | null>(null);
 
   // Загрузка городов
@@ -413,27 +412,15 @@ export default function AdminDashboard() {
 
   // Статистика на основе всех холодильников (для карты)
   const filterQuery = fridgeFilter.trim().toLowerCase();
-  
-  // Фильтрация по городу для карты
-  let fridgesByCity = allFridges;
-  if (selectedCityIdForMap !== 'all') {
-    fridgesByCity = allFridges.filter((f) => {
-      // Проверяем по _id или по code города
-      return f.city?._id === selectedCityIdForMap || f.city?.code === selectedCityIdForMap;
-    });
-  }
-
-  // Фильтрация по наличию отметок (только посещенные)
-  const fridgesByVisited = showOnlyVisited
-    ? fridgesByCity.filter((f) => f.visitStatus && f.visitStatus !== 'never')
-    : fridgesByCity;
-  
-  const filteredAllFridges = filterQuery
-    ? fridgesByVisited.filter((f) => {
+  // Если отметок нет — не показываем метки на карте
+  const baseMapFridges: AdminFridge[] = checkins.length === 0 ? [] : allFridges;
+  const fridgesForMap: AdminFridge[] = filterQuery
+    ? baseMapFridges.filter((f) => {
         const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
         return text.includes(filterQuery);
       })
-    : fridgesByVisited;
+    : baseMapFridges;
+  const filteredAllFridges = allFridges;
 
   // Фильтрация загруженных холодильников для списка
   const filteredFridges = filterQuery
@@ -791,37 +778,11 @@ export default function AdminDashboard() {
             )}
           </h2>
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Фильтр по городу:</label>
-              <select
-                value={selectedCityIdForMap}
-                onChange={(e) => setSelectedCityIdForMap(e.target.value)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[180px] shadow-sm"
-              >
-                <option value="all">🌍 Все города</option>
-                {cities.map((city) => (
-                  <option key={city._id} value={city._id}>
-                    {city.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={showOnlyVisited}
-                onChange={(e) => setShowOnlyVisited(e.target.checked)}
-                className="rounded border-slate-300 text-slate-600 focus:ring-slate-500"
-              />
-              Только с отметками
-            </label>
-
             {checkins.length > 0 && (
               <button
                 onClick={() => setShowDeleteAllCheckins(true)}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium shadow-sm flex items-center gap-2"
-                title="Удалить все отметки и очистить метки на карте"
+                title="Удалить все отметки и очистить карту"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -831,17 +792,15 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
-        {filteredAllFridges.length === 0 && selectedCityIdForMap !== 'all' ? (
+        {fridgesForMap.length === 0 ? (
           <div className="h-[500px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200">
             <div className="text-center">
               <p className="text-slate-500 mb-2 text-lg">Нет холодильников для отображения</p>
-              <p className="text-sm text-slate-400">
-                В выбранном городе нет холодильников
-              </p>
+              <p className="text-sm text-slate-400">Метки отключены.</p>
             </div>
           </div>
         ) : (
-          <AdminFridgeMap fridges={filteredAllFridges} />
+          <AdminFridgeMap fridges={fridgesForMap} />
         )}
       </Card>
 
@@ -1015,7 +974,6 @@ export default function AdminDashboard() {
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
                     setAllFridges(fridgeStatusRes.data);
-                    setShowOnlyVisited(true); // скрываем пустые метки после удаления
                     setDeleteCheckinId(null);
                     alert('Отметка удалена. Карта обновлена.');
                   } catch (e: any) {
@@ -1062,7 +1020,6 @@ export default function AdminDashboard() {
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
                     setAllFridges(fridgeStatusRes.data);
-                    setShowOnlyVisited(true); // скрываем пустые метки после очистки
                     setShowDeleteAllCheckins(false);
                     alert('Все отметки удалены. Карта обновлена.');
                   } catch (e: any) {
