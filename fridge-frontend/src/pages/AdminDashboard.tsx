@@ -1003,11 +1003,13 @@ export default function AdminDashboard() {
       {showDeleteAllCheckins && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllCheckins(false)}>
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить все отметки?</h3>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">🗑️ Удалить все отметки?</h3>
             <p className="text-slate-600 mb-4">
               Вы уверены, что хотите удалить <strong>все {checkins.length} отметок</strong>?
               <br /><br />
-              <span className="text-red-600 text-sm font-medium">⚠️ Это действие нельзя отменить. Все данные об отметках будут безвозвратно удалены.</span>
+              <span className="text-red-600 text-sm font-medium">⚠️ Это действие нельзя отменить.</span>
+              <br />
+              <span className="text-slate-500 text-sm">После удаления все метки на карте исчезнут, и карта станет пустой.</span>
             </p>
             <div className="flex gap-3">
               <button
