@@ -77,6 +77,7 @@ export default function AdminDashboard() {
   const [creatingFridge, setCreatingFridge] = useState(false);
   const [cities, setCities] = useState<Array<{ _id: string; name: string; code: string }>>([]);
   const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>('all'); // 'all' для всех городов
+  const [showOnlyVisited, setShowOnlyVisited] = useState<boolean>(false); // Показывать только холодильники с отметками
   const observerTarget = useRef<HTMLDivElement | null>(null);
 
   // Загрузка городов
@@ -420,13 +421,18 @@ export default function AdminDashboard() {
       return f.city?._id === selectedCityIdForMap || f.city?.code === selectedCityIdForMap;
     });
   }
+
+  // Фильтрация по наличию отметок (только посещенные)
+  const fridgesByVisited = showOnlyVisited
+    ? fridgesByCity.filter((f) => f.visitStatus && f.visitStatus !== 'never')
+    : fridgesByCity;
   
   const filteredAllFridges = filterQuery
-    ? fridgesByCity.filter((f) => {
+    ? fridgesByVisited.filter((f) => {
         const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
         return text.includes(filterQuery);
       })
-    : fridgesByCity;
+    : fridgesByVisited;
 
   // Фильтрация загруженных холодильников для списка
   const filteredFridges = filterQuery
@@ -799,6 +805,17 @@ export default function AdminDashboard() {
                 ))}
               </select>
             </div>
+
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={showOnlyVisited}
+                onChange={(e) => setShowOnlyVisited(e.target.checked)}
+                className="rounded border-slate-300 text-slate-600 focus:ring-slate-500"
+              />
+              Только с отметками
+            </label>
+
             {checkins.length > 0 && (
               <button
                 onClick={() => setShowDeleteAllCheckins(true)}
@@ -997,6 +1014,7 @@ export default function AdminDashboard() {
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
                     setAllFridges(fridgeStatusRes.data);
+                    setShowOnlyVisited(true); // скрываем пустые метки после удаления
                     setDeleteCheckinId(null);
                     alert('Отметка удалена. Карта обновлена.');
                   } catch (e: any) {
@@ -1043,6 +1061,7 @@ export default function AdminDashboard() {
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
                     setAllFridges(fridgeStatusRes.data);
+                    setShowOnlyVisited(true); // скрываем пустые метки после очистки
                     setShowDeleteAllCheckins(false);
                     alert('Все отметки удалены. Карта обновлена.');
                   } catch (e: any) {
