@@ -175,6 +175,20 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// DELETE /api/checkins
+// Удалить все отметки (только для админа)
+router.delete('/', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await Checkin.deleteMany({});
+    return res.json({ 
+      message: 'Все отметки удалены', 
+      deletedCount: result.deletedCount 
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка удаления отметок', details: err.message });
+  }
+});
+
 module.exports = router;
 
 

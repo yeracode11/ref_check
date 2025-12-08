@@ -65,6 +65,8 @@ export default function AdminDashboard() {
   const [totalFridges, setTotalFridges] = useState(0);
   const [deleteCheckinId, setDeleteCheckinId] = useState<number | null>(null); // Для подтверждения удаления отметки
   const [deletingCheckin, setDeletingCheckin] = useState(false);
+  const [showDeleteAllCheckins, setShowDeleteAllCheckins] = useState(false); // Для подтверждения удаления всех отметок
+  const [deletingAllCheckins, setDeletingAllCheckins] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -599,7 +601,18 @@ export default function AdminDashboard() {
         <Card>
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-slate-900">Последние отметки</h2>
-            <Badge variant="info">{recentCheckins.length}</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="info">{recentCheckins.length}</Badge>
+              {checkins.length > 0 && (
+                <button
+                  onClick={() => setShowDeleteAllCheckins(true)}
+                  className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium"
+                  title="Удалить все отметки"
+                >
+                  🗑️ Удалить все
+                </button>
+              )}
+            </div>
           </div>
           {recentCheckins.length === 0 ? (
             <EmptyState
@@ -983,6 +996,49 @@ export default function AdminDashboard() {
               <button
                 onClick={() => setDeleteCheckinId(null)}
                 disabled={deletingCheckin}
+                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно подтверждения удаления всех отметок */}
+      {showDeleteAllCheckins && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllCheckins(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить все отметки?</h3>
+            <p className="text-slate-600 mb-4">
+              Вы уверены, что хотите удалить <strong>все {checkins.length} отметок</strong>?
+              <br /><br />
+              <span className="text-red-600 text-sm font-medium">⚠️ Это действие нельзя отменить. Все данные об отметках будут безвозвратно удалены.</span>
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  try {
+                    setDeletingAllCheckins(true);
+                    await api.delete('/api/checkins');
+                    // Обновляем список отметок
+                    setCheckins([]);
+                    setShowDeleteAllCheckins(false);
+                    alert('Все отметки удалены');
+                  } catch (e: any) {
+                    alert('Ошибка: ' + (e?.response?.data?.error || e.message));
+                  } finally {
+                    setDeletingAllCheckins(false);
+                  }
+                }}
+                disabled={deletingAllCheckins}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium"
+              >
+                {deletingAllCheckins ? 'Удаление...' : '🗑️ Удалить все'}
+              </button>
+              <button
+                onClick={() => setShowDeleteAllCheckins(false)}
+                disabled={deletingAllCheckins}
                 className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
               >
                 Отмена
