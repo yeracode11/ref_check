@@ -14,8 +14,8 @@ router.get('/', authenticateToken, async (req, res) => {
     const filter = {};
     if (active !== undefined) filter.active = active === 'true';
     
-    // Для бухгалтера - показываем только его город
-    if (req.user.role === 'accountant' && req.user.cityId) {
+    // Для бухгалтера и менеджера - показываем только их город (если указан)
+    if ((req.user.role === 'accountant' || req.user.role === 'manager') && req.user.cityId) {
       filter.cityId = req.user.cityId;
     } else if (cityId) {
       filter.cityId = cityId;

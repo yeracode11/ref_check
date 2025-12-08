@@ -29,6 +29,7 @@ const SEARCH_DEBOUNCE_MS = 500; // Задержка перед поиском (�
 export default function FridgesList() {
   const { user } = useAuth();
   const isAccountant = user?.role === 'accountant';
+  const isManager = user?.role === 'manager';
   
   const [items, setItems] = useState<Fridge[]>([]);
   const [cities, setCities] = useState<City[]>([]);
@@ -56,11 +57,14 @@ export default function FridgesList() {
         if (!alive) return;
         setCities(res.data);
         
-        // Для бухгалтера - находим название его города
-        if (isAccountant && user?.cityId) {
-          const accountantCity = res.data.find((c: City) => c._id === user.cityId);
-          if (accountantCity) {
-            setAccountantCityName(accountantCity.name);
+        // Для бухгалтера и менеджера - выбираем их город
+        if ((isAccountant || isManager) && user?.cityId) {
+          const city = res.data.find((c: City) => c._id === user.cityId);
+          if (city) {
+            setAccountantCityName(city.name);
+            setSelectedCityId(city._id);
+          } else if (res.data.length > 0 && !selectedCityId) {
+            setSelectedCityId(res.data[0]._id);
           }
         } else if (res.data.length > 0 && !selectedCityId) {
           // Для остальных - автоматически выбираем первый город
@@ -78,7 +82,7 @@ export default function FridgesList() {
   // Загрузка холодильников (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
     // Для бухгалтера город фильтруется на бэкенде, для остальных нужен выбор
-    if (!isAccountant && !selectedCityId) {
+    if (!isAccountant && !isManager && !selectedCityId) {
       setItems([]);
       setLoading(false);
       return;
@@ -94,8 +98,8 @@ export default function FridgesList() {
     try {
       const params = new URLSearchParams();
       if (showOnlyActive) params.append('active', 'true');
-      // Для бухгалтера город добавляется на бэкенде автоматически
-      if (!isAccountant && selectedCityId) {
+      // Для бухгалтера/менеджера город добавляется на бэкенде автоматически
+      if (!isAccountant && !isManager && selectedCityId) {
         params.append('cityId', selectedCityId);
       }
       if (searchQuery.trim()) {
@@ -127,7 +131,7 @@ export default function FridgesList() {
         setLoadingMore(false);
       }
     }
-  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant]);
+  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant, isManager]);
 
   // Debounce для поиска - обновляем searchQuery после задержки
   useEffect(() => {
@@ -152,10 +156,10 @@ export default function FridgesList() {
   // Загрузка при изменении фильтров
   useEffect(() => {
     // Для бухгалтера загружаем сразу, для остальных - когда выбран город
-    if (isAccountant || selectedCityId) {
+    if (isAccountant || isManager || selectedCityId) {
       loadFridges(0, true);
     }
-  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant]);
+  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant, isManager]);
 
   // Бесконечный скролл
   useEffect(() => {
@@ -239,7 +243,7 @@ export default function FridgesList() {
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Город
               </label>
-              {isAccountant ? (
+              {isAccountant || isManager ? (
                 <div className="w-full rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-800 font-medium">
                   📍 {accountantCityName || 'Город не назначен'}
                 </div>
