@@ -99,7 +99,7 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics' }: AnalyticsP
   }
 
   const statusData = [
-    { name: 'На складе', value: data.summary.fridgesByStatus.warehouse, color: '#ff9800' },
+    { name: 'На складе', value: data.summary.fridgesByStatus.warehouse, color: '#2196F3' },
     { name: 'Установлен', value: data.summary.fridgesByStatus.installed, color: '#4caf50' },
     { name: 'Возврат', value: data.summary.fridgesByStatus.returned, color: '#f44336' },
   ].filter(s => s.value > 0);

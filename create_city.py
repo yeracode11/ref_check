@@ -18,7 +18,7 @@ city = {
 }
 
 # Проверяем, существует ли уже город
-existing_city = cities_collection.find_one({"code": "taras"})
+existing_city = cities_collection.find_one({"code": "08"})
 
 if existing_city:
     print(f"✅ Город 'Тараз' уже существует (ID: {existing_city['_id']})")

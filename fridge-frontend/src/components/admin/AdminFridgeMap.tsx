@@ -21,14 +21,14 @@ type Props = {
 };
 
 // Иконки для разных статусов
-// warehouse (на складе/возврат) = оранжево-желтый
+// warehouse (на складе/возврат) = синий
 // today (установлен + сегодня) = зеленый
 // week (установлен + неделя) = желтый
 // old (установлен + давно) = красный
 // never = серый
 function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse'): L.DivIcon {
   let color = '#999999'; // серый по умолчанию
-  if (status === 'warehouse') color = '#ff9800'; // оранжевый (склад/возврат)
+  if (status === 'warehouse') color = '#2196F3'; // синий (склад/возврат)
   else if (status === 'today') color = '#28a745'; // зелёный
   else if (status === 'week') color = '#ffc107'; // жёлтый
   else if (status === 'old') color = '#dc3545'; // красный
@@ -44,7 +44,7 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse')
 // Функция для определения цвета кластера по статусам
 function getClusterColor(statuses: string[]): string {
   if (statuses.includes('today')) return '#28a745'; // зелёный
-  if (statuses.includes('warehouse')) return '#ff9800'; // оранжевый (склад)
+  if (statuses.includes('warehouse')) return '#2196F3'; // синий (склад)
   if (statuses.includes('week')) return '#ffc107'; // жёлтый
   if (statuses.includes('old')) return '#dc3545'; // красный
   return '#999999'; // серый

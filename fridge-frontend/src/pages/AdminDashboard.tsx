@@ -422,12 +422,21 @@ export default function AdminDashboard() {
     return f.visitStatus && f.visitStatus !== 'never' || f.lastVisit;
   });
   
+  // Фильтрация по городу для карты
+  let fridgesByCity = fridgesWithCheckins;
+  if (selectedCityIdForMap !== 'all') {
+    fridgesByCity = fridgesWithCheckins.filter((f) => {
+      // Проверяем по _id или по code города
+      return f.city?._id === selectedCityIdForMap || f.city?.code === selectedCityIdForMap;
+    });
+  }
+  
   const fridgesForMap: AdminFridge[] = filterQuery
-    ? fridgesWithCheckins.filter((f) => {
+    ? fridgesByCity.filter((f) => {
         const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
         return text.includes(filterQuery);
       })
-    : fridgesWithCheckins;
+    : fridgesByCity;
   const filteredAllFridges = allFridges;
 
   // Фильтрация загруженных холодильников для списка
@@ -567,7 +576,7 @@ export default function AdminDashboard() {
           <p className="text-2xl font-bold text-slate-900 mt-1">{allFridges.length}</p>
           <div className="text-xs text-slate-500 mt-2 flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-orange-500" /> На складе: {warehouseFridges}
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-500" /> На складе: {warehouseFridges}
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Сегодня: {todayFridges}
@@ -703,7 +712,7 @@ export default function AdminDashboard() {
                 let statusColor = 'bg-slate-200 text-slate-700';
                 if (f.status === 'warehouse') {
                   statusLabel = f.warehouseStatus === 'returned' ? 'Возврат' : 'На складе';
-                  statusColor = 'bg-orange-100 text-orange-700';
+                  statusColor = 'bg-blue-100 text-blue-700';
                 } else if (f.status === 'today') {
                   statusLabel = 'Сегодня';
                   statusColor = 'bg-green-100 text-green-700';
@@ -786,6 +795,21 @@ export default function AdminDashboard() {
             )}
           </h2>
           <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Фильтр по городу:</label>
+              <select
+                value={selectedCityIdForMap}
+                onChange={(e) => setSelectedCityIdForMap(e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px] shadow-sm"
+              >
+                <option value="all">🌍 Все города</option>
+                {cities.map((city) => (
+                  <option key={city._id} value={city._id}>
+                    {city.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             {checkins.length > 0 && (
               <button
                 onClick={() => setShowDeleteAllCheckins(true)}

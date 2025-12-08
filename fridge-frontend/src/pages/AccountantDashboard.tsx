@@ -275,11 +275,11 @@ export default function AccountantDashboard() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'warehouse':
-        return <Badge className="bg-orange-100 text-orange-700">На складе</Badge>;
+        return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
       case 'installed':
         return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
       case 'returned':
-        return <Badge className="bg-orange-100 text-orange-700">Возврат</Badge>;
+        return <Badge className="bg-blue-100 text-blue-700">Возврат</Badge>;
       default:
         return <Badge className="bg-slate-100 text-slate-700">{status}</Badge>;
     }
@@ -392,7 +392,7 @@ export default function AccountantDashboard() {
                   </button>
                   <button
                     onClick={() => openStatusChange(f)}
-                    className="px-3 py-1.5 text-sm bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors"
+                    className="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
                   >
                     {f.warehouseStatus === 'installed' ? 'Возврат' : 'Установить'}
                   </button>
@@ -636,7 +636,7 @@ export default function AccountantDashboard() {
                 onClick={handleChangeStatus}
                 disabled={saving}
                 className={`flex-1 px-4 py-2 text-white rounded-lg disabled:opacity-50 transition-colors font-medium ${
-                  statusForm.warehouseStatus === 'installed' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'
+                  statusForm.warehouseStatus === 'installed' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'
                 }`}
               >
                 {saving ? 'Сохранение...' : statusForm.warehouseStatus === 'installed' ? 'Установить' : 'Вернуть на склад'}

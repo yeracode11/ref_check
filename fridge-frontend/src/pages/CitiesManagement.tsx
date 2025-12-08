@@ -171,7 +171,7 @@ export default function CitiesManagement() {
   function getStatusBadge(status?: string) {
     switch (status) {
       case 'warehouse':
-        return <Badge className="bg-orange-100 text-orange-700">На складе</Badge>;
+        return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
       case 'installed':
         return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
       case 'returned':
