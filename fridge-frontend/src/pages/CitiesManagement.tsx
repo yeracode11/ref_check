@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
-import { LoadingCard, EmptyState } from '../components/ui/Loading';
+import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 
 type City = {
   _id: string;
@@ -15,6 +15,15 @@ type City = {
 type CityForm = {
   name: string;
   code: string;
+  active: boolean;
+};
+
+type Fridge = {
+  _id: string;
+  code: string;
+  name: string;
+  address?: string;
+  warehouseStatus?: 'warehouse' | 'installed' | 'returned';
   active: boolean;
 };
 
@@ -36,6 +45,13 @@ export default function CitiesManagement() {
   const [form, setForm] = useState<CityForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<City | null>(null);
+  
+  // Модальное окно со списком холодильников
+  const [showFridgesModal, setShowFridgesModal] = useState(false);
+  const [selectedCityForFridges, setSelectedCityForFridges] = useState<City | null>(null);
+  const [fridges, setFridges] = useState<Fridge[]>([]);
+  const [fridgesLoading, setFridgesLoading] = useState(false);
+  const [fridgesError, setFridgesError] = useState<string | null>(null);
 
   // Загрузка данных
   useEffect(() => {
@@ -131,6 +147,38 @@ export default function CitiesManagement() {
     }
   };
 
+  // Открыть модальное окно со списком холодильников города
+  const openFridgesModal = async (city: City) => {
+    setSelectedCityForFridges(city);
+    setShowFridgesModal(true);
+    setFridgesLoading(true);
+    setFridgesError(null);
+    
+    try {
+      const res = await api.get(`/api/fridges?cityId=${city._id}&limit=1000`);
+      setFridges(res.data.data || res.data);
+      setFridgesError(null);
+    } catch (e: any) {
+      setFridgesError(e?.response?.data?.error || e.message || 'Ошибка загрузки');
+      setFridges([]);
+    } finally {
+      setFridgesLoading(false);
+    }
+  };
+
+  function getStatusBadge(status?: string) {
+    switch (status) {
+      case 'warehouse':
+        return <Badge className="bg-orange-100 text-orange-700">На складе</Badge>;
+      case 'installed':
+        return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
+      case 'returned':
+        return <Badge className="bg-yellow-100 text-yellow-700">Возврат</Badge>;
+      default:
+        return null;
+    }
+  }
+
   if (!currentUser || currentUser.role !== 'admin') {
     return (
       <Card>
@@ -189,7 +237,11 @@ export default function CitiesManagement() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {cities.map((city) => (
-            <Card key={city._id} className={!city.active ? 'opacity-60' : ''}>
+            <Card 
+              key={city._id} 
+              className={`${!city.active ? 'opacity-60' : ''} cursor-pointer hover:shadow-md hover:border-blue-300 transition-all`}
+              onClick={() => openFridgesModal(city)}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
@@ -206,8 +258,11 @@ export default function CitiesManagement() {
                   <p className="text-xs text-slate-400 mt-1">
                     Создан: {new Date(city.createdAt).toLocaleDateString('ru-RU')}
                   </p>
+                  <p className="text-xs text-blue-600 mt-2 font-medium">
+                    👆 Кликните, чтобы увидеть холодильники
+                  </p>
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => openEditModal(city)}
                     className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
@@ -327,6 +382,93 @@ export default function CitiesManagement() {
                 className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
               >
                 Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно со списком холодильников города */}
+      {showFridgesModal && selectedCityForFridges && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowFridgesModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Заголовок */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900">
+                  Холодильники города: {selectedCityForFridges.name}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Код города: <span className="font-mono">{selectedCityForFridges.code}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setShowFridgesModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Содержимое */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {fridgesLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <LoadingSpinner />
+                </div>
+              ) : fridgesError ? (
+                <div className="text-center py-12">
+                  <p className="text-red-600">{fridgesError}</p>
+                </div>
+              ) : fridges.length === 0 ? (
+                <EmptyState 
+                  icon="🧊"
+                  title="Нет холодильников"
+                  description={`В городе "${selectedCityForFridges.name}" пока нет холодильников.`}
+                />
+              ) : (
+                <div className="space-y-3">
+                  <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      Всего холодильников: <span className="font-semibold">{fridges.length}</span>
+                    </p>
+                  </div>
+                  <div className="grid gap-3">
+                    {fridges.map((fridge) => (
+                      <Card key={fridge._id} className="hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="font-semibold text-slate-900">{fridge.name}</span>
+                              {getStatusBadge(fridge.warehouseStatus)}
+                              {!fridge.active && (
+                                <Badge className="bg-red-100 text-red-700 text-xs">Неактивен</Badge>
+                              )}
+                            </div>
+                            <div className="text-sm text-slate-600 space-y-1">
+                              <p><span className="text-slate-500">Код:</span> <span className="font-mono">{fridge.code}</span></p>
+                              {fridge.address && (
+                                <p><span className="text-slate-500">Адрес:</span> {fridge.address}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Футер */}
+            <div className="p-6 border-t border-slate-200 bg-slate-50">
+              <button
+                onClick={() => setShowFridgesModal(false)}
+                className="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors font-medium"
+              >
+                Закрыть
               </button>
             </div>
           </div>
