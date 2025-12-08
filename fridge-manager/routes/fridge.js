@@ -1,17 +1,26 @@
 const express = require('express');
 const Fridge = require('../models/Fridge');
+const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
 // GET /api/fridges
-router.get('/', async (req, res) => {
+// Для бухгалтеров автоматически фильтрует по их городу
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const {
       active, nearLat, nearLng, nearKm, cityId, code, search, limit, skip, warehouseStatus,
     } = req.query;
     const filter = {};
     if (active !== undefined) filter.active = active === 'true';
-    if (cityId) filter.cityId = cityId;
+    
+    // Для бухгалтера - показываем только его город
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      filter.cityId = req.user.cityId;
+    } else if (cityId) {
+      filter.cityId = cityId;
+    }
+    
     if (code) filter.code = code;
     if (warehouseStatus) filter.warehouseStatus = warehouseStatus;
 

@@ -256,7 +256,7 @@ export default function CitiesManagement() {
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Например: Москва"
+                  placeholder="Например: Тараз"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   autoFocus
                 />
@@ -269,11 +269,11 @@ export default function CitiesManagement() {
                   type="text"
                   value={form.code}
                   onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
-                  placeholder="Например: MSK"
+                  placeholder="Например: 08"
                   maxLength={10}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-slate-400 mt-1">Краткий код (до 10 символов)</p>
+                <p className="text-xs text-slate-400 mt-1">По коду авто</p>
               </div>
               <div className="flex items-center gap-2">
                 <input

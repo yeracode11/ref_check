@@ -3,6 +3,7 @@ import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
+import { useAuth } from '../contexts/AuthContext';
 
 type City = {
   _id: string;
@@ -26,9 +27,13 @@ const ITEMS_PER_PAGE = 30; // Количество элементов на ст�
 const SEARCH_DEBOUNCE_MS = 500; // Задержка перед поиском (мс)
 
 export default function FridgesList() {
+  const { user } = useAuth();
+  const isAccountant = user?.role === 'accountant';
+  
   const [items, setItems] = useState<Fridge[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [selectedCityId, setSelectedCityId] = useState<string>('');
+  const [accountantCityName, setAccountantCityName] = useState<string>('');
   const [searchInput, setSearchInput] = useState(''); // Ввод пользователя
   const [searchQuery, setSearchQuery] = useState(''); // Фактический запрос для поиска
   const [loading, setLoading] = useState(true);
@@ -50,8 +55,15 @@ export default function FridgesList() {
         const res = await api.get('/api/cities?active=true');
         if (!alive) return;
         setCities(res.data);
-        // Автоматически выбираем первый город, если есть
-        if (res.data.length > 0 && !selectedCityId) {
+        
+        // Для бухгалтера - находим название его города
+        if (isAccountant && user?.cityId) {
+          const accountantCity = res.data.find((c: City) => c._id === user.cityId);
+          if (accountantCity) {
+            setAccountantCityName(accountantCity.name);
+          }
+        } else if (res.data.length > 0 && !selectedCityId) {
+          // Для остальных - автоматически выбираем первый город
           setSelectedCityId(res.data[0]._id);
         }
       } catch (e: any) {
@@ -61,11 +73,12 @@ export default function FridgesList() {
       }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [isAccountant, user?.cityId]);
 
   // Загрузка холодильников (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
-    if (!selectedCityId) {
+    // Для бухгалтера город фильтруется на бэкенде, для остальных нужен выбор
+    if (!isAccountant && !selectedCityId) {
       setItems([]);
       setLoading(false);
       return;
@@ -81,7 +94,10 @@ export default function FridgesList() {
     try {
       const params = new URLSearchParams();
       if (showOnlyActive) params.append('active', 'true');
-      params.append('cityId', selectedCityId);
+      // Для бухгалтера город добавляется на бэкенде автоматически
+      if (!isAccountant && selectedCityId) {
+        params.append('cityId', selectedCityId);
+      }
       if (searchQuery.trim()) {
         params.append('search', searchQuery.trim());
       }
@@ -111,7 +127,7 @@ export default function FridgesList() {
         setLoadingMore(false);
       }
     }
-  }, [selectedCityId, showOnlyActive, searchQuery]);
+  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant]);
 
   // Debounce для поиска - обновляем searchQuery после задержки
   useEffect(() => {
@@ -135,8 +151,11 @@ export default function FridgesList() {
 
   // Загрузка при изменении фильтров
   useEffect(() => {
-    loadFridges(0, true);
-  }, [selectedCityId, showOnlyActive, searchQuery]);
+    // Для бухгалтера загружаем сразу, для остальных - когда выбран город
+    if (isAccountant || selectedCityId) {
+      loadFridges(0, true);
+    }
+  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant]);
 
   // Бесконечный скролл
   useEffect(() => {
@@ -215,23 +234,29 @@ export default function FridgesList() {
       {!citiesLoading && (
         <Card className="bg-slate-50">
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
-            {/* Выбор города */}
+            {/* Выбор города (или отображение для бухгалтера) */}
             <div className="flex-1 w-full sm:w-auto min-w-[180px]">
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Город
               </label>
-              <select
-                value={selectedCityId}
-                onChange={(e) => setSelectedCityId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 bg-white"
-              >
-                <option value="">Все города</option>
-                {cities.map((city) => (
-                  <option key={city._id} value={city._id}>
-                    {city.name}
-                  </option>
-                ))}
-              </select>
+              {isAccountant ? (
+                <div className="w-full rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-800 font-medium">
+                  📍 {accountantCityName || 'Город не назначен'}
+                </div>
+              ) : (
+                <select
+                  value={selectedCityId}
+                  onChange={(e) => setSelectedCityId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 bg-white"
+                >
+                  <option value="">Все города</option>
+                  {cities.map((city) => (
+                    <option key={city._id} value={city._id}>
+                      {city.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Поиск */}
