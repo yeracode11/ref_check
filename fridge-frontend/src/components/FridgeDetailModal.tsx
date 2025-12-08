@@ -168,6 +168,8 @@ function MiniMap({ location, name }: { location: { coordinates: [number, number]
 export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUpdated }: Props) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isAccountant = user?.role === 'accountant';
+  const isPrivileged = isAdmin || isAccountant;
   
   const [fridge, setFridge] = useState<FridgeDetail | null>(null);
   const [checkins, setCheckins] = useState<CheckinItem[]>([]);
@@ -183,12 +185,23 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const [saving, setSaving] = useState(false);
 
   // Загрузка истории посещений
-  const loadCheckins = async () => {
-    if (!fridgeId) return;
+  const loadCheckins = async (fridgeCode?: string) => {
+    if (!fridgeId && !fridgeCode) return;
     try {
       setLoadingCheckins(true);
-      const res = await api.get(`/api/admin/fridges/${fridgeId}/checkins?limit=50`);
-      setCheckins(res.data);
+      if (isPrivileged) {
+        const res = await api.get(`/api/admin/fridges/${fridgeId}/checkins?limit=50`);
+        setCheckins(res.data);
+      } else {
+        // Менеджер: грузим свои отметки по коду холодильника
+        const code = fridgeCode || fridge?.code;
+        if (!code) return;
+        const params = new URLSearchParams();
+        params.append('fridgeId', code);
+        if (user?._id) params.append('managerId', user._id);
+        const res = await api.get(`/api/checkins?${params.toString()}`);
+        setCheckins(res.data);
+      }
     } catch (e) {
       console.error('Ошибка загрузки истории:', e);
     } finally {
@@ -198,16 +211,18 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
 
   useEffect(() => {
     if (activeTab === 'history' && checkins.length === 0) {
-      loadCheckins();
+      loadCheckins(fridge?.code);
     }
-  }, [activeTab]);
+  }, [activeTab, fridge?.code, checkins.length]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         setLoading(true);
-        const res = await api.get(`/api/admin/fridges/${fridgeId}`);
+        const res = isPrivileged
+          ? await api.get(`/api/admin/fridges/${fridgeId}`)
+          : await api.get(`/api/fridges/${fridgeId}`);
         if (!alive) return;
         setFridge(res.data);
         setError(null);
