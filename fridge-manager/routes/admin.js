@@ -755,7 +755,7 @@ router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
 // Обновить пользователя
 router.patch('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { username, email, password, role, fullName, phone, cityId, active } = req.body;
+    const { username, password, role, fullName, phone, cityId, active } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -769,7 +769,6 @@ router.patch('/users/:id', authenticateToken, requireAdmin, async (req, res) => 
 
     // Обновляем поля
     if (username !== undefined) user.username = username;
-    if (email !== undefined) user.email = email;
     if (role !== undefined && ['manager', 'accountant', 'admin'].includes(role)) {
       user.role = role;
     }
