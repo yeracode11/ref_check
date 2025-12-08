@@ -2,7 +2,7 @@ const express = require('express');
 const Checkin = require('../models/Checkin');
 const Fridge = require('../models/Fridge');
 const { getNextSequence } = require('../models/Counter');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -150,6 +150,28 @@ router.get('/:id', authenticateToken, async (req, res) => {
     return res.json(item);
   } catch (err) {
     return res.status(400).json({ error: 'Invalid id', details: err.message });
+  }
+});
+
+// DELETE /api/checkins/:id
+// Удалить отметку (только для админа)
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid id format' });
+    }
+
+    const item = await Checkin.findOne({ id });
+    if (!item) {
+      return res.status(404).json({ error: 'Отметка не найдена' });
+    }
+
+    await Checkin.deleteOne({ id });
+
+    return res.json({ message: 'Отметка удалена', id });
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка удаления отметки', details: err.message });
   }
 });
 
