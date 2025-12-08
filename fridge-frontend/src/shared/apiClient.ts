@@ -16,14 +16,33 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 errors (unauthorized)
+// Handle errors with retry logic
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  async (error) => {
+    const config = error.config;
+
+    // Don't retry on 4xx errors (client errors)
+    if (error.response?.status >= 400 && error.response?.status < 500) {
+      if (error.response.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+      return Promise.reject(error);
     }
+
+    // Retry on network errors or 5xx errors (up to 3 times)
+    if (!config._retry && (error.code === 'ERR_NETWORK' || error.code === 'ERR_CONNECTION_CLOSED' || (error.response?.status >= 500))) {
+      config._retry = true;
+      config._retryCount = (config._retryCount || 0) + 1;
+
+      if (config._retryCount <= 3) {
+        console.log(`Retrying request (${config._retryCount}/3):`, config.url);
+        await new Promise(resolve => setTimeout(resolve, 1000 * config._retryCount)); // Exponential backoff
+        return api(config);
+      }
+    }
+
     return Promise.reject(error);
   }
 );

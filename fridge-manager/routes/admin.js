@@ -671,7 +671,6 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
       const searchRegex = new RegExp(search, 'i');
       filter.$or = [
         { username: searchRegex },
-        { email: searchRegex },
         { fullName: searchRegex },
       ];
     }
@@ -720,9 +719,11 @@ router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Некорректная роль. Допустимые: manager, accountant, admin' });
     }
 
-    // Проверка уникальности
+    // Проверка уникальности только по username
+    console.log('Creating user:', { username, role, cityId });
     const existing = await User.findOne({ username });
     if (existing) {
+      console.log('User already exists:', existing.username);
       return res.status(400).json({ error: 'Пользователь с таким username уже существует' });
     }
 
@@ -744,8 +745,9 @@ router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
     return res.status(201).json(userObj);
   } catch (err) {
     console.error('Ошибка создания пользователя:', err);
+    console.error('Stack trace:', err.stack);
     if (err.code === 11000) {
-      return res.status(400).json({ error: 'Пользователь с таким username или email уже существует' });
+      return res.status(400).json({ error: 'Пользователь с таким username уже существует' });
     }
     return res.status(500).json({ error: 'Ошибка создания пользователя', details: err.message });
   }
@@ -790,7 +792,7 @@ router.patch('/users/:id', authenticateToken, requireAdmin, async (req, res) => 
     return res.json(userObj);
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(400).json({ error: 'Пользователь с таким username или email уже существует' });
+      return res.status(400).json({ error: 'Пользователь с таким username уже существует' });
     }
     return res.status(500).json({ error: 'Ошибка обновления пользователя', details: err.message });
   }

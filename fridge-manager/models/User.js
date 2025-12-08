@@ -27,5 +27,22 @@ UserSchema.pre('save', async function (next) {
   }
 });
 
+// Remove any existing email indexes on startup
+UserSchema.post('init', function() {
+  const collection = this.db.collection('users');
+  collection.indexes((err, indexes) => {
+    if (err) return console.error('Error checking indexes:', err);
+    indexes.forEach(index => {
+      if (index.name.includes('email') && index.name !== '_id_') {
+        console.log('Removing old email index:', index.name);
+        collection.dropIndex(index.name, (dropErr) => {
+          if (dropErr) console.error('Error dropping email index:', dropErr);
+          else console.log('Successfully dropped email index:', index.name);
+        });
+      }
+    });
+  });
+});
+
 module.exports = mongoose.model('User', UserSchema);
 
