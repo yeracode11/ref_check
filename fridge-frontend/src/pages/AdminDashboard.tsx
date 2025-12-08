@@ -412,14 +412,19 @@ export default function AdminDashboard() {
 
   // Статистика на основе всех холодильников (для карты)
   const filterQuery = fridgeFilter.trim().toLowerCase();
-  // Если отметок нет — не показываем метки на карте
-  const baseMapFridges: AdminFridge[] = checkins.length === 0 ? [] : allFridges;
+  
+  // Фильтруем холодильники для карты: показываем только те, у которых есть отметки (status !== 'never')
+  // Если отметок нет (checkins.length === 0), карта должна быть пустой
+  const fridgesWithCheckins = checkins.length === 0 
+    ? [] 
+    : allFridges.filter(f => f.status !== 'never' && f.status !== 'warehouse');
+  
   const fridgesForMap: AdminFridge[] = filterQuery
-    ? baseMapFridges.filter((f) => {
+    ? fridgesWithCheckins.filter((f) => {
         const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
         return text.includes(filterQuery);
       })
-    : baseMapFridges;
+    : fridgesWithCheckins;
   const filteredAllFridges = allFridges;
 
   // Фильтрация загруженных холодильников для списка
@@ -1020,10 +1025,14 @@ export default function AdminDashboard() {
                     // Обновляем список отметок
                     setCheckins([]);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
+                    // После удаления всех отметок все холодильники должны получить status = 'never'
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
                     setAllFridges(fridgeStatusRes.data);
                     setShowDeleteAllCheckins(false);
-                    alert('Все отметки удалены. Карта обновлена.');
+                    // Принудительно обновляем страницу, чтобы карта точно обновилась и старые метки исчезли
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 1000);
                   } catch (e: any) {
                     alert('Ошибка: ' + (e?.response?.data?.error || e.message));
                   } finally {
