@@ -42,10 +42,8 @@ export default function CheckinsList() {
         if (searchFridgeId.trim()) {
           params.append('fridgeId', searchFridgeId.trim());
         }
-        // Менеджер видит только свои отметки — добавляем фильтр по managerId
-        if (isManager && user?._id) {
-          params.append('managerId', user._id);
-        }
+        // Для менеджера не передаем managerId - бэкенд сам фильтрует по роли
+        // Для админа можно передать managerId в query, если нужно отфильтровать
 
         const res = await api.get(`/api/checkins?${params.toString()}`);
         if (!alive) return;

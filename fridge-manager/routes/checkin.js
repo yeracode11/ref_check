@@ -46,6 +46,14 @@ router.post('/', async (req, res) => {
       notes: req.body.notes,
       visitedAt: req.body.visitedAt ? new Date(req.body.visitedAt) : undefined,
     });
+    
+    // Логирование для отладки (можно убрать после проверки)
+    console.log('[Checkins] Created checkin:', { 
+      id: checkin.id, 
+      managerId: checkin.managerId, 
+      fridgeId: checkin.fridgeId,
+      reqUser: req.user ? { id: req.user.id, username: req.user.username, role: req.user.role } : null
+    });
 
     // Обновляем местоположение и адрес холодильника по последней отметке
     // fridgeId в чек-ине должен совпадать с code в модели Fridge
@@ -86,22 +94,35 @@ router.get('/', authenticateToken, async (req, res) => {
     const nearKm = req.query.nearKm ? Number(req.query.nearKm) : 5; // default 5km
 
     const filter = {};
-    if (managerId) filter.managerId = managerId;
-    if (fridgeId) filter.fridgeId = fridgeId;
-
-    // Фильтрация по роли пользователя
+    
+    // Фильтрация по роли пользователя (приоритет над query параметрами)
     if (req.user.role === 'manager') {
       // Менеджеры видят только свои отметки
       // Учитываем старые записи, где сохраняли username вместо _id
-      filter.managerId = { $in: [req.user.id, req.user.username] };
+      const managerIds = [req.user.id, req.user.username].filter(Boolean);
+      filter.managerId = { $in: managerIds };
+      // Логирование для отладки (можно убрать после проверки)
+      console.log('[Checkins] Manager filter:', { 
+        role: req.user.role, 
+        userId: req.user.id, 
+        username: req.user.username,
+        filterManagerId: managerIds 
+      });
     } else if (req.user.role === 'accountant' && req.user.cityId) {
       // Бухгалтеры видят отметки только из своего города
       // Нужно найти все холодильники из их города
       const fridgesInCity = await Fridge.find({ cityId: req.user.cityId }, { code: 1 });
       const fridgeCodes = fridgesInCity.map(f => f.code);
       filter.fridgeId = { $in: fridgeCodes };
+    } else {
+      // Для админов и других ролей можно использовать query параметры
+      if (managerId) filter.managerId = managerId;
     }
-    // Админы видят все отметки (без дополнительной фильтрации)
+    
+    // Общий фильтр по fridgeId (если не установлен фильтр по городу)
+    if (fridgeId && !filter.fridgeId) {
+      filter.fridgeId = fridgeId;
+    }
     if (from || to) {
       filter.visitedAt = {};
       if (from) filter.visitedAt.$gte = from;
