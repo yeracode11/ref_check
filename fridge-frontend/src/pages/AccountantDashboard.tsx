@@ -5,6 +5,7 @@ import { Card, Badge } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { QRCode } from '../components/ui/QRCode';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
+import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 
 type ClientInfo = {
   name?: string;
@@ -313,6 +314,9 @@ export default function AccountantDashboard() {
         </button>
       </div>
 
+      {/* Аналитика */}
+      <AnalyticsPanel endpoint="/api/admin/analytics/accountant" />
+
       {/* Фильтры */}
       <Card>
         <div className="flex flex-wrap gap-4">
@@ -376,7 +380,7 @@ export default function AccountantDashboard() {
                     onClick={() => setSelectedFridgeDetailId(f._id)}
                     className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
                   >
-                    👁️ Подробнее
+                    Подробнее
                   </button>
                   <button
                     onClick={() => openQR(f)}

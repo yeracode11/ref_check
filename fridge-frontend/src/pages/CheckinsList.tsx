@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../shared/apiClient';
+import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingSpinner, LoadingCard, EmptyState } from '../components/ui/Loading';
 
@@ -16,6 +17,7 @@ type Checkin = {
 };
 
 export default function CheckinsList() {
+  const { user } = useAuth();
   const [items, setItems] = useState<Checkin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,12 +90,16 @@ export default function CheckinsList() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Отметки посещений</h1>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {user?.role === 'manager' ? 'Мои отметки' : 'Отметки посещений'}
+          </h1>
           <p className="text-slate-500 mt-1">
             {searchFridgeId ? (
               <>Найдено: <span className="font-medium">{items.length}</span></>
             ) : (
-              <>Всего: <span className="font-medium">{items.length}</span></>
+              <>
+                {user?.role === 'manager' ? 'Мои отметки' : 'Все отметки'}: <span className="font-medium">{items.length}</span>
+              </>
             )}
           </p>
         </div>

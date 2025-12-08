@@ -2,6 +2,7 @@ const express = require('express');
 const Checkin = require('../models/Checkin');
 const Fridge = require('../models/Fridge');
 const { getNextSequence } = require('../models/Counter');
+const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -74,7 +75,8 @@ router.post('/', async (req, res) => {
 
 // GET /api/checkins
 // query: managerId?, fridgeId?, from?, to?, nearLat?, nearLng?, nearKm?
-router.get('/', async (req, res) => {
+// Менеджеры видят только свои отметки, бухгалтеры - только из своего города, админы - все
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const { managerId, fridgeId } = req.query;
     const from = parseDate(req.query.from);
@@ -86,6 +88,19 @@ router.get('/', async (req, res) => {
     const filter = {};
     if (managerId) filter.managerId = managerId;
     if (fridgeId) filter.fridgeId = fridgeId;
+
+    // Фильтрация по роли пользователя
+    if (req.user.role === 'manager') {
+      // Менеджеры видят только свои отметки
+      filter.managerId = req.user.id;
+    } else if (req.user.role === 'accountant' && req.user.cityId) {
+      // Бухгалтеры видят отметки только из своего города
+      // Нужно найти все холодильники из их города
+      const fridgesInCity = await Fridge.find({ cityId: req.user.cityId }, { code: 1 });
+      const fridgeCodes = fridgesInCity.map(f => f.code);
+      filter.fridgeId = { $in: fridgeCodes };
+    }
+    // Админы видят все отметки (без дополнительной фильтрации)
     if (from || to) {
       filter.visitedAt = {};
       if (from) filter.visitedAt.$gte = from;
@@ -109,14 +124,29 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/checkins/:id
-router.get('/:id', async (req, res) => {
+// Менеджеры могут видеть только свои отметки, бухгалтеры - только из своего города
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) {
       return res.status(400).json({ error: 'Invalid id format' });
     }
+
     const item = await Checkin.findOne({ id });
     if (!item) return res.status(404).json({ error: 'Not found' });
+
+    // Проверка доступа
+    if (req.user.role === 'manager' && item.managerId !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    } else if (req.user.role === 'accountant' && req.user.cityId) {
+      // Проверить, что холодильник из города бухгалтера
+      const fridge = await Fridge.findOne({ code: item.fridgeId });
+      if (!fridge || fridge.cityId?.toString() !== req.user.cityId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+    // Админы имеют доступ ко всем отметкам
+
     return res.json(item);
   } catch (err) {
     return res.status(400).json({ error: 'Invalid id', details: err.message });

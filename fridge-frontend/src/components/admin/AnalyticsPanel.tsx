@@ -49,7 +49,11 @@ function formatShortDate(dateStr: string) {
   return `${day}.${month}`;
 }
 
-export function AnalyticsPanel() {
+type AnalyticsPanelProps = {
+  endpoint?: string; // По умолчанию '/api/admin/analytics', для бухгалтера '/api/admin/analytics/accountant'
+};
+
+export function AnalyticsPanel({ endpoint = '/api/admin/analytics' }: AnalyticsPanelProps = {}) {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +64,7 @@ export function AnalyticsPanel() {
     (async () => {
       try {
         setLoading(true);
-        const res = await api.get(`/api/admin/analytics?days=${days}`);
+        const res = await api.get(`${endpoint}?days=${days}`);
         if (!alive) return;
         setData(res.data);
         setError(null);
@@ -72,7 +76,7 @@ export function AnalyticsPanel() {
       }
     })();
     return () => { alive = false; };
-  }, [days]);
+  }, [days, endpoint]);
 
   if (loading) {
     return (

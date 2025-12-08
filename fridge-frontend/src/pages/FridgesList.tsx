@@ -325,7 +325,7 @@ export default function FridgesList() {
         </Card>
       )}
 
-      {!selectedCityId && !citiesLoading ? (
+      {!isAccountant && !selectedCityId && !citiesLoading ? (
         <EmptyState
           icon="🏙️"
           title="Выберите город"

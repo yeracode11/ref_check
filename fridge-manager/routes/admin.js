@@ -496,9 +496,20 @@ router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (r
     const fridge = await Fridge.findById(id)
       .populate('cityId', 'name code')
       .populate('statusHistory.changedBy', 'username fullName');
-    
+
     if (!fridge) {
       return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    // Для бухгалтеров проверяем, что холодильник из их города
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      if (fridge.cityId?._id?.toString() !== req.user.cityId) {
+        console.log('Accountant access denied - wrong city:', {
+          accountantCityId: req.user.cityId,
+          fridgeCityId: fridge.cityId?._id
+        });
+        return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
+      }
     }
 
     return res.json(fridge);
@@ -517,6 +528,13 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
     const fridge = await Fridge.findById(id);
     if (!fridge) {
       return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    // Для бухгалтеров проверяем, что холодильник из их города
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      if (fridge.cityId?.toString() !== req.user.cityId) {
+        return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
+      }
     }
 
     // Получаем чек-ины по коду холодильника
@@ -654,6 +672,164 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/analytics/accountant
+// Аналитика для бухгалтера (только для его города)
+router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  try {
+    // Только бухгалтеры могут использовать этот endpoint
+    if (req.user.role !== 'accountant' || !req.user.cityId) {
+      return res.status(403).json({ error: 'Доступ только для бухгалтеров с назначенным городом' });
+    }
+
+    const { days = 30 } = req.query;
+    const daysNum = parseInt(days, 10) || 30;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysNum);
+
+    // Получаем все холодильники из города бухгалтера
+    const cityFridges = await Fridge.find({ 
+      cityId: req.user.cityId,
+      active: true 
+    }).select('code name address warehouseStatus');
+    const fridgeCodes = cityFridges.map(f => f.code);
+
+    if (fridgeCodes.length === 0) {
+      return res.json({
+        dailyCheckins: [],
+        managerStats: [],
+        topUnvisited: [],
+        summary: {
+          totalFridges: 0,
+          totalCheckins: 0,
+          uniqueManagers: 0,
+          avgCheckinsPerDay: 0,
+          fridgesByStatus: { warehouse: 0, installed: 0, returned: 0 },
+        },
+      });
+    }
+
+    // 1. Посещения по дням (только для холодильников из города)
+    const checkinsByDay = await Checkin.aggregate([
+      {
+        $match: {
+          fridgeId: { $in: fridgeCodes },
+          visitedAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$visitedAt' },
+            month: { $month: '$visitedAt' },
+            day: { $dayOfMonth: '$visitedAt' },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+    ]);
+
+    const dailyCheckins = checkinsByDay.map((item) => ({
+      date: `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${String(item._id.day).padStart(2, '0')}`,
+      count: item.count,
+    }));
+
+    // 2. Статистика по менеджерам (только для холодильников из города)
+    const managerStats = await Checkin.aggregate([
+      {
+        $match: {
+          fridgeId: { $in: fridgeCodes },
+          visitedAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: '$managerId',
+          count: { $sum: 1 },
+          lastVisit: { $max: '$visitedAt' },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]);
+
+    // 3. Топ непосещаемых холодильников (только из города)
+    const lastCheckins = await Checkin.aggregate([
+      {
+        $match: { fridgeId: { $in: fridgeCodes } },
+      },
+      { $sort: { visitedAt: -1 } },
+      {
+        $group: {
+          _id: '$fridgeId',
+          lastVisit: { $first: '$visitedAt' },
+        },
+      },
+    ]);
+
+    const lastVisitMap = new Map();
+    lastCheckins.forEach((c) => lastVisitMap.set(c._id, c.lastVisit));
+
+    const fridgesWithLastVisit = cityFridges.map((f) => ({
+      code: f.code,
+      name: f.name,
+      address: f.address,
+      lastVisit: lastVisitMap.get(f.code) || null,
+      daysSinceVisit: lastVisitMap.get(f.code)
+        ? Math.floor((Date.now() - new Date(lastVisitMap.get(f.code)).getTime()) / (1000 * 60 * 60 * 24))
+        : null,
+    }));
+
+    const topUnvisited = fridgesWithLastVisit
+      .sort((a, b) => {
+        if (a.lastVisit === null && b.lastVisit === null) return 0;
+        if (a.lastVisit === null) return -1;
+        if (b.lastVisit === null) return 1;
+        return new Date(a.lastVisit).getTime() - new Date(b.lastVisit).getTime();
+      })
+      .slice(0, 20);
+
+    // 4. Общая статистика (только для города)
+    const totalFridges = cityFridges.length;
+    const totalCheckins = await Checkin.countDocuments({
+      fridgeId: { $in: fridgeCodes },
+      visitedAt: { $gte: startDate },
+    });
+    const uniqueManagers = await Checkin.distinct('managerId', {
+      fridgeId: { $in: fridgeCodes },
+      visitedAt: { $gte: startDate },
+    });
+
+    // Холодильники по статусам
+    const statusCounts = {
+      warehouse: 0,
+      installed: 0,
+      returned: 0,
+    };
+    cityFridges.forEach((f) => {
+      if (f.warehouseStatus) {
+        statusCounts[f.warehouseStatus] = (statusCounts[f.warehouseStatus] || 0) + 1;
+      }
+    });
+
+    return res.json({
+      dailyCheckins,
+      managerStats,
+      topUnvisited,
+      summary: {
+        totalFridges,
+        totalCheckins,
+        uniqueManagers: uniqueManagers.length,
+        avgCheckinsPerDay: daysNum > 0 ? Number((totalCheckins / daysNum).toFixed(2)) : 0,
+        fridgesByStatus: statusCounts,
+      },
+    });
+  } catch (err) {
+    console.error('Accountant analytics error:', err);
+    return res.status(500).json({ error: 'Ошибка получения аналитики', details: err.message });
+  }
+});
+
 // ==========================================
 // УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ (только для админа)
 // ==========================================
@@ -720,10 +896,8 @@ router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Проверка уникальности только по username
-    console.log('Creating user:', { username, role, cityId });
     const existing = await User.findOne({ username });
     if (existing) {
-      console.log('User already exists:', existing.username);
       return res.status(400).json({ error: 'Пользователь с таким username уже существует' });
     }
 
