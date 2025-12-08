@@ -355,7 +355,7 @@ export default function FridgesList() {
                       onClick={(e) => { e.stopPropagation(); setSelectedFridgeId(f._id); }}
                       className="text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors font-medium"
                     >
-                      👁️ Подробнее
+                      Подробнее
                     </button>
                   </div>
                 </div>
