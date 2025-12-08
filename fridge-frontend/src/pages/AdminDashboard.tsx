@@ -23,7 +23,7 @@ type AdminFridge = {
   code: string;
   name: string;
   address?: string;
-  city?: { name: string; code: string } | null;
+  city?: { _id?: string; name: string; code: string } | null;
   location?: { type: 'Point'; coordinates: [number, number] };
   lastVisit?: string | null;
   status: 'today' | 'week' | 'old' | 'never' | 'warehouse';
@@ -72,6 +72,7 @@ export default function AdminDashboard() {
   const [newFridge, setNewFridge] = useState({ name: '', address: '', description: '', cityId: '' });
   const [creatingFridge, setCreatingFridge] = useState(false);
   const [cities, setCities] = useState<Array<{ _id: string; name: string; code: string }>>([]);
+  const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>('all'); // 'all' для всех городов
   const observerTarget = useRef<HTMLDivElement | null>(null);
 
   // Загрузка городов
@@ -406,12 +407,22 @@ export default function AdminDashboard() {
 
   // Статистика на основе всех холодильников (для карты)
   const filterQuery = fridgeFilter.trim().toLowerCase();
+  
+  // Фильтрация по городу для карты
+  let fridgesByCity = allFridges;
+  if (selectedCityIdForMap !== 'all') {
+    fridgesByCity = allFridges.filter((f) => {
+      // Проверяем по _id или по code города
+      return f.city?._id === selectedCityIdForMap || f.city?.code === selectedCityIdForMap;
+    });
+  }
+  
   const filteredAllFridges = filterQuery
-    ? allFridges.filter((f) => {
+    ? fridgesByCity.filter((f) => {
         const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
         return text.includes(filterQuery);
       })
-    : allFridges;
+    : fridgesByCity;
 
   // Фильтрация загруженных холодильников для списка
   const filteredFridges = filterQuery
@@ -734,10 +745,43 @@ export default function AdminDashboard() {
 
       {/* Карта холодильников */}
       <Card>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-slate-900">Карта холодильников (Тараз)</h2>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <h2 className="font-semibold text-slate-900">
+            Карта холодильников
+            {selectedCityIdForMap !== 'all' && (
+              <span className="text-blue-600 ml-2">
+                ({cities.find(c => c._id === selectedCityIdForMap)?.name || 'Выбранный город'})
+              </span>
+            )}
+          </h2>
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Фильтр по городу:</label>
+            <select
+              value={selectedCityIdForMap}
+              onChange={(e) => setSelectedCityIdForMap(e.target.value)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[180px] shadow-sm"
+            >
+              <option value="all">🌍 Все города</option>
+              {cities.map((city) => (
+                <option key={city._id} value={city._id}>
+                  {city.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <AdminFridgeMap fridges={filteredAllFridges} />
+        {filteredAllFridges.length === 0 && selectedCityIdForMap !== 'all' ? (
+          <div className="h-[500px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200">
+            <div className="text-center">
+              <p className="text-slate-500 mb-2 text-lg">Нет холодильников для отображения</p>
+              <p className="text-sm text-slate-400">
+                В выбранном городе нет холодильников
+              </p>
+            </div>
+          </div>
+        ) : (
+          <AdminFridgeMap fridges={filteredAllFridges} />
+        )}
       </Card>
 
       {/* Аналитика */}
