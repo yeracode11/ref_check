@@ -980,8 +980,11 @@ export default function AdminDashboard() {
                     // Обновляем список отметок
                     const checkinsRes = await api.get('/api/checkins');
                     setCheckins(checkinsRes.data);
+                    // Перезагружаем данные холодильников для карты, чтобы обновить статусы
+                    const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
+                    setAllFridges(fridgeStatusRes.data);
                     setDeleteCheckinId(null);
-                    alert('Отметка удалена');
+                    alert('Отметка удалена. Карта обновлена.');
                   } catch (e: any) {
                     alert('Ошибка: ' + (e?.response?.data?.error || e.message));
                   } finally {
@@ -1023,8 +1026,11 @@ export default function AdminDashboard() {
                     await api.delete('/api/checkins');
                     // Обновляем список отметок
                     setCheckins([]);
+                    // Перезагружаем данные холодильников для карты, чтобы обновить статусы
+                    const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
+                    setAllFridges(fridgeStatusRes.data);
                     setShowDeleteAllCheckins(false);
-                    alert('Все отметки удалены');
+                    alert('Все отметки удалены. Карта обновлена.');
                   } catch (e: any) {
                     alert('Ошибка: ' + (e?.response?.data?.error || e.message));
                   } finally {
