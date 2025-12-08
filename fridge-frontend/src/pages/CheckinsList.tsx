@@ -18,6 +18,7 @@ type Checkin = {
 
 export default function CheckinsList() {
   const { user } = useAuth();
+  const isManager = user?.role === 'manager';
   const [items, setItems] = useState<Checkin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,11 @@ export default function CheckinsList() {
         if (searchFridgeId.trim()) {
           params.append('fridgeId', searchFridgeId.trim());
         }
-        
+        // Менеджер видит только свои отметки — добавляем фильтр по managerId
+        if (isManager && user?._id) {
+          params.append('managerId', user._id);
+        }
+
         const res = await api.get(`/api/checkins?${params.toString()}`);
         if (!alive) return;
         setItems(res.data);
@@ -58,7 +63,7 @@ export default function CheckinsList() {
       alive = false;
       clearTimeout(timeoutId);
     };
-  }, [searchFridgeId]);
+  }, [searchFridgeId, isManager, user?._id]);
 
   if (loading) {
     return (
