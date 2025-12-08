@@ -21,7 +21,6 @@ type ClientInfo = {
 type AdminFridge = {
   id: string;
   code: string;
-  serialNumber?: string;
   name: string;
   address?: string;
   city?: { name: string; code: string } | null;

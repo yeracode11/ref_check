@@ -105,7 +105,6 @@ router.get('/fridge-status', authenticateToken, requireAdmin, async (req, res) =
       return {
         id: f._id,
         code: f.code,
-        serialNumber: f.serialNumber,
         name: f.name,
         address: f.address,
         city: f.cityId || null,
@@ -457,7 +456,6 @@ router.post('/fridges', authenticateToken, requireAdmin, async (req, res) => {
     // По умолчанию статус = 'warehouse' (на складе)
     const fridge = await Fridge.create({
       code,
-      serialNumber: req.body.serialNumber || null, // Заводской номер
       name: name.substring(0, 200),
       cityId: city._id,
       address: address || null,
@@ -1002,7 +1000,7 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
 // Редактировать холодильник
 router.patch('/fridges/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { name, serialNumber, address, description, cityId, active } = req.body;
+    const { name, address, description, cityId, active } = req.body;
 
     const fridge = await Fridge.findById(req.params.id);
     if (!fridge) {
@@ -1010,7 +1008,6 @@ router.patch('/fridges/:id', authenticateToken, requireAdmin, async (req, res) =
     }
 
     if (name !== undefined) fridge.name = name;
-    if (serialNumber !== undefined) fridge.serialNumber = serialNumber;
     if (address !== undefined) fridge.address = address;
     if (description !== undefined) fridge.description = description;
     if (cityId !== undefined) fridge.cityId = cityId || null;

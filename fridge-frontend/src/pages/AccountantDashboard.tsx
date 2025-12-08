@@ -20,7 +20,6 @@ type ClientInfo = {
 type Fridge = {
   _id: string;
   code: string;
-  serialNumber?: string;
   name: string;
   address?: string;
   cityId?: { _id: string; name: string; code: string } | null;
@@ -60,7 +59,6 @@ export default function AccountantDashboard() {
 
   // Форма нового холодильника
   const [newFridge, setNewFridge] = useState({
-    serialNumber: '',
     name: '',
     address: '',
     description: '',
@@ -170,7 +168,6 @@ export default function AccountantDashboard() {
     try {
       setSaving(true);
       const res = await api.post('/api/admin/fridges', {
-        serialNumber: newFridge.serialNumber.trim() || undefined,
         name: newFridge.name.trim(),
         address: newFridge.address.trim() || undefined,
         description: newFridge.description.trim() || undefined,
@@ -180,7 +177,7 @@ export default function AccountantDashboard() {
       setSelectedFridge(res.data);
       setShowAddModal(false);
       setShowQRModal(true);
-      setNewFridge({ serialNumber: '', name: '', address: '', description: '', cityId: cities[0]?._id || '' });
+      setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
       loadFridges(0, true);
     } catch (e: any) {
       alert('Ошибка: ' + (e?.response?.data?.error || e.message));
@@ -362,7 +359,6 @@ export default function AccountantDashboard() {
                   </div>
                   <div className="text-sm text-slate-600 space-y-1">
                     <p><span className="text-slate-500">Код:</span> {f.code}</p>
-                    {f.serialNumber && <p><span className="text-slate-500">Сер. номер:</span> {f.serialNumber}</p>}
                     {f.address && <p><span className="text-slate-500">Адрес:</span> {f.address}</p>}
                     {f.cityId && <p><span className="text-slate-500">Город:</span> {f.cityId.name}</p>}
                   </div>
@@ -420,16 +416,6 @@ export default function AccountantDashboard() {
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Добавить холодильник</h3>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Заводской номер</label>
-                <input
-                  type="text"
-                  value={newFridge.serialNumber}
-                  onChange={(e) => setNewFridge({ ...newFridge, serialNumber: e.target.value })}
-                  placeholder="Например: SN-12345"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Название <span className="text-red-500">*</span></label>
                 <input
@@ -687,9 +673,6 @@ export default function AccountantDashboard() {
                 <span className="font-medium">Холодильник:</span> {selectedFridge.name}
               </p>
               <p className="text-xs text-slate-500 font-mono">#{selectedFridge.code}</p>
-              {selectedFridge.serialNumber && (
-                <p className="text-xs text-slate-500">Сер. номер: {selectedFridge.serialNumber}</p>
-              )}
             </div>
             <div className="flex justify-center mb-4">
               <QRCode

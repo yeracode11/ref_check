@@ -37,7 +37,6 @@ const ClientInfoSchema = new mongoose.Schema(
 const FridgeSchema = new mongoose.Schema(
   {
     code: { type: String, required: true, unique: true, index: true },
-    serialNumber: { type: String, index: true }, // Заводской номер холодильника
     name: { type: String, required: true },
     cityId: { type: mongoose.Schema.Types.ObjectId, ref: 'City', index: true },
     location: { type: GeoPointSchema, index: '2dsphere', required: true },

@@ -36,7 +36,6 @@ type CheckinItem = {
 type FridgeDetail = {
   _id: string;
   code: string;
-  serialNumber?: string;
   name: string;
   address?: string;
   description?: string;
@@ -180,7 +179,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', serialNumber: '', address: '', description: '' });
+  const [editForm, setEditForm] = useState({ name: '', address: '', description: '' });
   const [saving, setSaving] = useState(false);
 
   // Загрузка истории посещений
@@ -331,12 +330,6 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   <dt className="text-slate-500">Код:</dt>
                   <dd className="font-mono text-slate-900">{fridge.code}</dd>
                 </div>
-                {fridge.serialNumber && (
-                  <div className="flex justify-between">
-                    <dt className="text-slate-500">Сер. номер:</dt>
-                    <dd className="font-mono text-slate-900">{fridge.serialNumber}</dd>
-                  </div>
-                )}
                 {fridge.cityId && (
                   <div className="flex justify-between">
                     <dt className="text-slate-500">Город:</dt>
@@ -512,7 +505,6 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   onClick={() => {
                     setEditForm({
                       name: fridge.name,
-                      serialNumber: fridge.serialNumber || '',
                       address: fridge.address || '',
                       description: fridge.description || '',
                     });
@@ -623,15 +615,6 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Серийный номер</label>
-                  <input
-                    type="text"
-                    value={editForm.serialNumber}
-                    onChange={(e) => setEditForm({ ...editForm, serialNumber: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Адрес</label>
                   <input
                     type="text"
@@ -660,7 +643,6 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                         setSaving(true);
                         await api.patch(`/api/admin/fridges/${fridge._id}`, {
                           name: editForm.name.trim(),
-                          serialNumber: editForm.serialNumber.trim() || null,
                           address: editForm.address.trim() || null,
                           description: editForm.description.trim() || null,
                         });
