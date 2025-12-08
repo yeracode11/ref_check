@@ -1,5 +1,6 @@
 const express = require('express');
 const City = require('../models/City');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -28,8 +29,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/cities
-router.post('/', async (req, res) => {
+// POST /api/cities (только админ)
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { name, code } = req.body;
     if (!name || !code) {
@@ -46,8 +47,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/cities/:id
-router.patch('/:id', async (req, res) => {
+// PATCH /api/cities/:id (только админ)
+router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const city = await City.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!city) return res.status(404).json({ error: 'Not found' });
@@ -57,8 +58,8 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/cities/:id
-router.delete('/:id', async (req, res) => {
+// DELETE /api/cities/:id (только админ)
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const city = await City.findByIdAndDelete(req.params.id);
     if (!city) return res.status(404).json({ error: 'Not found' });

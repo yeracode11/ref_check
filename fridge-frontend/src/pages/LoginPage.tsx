@@ -21,10 +21,26 @@ export default function LoginPage() {
       // После успешного логина определяем, куда редиректить
       let redirectTo = from;
       
-      // Если админ или бухгалтер и пытается зайти на главную или /new, редиректим на /fridges
-      // Но если пришел с /checkin/:code, оставляем этот путь
-      if ((userData?.role === 'admin' || userData?.role === 'accountant') && (from === '/' || from === '/new')) {
-        redirectTo = '/fridges';
+      // Админские страницы
+      const adminOnlyPaths = ['/users', '/cities', '/admin'];
+      // Страницы бухгалтера
+      const accountantOnlyPaths = ['/accountant'];
+      
+      if (userData?.role === 'admin') {
+        // Админ: если пытается на главную/new, редиректим на /fridges
+        if (from === '/' || from === '/new') {
+          redirectTo = '/fridges';
+        }
+      } else if (userData?.role === 'accountant') {
+        // Бухгалтер: если пытается на главную/new или админские страницы, редиректим на /fridges
+        if (from === '/' || from === '/new' || adminOnlyPaths.includes(from)) {
+          redirectTo = '/fridges';
+        }
+      } else {
+        // Менеджер: если пытается на админские или бухгалтерские страницы, редиректим на главную
+        if (adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from)) {
+          redirectTo = '/';
+        }
       }
       
       navigate(redirectTo, { replace: true });

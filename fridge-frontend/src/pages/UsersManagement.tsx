@@ -13,7 +13,6 @@ type City = {
 type User = {
   _id: string;
   username: string;
-  email: string;
   role: 'manager' | 'admin' | 'accountant';
   fullName?: string;
   phone?: string;
@@ -24,7 +23,6 @@ type User = {
 
 type UserForm = {
   username: string;
-  email: string;
   password: string;
   role: 'manager' | 'admin' | 'accountant';
   fullName: string;
@@ -35,7 +33,6 @@ type UserForm = {
 
 const emptyForm: UserForm = {
   username: '',
-  email: '',
   password: '',
   role: 'manager',
   fullName: '',
@@ -113,7 +110,6 @@ export default function UsersManagement() {
     setEditingUser(user);
     setForm({
       username: user.username,
-      email: user.email,
       password: '', // Пустой - не меняем если не заполнено
       role: user.role,
       fullName: user.fullName || '',
@@ -126,8 +122,8 @@ export default function UsersManagement() {
 
   // Сохранить пользователя
   const handleSave = async () => {
-    if (!form.username.trim() || !form.email.trim()) {
-      alert('Заполните обязательные поля: username и email');
+    if (!form.username.trim()) {
+      alert('Заполните обязательное поле: username');
       return;
     }
 
@@ -141,7 +137,6 @@ export default function UsersManagement() {
 
       const payload: any = {
         username: form.username.trim(),
-        email: form.email.trim(),
         role: form.role,
         fullName: form.fullName.trim() || form.username.trim(),
         phone: form.phone.trim() || null,
@@ -190,7 +185,7 @@ export default function UsersManagement() {
     if (roleFilter !== 'all' && u.role !== roleFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      const searchStr = `${u.username} ${u.email} ${u.fullName || ''}`.toLowerCase();
+      const searchStr = `${u.username} ${u.fullName || ''}`.toLowerCase();
       if (!searchStr.includes(q)) return false;
     }
     return true;
@@ -270,7 +265,6 @@ export default function UsersManagement() {
                   </div>
                   <div className="text-sm text-slate-600 space-y-1">
                     <p><span className="text-slate-500">Username:</span> {u.username}</p>
-                    <p><span className="text-slate-500">Email:</span> {u.email}</p>
                     {u.phone && <p><span className="text-slate-500">Телефон:</span> {u.phone}</p>}
                     {u.cityId && <p><span className="text-slate-500">Город:</span> {u.cityId.name}</p>}
                     <p className="text-xs text-slate-400">
@@ -318,17 +312,6 @@ export default function UsersManagement() {
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   autoFocus
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>

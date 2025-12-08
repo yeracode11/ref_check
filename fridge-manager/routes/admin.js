@@ -709,11 +709,11 @@ router.get('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
 // Создать нового пользователя (бухгалтера, менеджера)
 router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { username, email, password, role, fullName, phone, cityId, active } = req.body;
+    const { username, password, role, fullName, phone, cityId, active } = req.body;
 
     // Валидация
-    if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Обязательные поля: username, email, password' });
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Обязательные поля: username, password' });
     }
 
     if (!['manager', 'accountant', 'admin'].includes(role)) {
@@ -721,15 +721,14 @@ router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Проверка уникальности
-    const existing = await User.findOne({ $or: [{ username }, { email }] });
+    const existing = await User.findOne({ username });
     if (existing) {
-      return res.status(400).json({ error: 'Пользователь с таким username или email уже существует' });
+      return res.status(400).json({ error: 'Пользователь с таким username уже существует' });
     }
 
     // Создаём пользователя (пароль хешируется в pre-save hook модели)
     const user = await User.create({
       username,
-      email,
       password,
       role,
       fullName: fullName || username,

@@ -14,6 +14,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import CheckinPage from './pages/CheckinPage';
 import AccountantDashboard from './pages/AccountantDashboard';
 import UsersManagement from './pages/UsersManagement';
+import CitiesManagement from './pages/CitiesManagement';
 
 const router = createBrowserRouter([
   {
@@ -46,6 +47,7 @@ const router = createBrowserRouter([
           { path: 'fridges', element: <FridgesList /> },
           { path: 'admin', element: <AdminDashboard /> },
           { path: 'users', element: <UsersManagement /> },
+          { path: 'cities', element: <CitiesManagement /> },
           { path: 'accountant', element: <AccountantDashboard /> },
           { path: 'checkin/:code', element: <CheckinPage /> },
         ],
