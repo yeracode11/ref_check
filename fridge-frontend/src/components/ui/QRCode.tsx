@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import QRCodeSVG from 'react-qr-code';
 import { Button } from './Card';
 
@@ -13,63 +13,121 @@ type QRCodeProps = {
 export function QRCode({ value, title, code, size = 200, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const printContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Добавляем стили для печати
+  useEffect(() => {
+    const styleId = 'qr-print-styles';
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      @media print {
+        body * {
+          visibility: hidden;
+        }
+        .qr-print-container,
+        .qr-print-container * {
+          visibility: visible;
+        }
+        .qr-print-container {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          background: white;
+        }
+        .qr-print-image {
+          max-width: 80%;
+          height: auto;
+        }
+        .qr-print-text {
+          margin-top: 20px;
+          font-size: 24px;
+          font-weight: bold;
+          text-align: center;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+
+    return () => {
+      const existingStyle = document.getElementById(styleId);
+      if (existingStyle) {
+        existingStyle.remove();
+      }
+    };
+  }, []);
 
   async function createCanvasWithQR(): Promise<HTMLCanvasElement | null> {
-    try {
-      // Создаем SVG элемент
-      const svg = document.getElementById(`qr-svg-${code || 'default'}`);
-      if (!svg) {
-        throw new Error('QR код не найден');
-      }
+    return new Promise((resolve) => {
+      try {
+        // Создаем SVG элемент
+        const svg = document.getElementById(`qr-svg-${code || 'default'}`);
+        if (!svg) {
+          throw new Error('QR код не найден');
+        }
 
-      // Конвертируем SVG в canvas, затем в PNG
-      const svgData = new XMLSerializer().serializeToString(svg);
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
+        // Конвертируем SVG в canvas, затем в PNG
+        const svgData = new XMLSerializer().serializeToString(svg);
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
 
-      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(svgBlob);
+        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
 
-      img.onload = () => {
-        // Добавляем отступы для текста
-        const padding = 40;
-        const textHeight = title || code ? 60 : 0;
-        canvas.width = size + padding * 2;
-        canvas.height = size + padding * 2 + textHeight;
+        img.onload = () => {
+          // Добавляем отступы для текста
+          const padding = 40;
+          const textHeight = title || code ? 60 : 0;
+          canvas.width = size + padding * 2;
+          canvas.height = size + padding * 2 + textHeight;
 
-        if (ctx) {
-          ctx.fillStyle = 'white';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          if (ctx) {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-          // Рисуем QR-код
-          ctx.drawImage(img, padding, padding, size, size);
+            // Рисуем QR-код
+            ctx.drawImage(img, padding, padding, size, size);
 
-          // Добавляем текст
-          if (title || code) {
-            ctx.fillStyle = 'black';
-            ctx.font = 'bold 16px Arial';
-            ctx.textAlign = 'center';
-            if (code) {
-              ctx.fillText(`#${code}`, canvas.width / 2, size + padding + 25);
-            }
-            if (title) {
-              ctx.fillStyle = 'gray';
-              ctx.font = '12px Arial';
-              const displayTitle = title.length > 30 ? title.substring(0, 30) + '...' : title;
-              ctx.fillText(displayTitle, canvas.width / 2, size + padding + 45);
+            // Добавляем текст
+            if (title || code) {
+              ctx.fillStyle = 'black';
+              ctx.font = 'bold 16px Arial';
+              ctx.textAlign = 'center';
+              if (code) {
+                ctx.fillText(`#${code}`, canvas.width / 2, size + padding + 25);
+              }
+              if (title) {
+                ctx.fillStyle = 'gray';
+                ctx.font = '12px Arial';
+                const displayTitle = title.length > 30 ? title.substring(0, 30) + '...' : title;
+                ctx.fillText(displayTitle, canvas.width / 2, size + padding + 45);
+              }
             }
           }
-        }
-        URL.revokeObjectURL(url);
-      };
+          URL.revokeObjectURL(url);
+          resolve(canvas);
+        };
 
-      img.src = url;
-      return canvas;
-    } catch (error) {
-      console.error('Ошибка при подготовке QR-кода:', error);
-      return null;
-    }
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve(null);
+        };
+
+        img.src = url;
+      } catch (error) {
+        console.error('Ошибка при подготовке QR-кода:', error);
+        resolve(null);
+      }
+    });
   }
 
   async function downloadQR() {
@@ -111,45 +169,85 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
       }
 
       const dataUrl = canvas.toDataURL('image/png');
-      const printWindow = window.open('', '_blank');
 
-      if (!printWindow) {
-        console.error('Не удалось открыть окно печати');
-        setPrinting(false);
-        return;
+      // Создаем скрытый контейнер для печати
+      let printContainer = printContainerRef.current;
+      if (!printContainer) {
+        printContainer = document.createElement('div');
+        printContainer.className = 'qr-print-container';
+        printContainer.style.position = 'fixed';
+        printContainer.style.left = '-9999px';
+        printContainer.style.top = '0';
+        printContainer.style.width = '100%';
+        printContainer.style.height = '100vh';
+        printContainer.style.display = 'flex';
+        printContainer.style.flexDirection = 'column';
+        printContainer.style.alignItems = 'center';
+        printContainer.style.justifyContent = 'center';
+        printContainer.style.background = 'white';
+        printContainer.style.zIndex = '99999';
+        document.body.appendChild(printContainer);
+        printContainerRef.current = printContainer;
       }
 
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>QR код ${code || ''}</title>
-            <style>
-              body {
-                margin: 0;
-                padding: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                background: white;
-              }
-              img {
-                max-width: 100%;
-                height: auto;
-              }
-            </style>
-          </head>
-          <body>
-            <img src="${dataUrl}" alt="QR код ${code || ''}" />
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
+      // Очищаем контейнер
+      printContainer.innerHTML = '';
+
+      // Создаем изображение для печати
+      const printImg = document.createElement('img');
+      printImg.className = 'qr-print-image';
+      printImg.src = dataUrl;
+      printImg.alt = `QR код ${code || ''}`;
+      printImg.style.maxWidth = '80%';
+      printImg.style.height = 'auto';
+      printContainer.appendChild(printImg);
+
+      // Добавляем текст если есть
+      if (code || title) {
+        const textDiv = document.createElement('div');
+        textDiv.className = 'qr-print-text';
+        if (code) {
+          textDiv.textContent = `#${code}`;
+        }
+        if (title) {
+          const titleText = document.createElement('div');
+          titleText.style.fontSize = '18px';
+          titleText.style.fontWeight = 'normal';
+          titleText.style.color = '#666';
+          titleText.style.marginTop = '10px';
+          titleText.textContent = title.length > 50 ? title.substring(0, 50) + '...' : title;
+          textDiv.appendChild(titleText);
+        }
+        printContainer.appendChild(textDiv);
+      }
+
+      // Показываем контейнер перед печатью
+      printContainer.style.left = '0';
+      printContainer.style.top = '0';
+
+      // Ждем загрузки изображения
+      await new Promise((resolve) => {
+        if (printImg.complete) {
+          resolve(null);
+        } else {
+          printImg.onload = () => resolve(null);
+          printImg.onerror = () => resolve(null);
+        }
+      });
+
+      // Небольшая задержка для рендеринга
+      setTimeout(() => {
+        window.print();
+        // Скрываем контейнер после печати
+        setTimeout(() => {
+          if (printContainer) {
+            printContainer.style.left = '-9999px';
+          }
+          setPrinting(false);
+        }, 100);
+      }, 100);
     } catch (error) {
       console.error('Ошибка при печати QR-кода:', error);
-    } finally {
       setPrinting(false);
     }
   }
