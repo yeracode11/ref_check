@@ -56,6 +56,12 @@ export default function AccountantDashboard() {
   const [selectedFridge, setSelectedFridge] = useState<Fridge | null>(null);
   const [selectedFridgeDetailId, setSelectedFridgeDetailId] = useState<string | null>(null); // Для детального просмотра
   const [saving, setSaving] = useState(false);
+  
+  // Импорт Excel
+  const [importing, setImporting] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [importResult, setImportResult] = useState<{ imported: number; duplicates: number; errors: number; total: number } | null>(null);
 
   // Форма нового холодильника
   const [newFridge, setNewFridge] = useState({
@@ -239,6 +245,71 @@ export default function AccountantDashboard() {
     setShowStatusModal(true);
   };
 
+  // Функция для импорта холодильников из Excel
+  const handleImportExcel = async () => {
+    if (!importFile) {
+      alert('Пожалуйста, выберите файл для импорта');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      setImportResult(null);
+      setUploadProgress(0);
+
+      const formData = new FormData();
+      formData.append('file', importFile);
+
+      const response = await api.post('/api/admin/import-fridges', formData, {
+        headers: {},
+        timeout: 300000, // 5 минут
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percentCompleted);
+          }
+        },
+      });
+
+      setUploadProgress(100);
+      setImportResult(response.data);
+
+      // Перезагружаем данные
+      loadFridges(0, true);
+
+      alert(`Импорт завершен!\nИмпортировано: ${response.data.imported}\nДубликаты: ${response.data.duplicates}\nОшибки: ${response.data.errors}`);
+      
+      // Очищаем файл после успешного импорта
+      setImportFile(null);
+      setUploadProgress(0);
+    } catch (e: any) {
+      console.error('Ошибка импорта:', e);
+      
+      let errorMessage = 'Неизвестная ошибка';
+      if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
+        errorMessage = 'Превышено время ожидания. Файл слишком большой или сервер не отвечает.';
+      } else if (e?.message?.includes('CORS') || e?.code === 'ERR_NETWORK') {
+        errorMessage = 'Сетевая ошибка. Проверьте подключение к интернету.';
+      } else if (e?.response?.data?.error) {
+        errorMessage = e.response.data.error;
+        if (e.response.data.details) {
+          errorMessage += ': ' + e.response.data.details;
+        }
+      } else if (e?.message) {
+        errorMessage = e.message;
+      }
+      
+      alert('Ошибка при импорте файла: ' + errorMessage);
+    } finally {
+      setImporting(false);
+      setTimeout(() => {
+        if (!importing) {
+          setUploadProgress(0);
+        }
+      }, 2000);
+    }
+  };
+
   // Изменить статус холодильника
   const handleChangeStatus = async () => {
     if (!selectedFridge) return;
@@ -300,15 +371,30 @@ export default function AccountantDashboard() {
           <h1 className="text-2xl font-bold text-slate-900">Управление холодильниками</h1>
           <p className="text-slate-500 mt-1">Создание, редактирование и генерация QR-кодов</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          <span>Добавить холодильник</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              setImportFile(null);
+              setImportResult(null);
+              document.getElementById('import-file-input')?.click();
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Импорт из Excel</span>
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Добавить холодильник</span>
+          </button>
+        </div>
       </div>
 
       {/* Аналитика */}
@@ -685,6 +771,115 @@ export default function AccountantDashboard() {
             <p className="text-xs text-slate-500 text-center">
               Отсканируйте QR-код для отметки посещения холодильника
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно импорта Excel */}
+      {(importFile !== null || importing) && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => !importing && setImportFile(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-900">Импорт холодильников из Excel</h3>
+              {!importing && (
+                <button
+                  onClick={() => setImportFile(null)}
+                  className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Выберите Excel файл
+                </label>
+                <input
+                  id="import-file-input"
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  disabled={importing}
+                  className="hidden"
+                />
+                {importFile && (
+                  <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-900">{importFile.name}</p>
+                      <p className="text-xs text-slate-500">{(importFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                    {!importing && (
+                      <button
+                        onClick={() => setImportFile(null)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {importing && uploadProgress > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-slate-600">Загрузка...</span>
+                    <span className="text-sm font-medium text-slate-900">{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {importResult && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm font-medium text-green-900 mb-2">Импорт завершен!</p>
+                  <div className="text-sm text-green-700 space-y-1">
+                    <p>Импортировано: <strong>{importResult.imported}</strong></p>
+                    <p>Дубликаты: <strong>{importResult.duplicates}</strong></p>
+                    {importResult.errors > 0 && (
+                      <p className="text-red-600">Ошибки: <strong>{importResult.errors}</strong></p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleImportExcel}
+                  disabled={!importFile || importing}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {importing ? 'Импорт...' : 'Импортировать'}
+                </button>
+                {!importing && (
+                  <button
+                    onClick={() => {
+                      setImportFile(null);
+                      setImportResult(null);
+                    }}
+                    className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
+                  >
+                    Отмена
+                  </button>
+                )}
+              </div>
+
+              <p className="text-xs text-slate-500">
+                💡 Холодильники будут автоматически привязаны к вашему городу: <strong>{user?.cityId ? cities.find(c => c._id === user.cityId)?.name || 'Ваш город' : 'Ваш город'}</strong>
+              </p>
+            </div>
           </div>
         </div>
       )}

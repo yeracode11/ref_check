@@ -12,9 +12,9 @@ type QRCodeProps = {
 
 export function QRCode({ value, title, code, size = 200, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
-  async function downloadQR() {
-    setDownloading(true);
+  async function createCanvasWithQR(): Promise<HTMLCanvasElement | null> {
     try {
       // Создаем SVG элемент
       const svg = document.getElementById(`qr-svg-${code || 'default'}`);
@@ -60,29 +60,97 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
               ctx.fillText(displayTitle, canvas.width / 2, size + padding + 45);
             }
           }
-
-          // Скачиваем
-          canvas.toBlob((blob) => {
-            if (blob) {
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `qr_${code || 'fridge'}.png`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-            }
-            setDownloading(false);
-          });
         }
         URL.revokeObjectURL(url);
       };
 
       img.src = url;
+      return canvas;
+    } catch (error) {
+      console.error('Ошибка при подготовке QR-кода:', error);
+      return null;
+    }
+  }
+
+  async function downloadQR() {
+    setDownloading(true);
+    try {
+      const canvas = await createCanvasWithQR();
+      if (!canvas) {
+        setDownloading(false);
+        return;
+      }
+
+      // Скачиваем
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `qr_${code || 'fridge'}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
+        setDownloading(false);
+      });
     } catch (error) {
       console.error('Ошибка при скачивании QR-кода:', error);
       setDownloading(false);
+    }
+  }
+
+  async function printQR() {
+    setPrinting(true);
+    try {
+      const canvas = await createCanvasWithQR();
+      if (!canvas) {
+        setPrinting(false);
+        return;
+      }
+
+      const dataUrl = canvas.toDataURL('image/png');
+      const printWindow = window.open('', '_blank');
+
+      if (!printWindow) {
+        console.error('Не удалось открыть окно печати');
+        setPrinting(false);
+        return;
+      }
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>QR код ${code || ''}</title>
+            <style>
+              body {
+                margin: 0;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                background: white;
+              }
+              img {
+                max-width: 100%;
+                height: auto;
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUrl}" alt="QR код ${code || ''}" />
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+    } catch (error) {
+      console.error('Ошибка при печати QR-кода:', error);
+    } finally {
+      setPrinting(false);
     }
   }
 
@@ -105,15 +173,26 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
           </div>
         )}
       </div>
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={downloadQR}
-        disabled={downloading}
-        className="text-sm"
-      >
-        {downloading ? 'Скачивание...' : '📥 Скачать QR'}
-      </Button>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Button
+          type="button"
+          variant="primary"
+          onClick={printQR}
+          disabled={printing}
+          className="text-sm"
+        >
+          {printing ? 'Печать...' : '🖨️ Печать QR'}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={downloadQR}
+          disabled={downloading}
+          className="text-sm"
+        >
+          {downloading ? 'Скачивание...' : '📥 Скачать QR'}
+        </Button>
+      </div>
     </div>
   );
 }

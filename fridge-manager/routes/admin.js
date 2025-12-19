@@ -228,8 +228,8 @@ router.get('/export-fridges', authenticateToken, requireAdmin, async (req, res) 
 });
 
 // POST /api/admin/import-fridges
-// Импорт холодильников из Excel файла
-router.post('/import-fridges', authenticateToken, requireAdmin, (req, res, next) => {
+// Импорт холодильников из Excel файла (доступен для админов и бухгалтеров)
+router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req, res, next) => {
   // Обработка загрузки файла с обработкой ошибок
   upload.single('file')(req, res, (err) => {
     if (err) {
@@ -293,14 +293,24 @@ router.post('/import-fridges', authenticateToken, requireAdmin, (req, res, next)
     const addressIdx = findColumnIndex(['адрес']);
     const tpIdx = findColumnIndex(['тп']);
 
-    // Получаем или создаем город Тараз
-    let city = await City.findOne({ code: 'taras' });
-    if (!city) {
-      city = await City.create({
-        name: 'Тараз',
-        code: 'taras',
-        active: true,
-      });
+    // Определяем город для импорта
+    // Если бухгалтер - используем его город, иначе ищем/создаем Тараз
+    let city;
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      city = await City.findById(req.user.cityId);
+      if (!city) {
+        return res.status(400).json({ error: 'Город бухгалтера не найден' });
+      }
+    } else {
+      // Для админа - используем Тараз по умолчанию
+      city = await City.findOne({ code: 'taras' });
+      if (!city) {
+        city = await City.create({
+          name: 'Тараз',
+          code: 'taras',
+          active: true,
+        });
+      }
     }
 
     // Парсим данные
