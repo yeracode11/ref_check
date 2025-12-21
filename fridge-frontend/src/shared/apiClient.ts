@@ -3,7 +3,10 @@ import axios from 'axios';
 // Get API URL from environment variable or use production default
 // In Vite, environment variables are embedded at build time
 // For production, set VITE_API_URL in .env.production or use the default
-const baseURL = import.meta.env.VITE_API_URL || 'https://stellref.kz';
+let baseURL = import.meta.env.VITE_API_URL || 'https://stellref.kz';
+
+// Normalize baseURL: remove trailing slash to avoid double slashes
+baseURL = baseURL.replace(/\/+$/, '');
 
 // Log base URL (always, for debugging)
 console.log('API Base URL:', baseURL);
@@ -22,6 +25,10 @@ api.interceptors.request.use((config) => {
   // Log request URL for debugging
   const fullUrl = `${config.baseURL}${config.url}`;
   console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`);
+  // Log request data for login requests (without password for security)
+  if (config.url?.includes('/auth/login') && config.data) {
+    console.log('[API Request Data]', { username: config.data.username, password: '***' });
+  }
   return config;
 });
 
