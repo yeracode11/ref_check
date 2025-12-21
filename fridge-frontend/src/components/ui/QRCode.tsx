@@ -10,13 +10,19 @@ type QRCodeProps = {
   className?: string;
 };
 
+// Глобальный контейнер для печати (один на всю страницу)
+let globalPrintContainer: HTMLDivElement | null = null;
+let printStyleAdded = false;
+
 export function QRCode({ value, title, code, size = 200, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
   const [printing, setPrinting] = useState(false);
-  const printContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Добавляем стили для печати
+  // Добавляем стили для печати (только один раз)
   useEffect(() => {
+    if (printStyleAdded) return;
+    printStyleAdded = true;
+
     const styleId = 'qr-print-styles';
     if (document.getElementById(styleId)) return;
 
@@ -27,41 +33,39 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
         body * {
           visibility: hidden;
         }
-        .qr-print-container,
-        .qr-print-container * {
-          visibility: visible;
+        #qr-print-global-container,
+        #qr-print-global-container * {
+          visibility: visible !important;
         }
-        .qr-print-container {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          height: 100vh;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          background: white;
+        #qr-print-global-container {
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          height: 100vh !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          justify-content: center !important;
+          background: white !important;
+          z-index: 999999 !important;
         }
-        .qr-print-image {
-          max-width: 80%;
-          height: auto;
+        #qr-print-global-container .qr-print-image {
+          max-width: 80% !important;
+          height: auto !important;
         }
-        .qr-print-text {
-          margin-top: 20px;
-          font-size: 24px;
-          font-weight: bold;
-          text-align: center;
+        #qr-print-global-container .qr-print-text {
+          margin-top: 20px !important;
+          font-size: 24px !important;
+          font-weight: bold !important;
+          text-align: center !important;
         }
       }
     `;
     document.head.appendChild(style);
 
     return () => {
-      const existingStyle = document.getElementById(styleId);
-      if (existingStyle) {
-        existingStyle.remove();
-      }
+      // Не удаляем стили при размонтировании, они нужны глобально
     };
   }, []);
 
@@ -170,28 +174,26 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
 
       const dataUrl = canvas.toDataURL('image/png');
 
-      // Создаем скрытый контейнер для печати
-      let printContainer = printContainerRef.current;
-      if (!printContainer) {
-        printContainer = document.createElement('div');
-        printContainer.className = 'qr-print-container';
-        printContainer.style.position = 'fixed';
-        printContainer.style.left = '-9999px';
-        printContainer.style.top = '0';
-        printContainer.style.width = '100%';
-        printContainer.style.height = '100vh';
-        printContainer.style.display = 'flex';
-        printContainer.style.flexDirection = 'column';
-        printContainer.style.alignItems = 'center';
-        printContainer.style.justifyContent = 'center';
-        printContainer.style.background = 'white';
-        printContainer.style.zIndex = '99999';
-        document.body.appendChild(printContainer);
-        printContainerRef.current = printContainer;
+      // Используем глобальный контейнер для печати (один на всю страницу)
+      if (!globalPrintContainer) {
+        globalPrintContainer = document.createElement('div');
+        globalPrintContainer.id = 'qr-print-global-container';
+        globalPrintContainer.style.position = 'fixed';
+        globalPrintContainer.style.left = '-9999px';
+        globalPrintContainer.style.top = '0';
+        globalPrintContainer.style.width = '100%';
+        globalPrintContainer.style.height = '100vh';
+        globalPrintContainer.style.display = 'flex';
+        globalPrintContainer.style.flexDirection = 'column';
+        globalPrintContainer.style.alignItems = 'center';
+        globalPrintContainer.style.justifyContent = 'center';
+        globalPrintContainer.style.background = 'white';
+        globalPrintContainer.style.zIndex = '999999';
+        document.body.appendChild(globalPrintContainer);
       }
 
-      // Очищаем контейнер
-      printContainer.innerHTML = '';
+      // Очищаем контейнер перед добавлением нового содержимого
+      globalPrintContainer.innerHTML = '';
 
       // Создаем изображение для печати
       const printImg = document.createElement('img');
@@ -200,7 +202,7 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
       printImg.alt = `QR код ${code || ''}`;
       printImg.style.maxWidth = '80%';
       printImg.style.height = 'auto';
-      printContainer.appendChild(printImg);
+      globalPrintContainer.appendChild(printImg);
 
       // Добавляем текст если есть
       if (code || title) {
@@ -218,12 +220,12 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
           titleText.textContent = title.length > 50 ? title.substring(0, 50) + '...' : title;
           textDiv.appendChild(titleText);
         }
-        printContainer.appendChild(textDiv);
+        globalPrintContainer.appendChild(textDiv);
       }
 
       // Показываем контейнер перед печатью
-      printContainer.style.left = '0';
-      printContainer.style.top = '0';
+      globalPrintContainer.style.left = '0';
+      globalPrintContainer.style.top = '0';
 
       // Ждем загрузки изображения
       await new Promise((resolve) => {
@@ -240,8 +242,9 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
         window.print();
         // Скрываем контейнер после печати
         setTimeout(() => {
-          if (printContainer) {
-            printContainer.style.left = '-9999px';
+          if (globalPrintContainer) {
+            globalPrintContainer.style.left = '-9999px';
+            globalPrintContainer.innerHTML = '';
           }
           setPrinting(false);
         }, 100);

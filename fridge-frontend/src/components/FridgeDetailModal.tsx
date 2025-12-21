@@ -548,24 +548,25 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
 
         {/* QR Modal */}
         {showQR && (
-          <div className="absolute inset-0 bg-white rounded-xl flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <div className="absolute inset-0 bg-white rounded-xl flex flex-col z-50">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
               <h3 className="font-semibold text-slate-900">QR-код: {fridge.name}</h3>
               <button
                 onClick={() => setShowQR(false)}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                aria-label="Закрыть"
               >
                 ✕
               </button>
             </div>
-            <div className="flex-1 flex flex-col items-center justify-center p-6">
+            <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto min-h-0">
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(fridge.code)}`}
                 title={fridge.name}
                 code={fridge.code}
                 size={250}
               />
-              <p className="text-sm text-slate-500 mt-4 text-center">
+              <p className="text-sm text-slate-500 mt-4 text-center max-w-md">
                 Отсканируйте QR-код для отметки посещения
               </p>
             </div>

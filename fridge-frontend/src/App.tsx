@@ -1,12 +1,45 @@
-import { useState } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { MobileMenu, BurgerButton } from './components/MobileMenu';
 
 export default function App() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  // Проверка доступа к текущей странице при смене пользователя
+  useEffect(() => {
+    if (!user) return;
+    
+    const currentPath = location.pathname;
+    
+    // Страницы только для менеджеров
+    const managerOnlyPaths = ['/', '/new'];
+    // Страницы только для админов
+    const adminOnlyPaths = ['/admin', '/users', '/cities'];
+    // Страницы только для бухгалтеров
+    const accountantOnlyPaths = ['/accountant'];
+    
+    // Если менеджер пытается зайти на админские или бухгалтерские страницы
+    if (user.role === 'manager' && (adminOnlyPaths.includes(currentPath) || accountantOnlyPaths.includes(currentPath))) {
+      navigate('/', { replace: true });
+      return;
+    }
+    
+    // Если админ пытается зайти на страницу бухгалтера
+    if (user.role === 'admin' && accountantOnlyPaths.includes(currentPath)) {
+      navigate('/fridges', { replace: true });
+      return;
+    }
+    
+    // Если бухгалтер пытается зайти на страницы менеджера или админа
+    if (user.role === 'accountant' && (managerOnlyPaths.includes(currentPath) || adminOnlyPaths.includes(currentPath))) {
+      navigate('/fridges', { replace: true });
+      return;
+    }
+  }, [user, location.pathname, navigate]);
 
   const baseNavItems = [
     { path: '/', label: 'Отметки', icon: '📋' },

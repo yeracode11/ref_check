@@ -5,6 +5,7 @@ import './index.css';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRouteGuard from './components/AdminRouteGuard';
+import AccountantRouteGuard from './components/AccountantRouteGuard';
 import App from './App';
 import CheckinsList from './pages/CheckinsList';
 import NewCheckin from './pages/NewCheckin';
@@ -48,7 +49,14 @@ const router = createBrowserRouter([
           { path: 'admin', element: <AdminDashboard /> },
           { path: 'users', element: <UsersManagement /> },
           { path: 'cities', element: <CitiesManagement /> },
-          { path: 'accountant', element: <AccountantDashboard /> },
+          { 
+            path: 'accountant', 
+            element: (
+              <AccountantRouteGuard>
+                <AccountantDashboard />
+              </AccountantRouteGuard>
+            )
+          },
           { path: 'checkin/:code', element: <CheckinPage /> },
         ],
       },

@@ -51,8 +51,10 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Использование:")
         print("  python3 reset_password.py list                    # Показать всех пользователей")
-        print("  python3 reset_password.py reset <username> <pass> # Сбросить пароль")
+        print("  python3 reset_password.py <username> <password> # Сбросить пароль")
+        print("  python3 reset_password.py reset <username> <pass> # Сбросить пароль (альтернативный синтаксис)")
         print("\nПример:")
+        print("  python3 reset_password.py admin Admin123!")
         print("  python3 reset_password.py reset manager1 password123")
         sys.exit(1)
     
@@ -61,15 +63,21 @@ if __name__ == "__main__":
     if command == "list":
         list_users()
     elif command == "reset":
+        # Старый синтаксис: reset <username> <password>
         if len(sys.argv) < 4:
             print("❌ Ошибка: укажите username и новый пароль")
             print("Пример: python3 reset_password.py reset manager1 password123")
             sys.exit(1)
-        
         username = sys.argv[2]
         new_password = sys.argv[3]
         reset_password(username, new_password)
     else:
-        print(f"❌ Неизвестная команда: {command}")
-        sys.exit(1)
+        # Новый синтаксис: <username> <password>
+        if len(sys.argv) < 3:
+            print("❌ Ошибка: укажите username и новый пароль")
+            print("Пример: python3 reset_password.py admin Admin123!")
+            sys.exit(1)
+        username = sys.argv[1]
+        new_password = sys.argv[2]
+        reset_password(username, new_password)
 

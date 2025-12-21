@@ -35,7 +35,8 @@ const router = express.Router();
 // GET /api/admin/fridge-status
 // Возвращает список холодильников с последней датой посещения и статусом для карты
 // Поддерживает пагинацию через параметры limit и skip
-router.get('/fridge-status', authenticateToken, requireAdmin, async (req, res) => {
+// Для бухгалтеров возвращает только холодильники их города
+router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const { limit, skip, all } = req.query;
     
@@ -62,11 +63,17 @@ router.get('/fridge-status', authenticateToken, requireAdmin, async (req, res) =
       }
     });
 
+    // Для бухгалтера фильтруем по городу
+    let fridgeQuery: any = {};
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      fridgeQuery.cityId = req.user.cityId;
+    }
+
     // Получаем общее количество для пагинации
-    const total = await Fridge.countDocuments({});
+    const total = await Fridge.countDocuments(fridgeQuery);
 
     // Получаем холодильники с пагинацией (если нужно)
-    let query = Fridge.find({}).populate('cityId', 'name code');
+    let query = Fridge.find(fridgeQuery).populate('cityId', 'name code');
     if (shouldPaginate && limitNum) {
       query = query.limit(limitNum).skip(skipNum);
     }
@@ -419,8 +426,8 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
 });
 
 // POST /api/admin/fridges
-// Создание нового холодильника (только для админа, с автогенерацией кода)
-router.post('/fridges', authenticateToken, requireAdmin, async (req, res) => {
+// Создание нового холодильника (для админа и бухгалтера, с автогенерацией кода)
+router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const { name, address, description, cityId } = req.body;
     
@@ -428,21 +435,47 @@ router.post('/fridges', authenticateToken, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Название холодильника обязательно' });
     }
 
-    // Получаем или создаем город Тараз, если cityId не указан
+    // Для бухгалтера проверяем, что он может создавать холодильники только для своего города
+    let targetCityId = cityId;
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      // Бухгалтер может создавать холодильники только для своего города
+      targetCityId = req.user.cityId;
+      
+      // Если указан другой cityId, игнорируем его и используем город бухгалтера
+      if (cityId && cityId.toString() !== req.user.cityId.toString()) {
+        console.log(`[Admin] Accountant ${req.user.username} tried to create fridge for city ${cityId}, but assigned to their city ${req.user.cityId}`);
+      }
+    }
+
+    // Получаем или создаем город, если cityId не указан
     let city;
-    if (cityId) {
-      city = await City.findById(cityId);
+    if (targetCityId) {
+      city = await City.findById(targetCityId);
       if (!city) {
         return res.status(400).json({ error: 'Город не найден' });
       }
+      
+      // Для бухгалтера дополнительная проверка
+      if (req.user.role === 'accountant' && city._id.toString() !== req.user.cityId.toString()) {
+        return res.status(403).json({ error: 'Доступ запрещён: можно создавать холодильники только для своего города' });
+      }
     } else {
-      city = await City.findOne({ code: 'taras' });
-      if (!city) {
-        city = await City.create({
-          name: 'Тараз',
-          code: 'taras',
-          active: true,
-        });
+      // Если cityId не указан и пользователь - бухгалтер, используем его город
+      if (req.user.role === 'accountant' && req.user.cityId) {
+        city = await City.findById(req.user.cityId);
+        if (!city) {
+          return res.status(400).json({ error: 'Город бухгалтера не найден' });
+        }
+      } else {
+        // Для админа - по умолчанию Тараз
+        city = await City.findOne({ code: 'taras' });
+        if (!city) {
+          city = await City.create({
+            name: 'Тараз',
+            code: 'taras',
+            active: true,
+          });
+        }
       }
     }
 

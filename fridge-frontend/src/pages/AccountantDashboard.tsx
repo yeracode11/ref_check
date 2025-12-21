@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
@@ -6,6 +7,7 @@ import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loadin
 import { QRCode } from '../components/ui/QRCode';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
+import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
 
 type ClientInfo = {
   name?: string;
@@ -38,6 +40,7 @@ const ITEMS_PER_PAGE = 30;
 
 export default function AccountantDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [fridges, setFridges] = useState<Fridge[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +49,22 @@ export default function AccountantDashboard() {
   const [totalFridges, setTotalFridges] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  
+  // Данные для карты
+  const [mapFridges, setMapFridges] = useState<any[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
+  
+  // Проверка доступа при смене пользователя
+  useEffect(() => {
+    if (user && user.role !== 'accountant' && user.role !== 'admin') {
+      // Если пользователь не бухгалтер и не админ, редиректим
+      if (user.role === 'manager') {
+        navigate('/', { replace: true });
+      } else {
+        navigate('/fridges', { replace: true });
+      }
+    }
+  }, [user, navigate]);
   
   // Модальные окна
   const [showAddModal, setShowAddModal] = useState(false);
@@ -93,15 +112,56 @@ export default function AccountantDashboard() {
   // Загрузка городов
   useEffect(() => {
     if (!user) return;
-    api.get('/api/cities?active=true')
-      .then(res => {
-        setCities(res.data);
-        if (res.data.length > 0 && !newFridge.cityId) {
-          setNewFridge(prev => ({ ...prev, cityId: res.data[0]._id }));
-        }
-      })
-      .catch(console.error);
+    
+    // Для бухгалтера загружаем только его город
+    if (user.role === 'accountant' && user.cityId) {
+      api.get(`/api/cities/${user.cityId}`)
+        .then(res => {
+          setCities([res.data]);
+          // Автоматически устанавливаем город бухгалтера
+          setNewFridge(prev => ({ ...prev, cityId: res.data._id }));
+        })
+        .catch(console.error);
+    } else {
+      // Для админа загружаем все города
+      api.get('/api/cities?active=true')
+        .then(res => {
+          setCities(res.data);
+          if (res.data.length > 0 && !newFridge.cityId) {
+            setNewFridge(prev => ({ ...prev, cityId: res.data[0]._id }));
+          }
+        })
+        .catch(console.error);
+    }
   }, [user]);
+
+  // Функция для загрузки данных карты
+  const loadMapData = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      setMapLoading(true);
+      // Загружаем все холодильники для карты (all=true)
+      const res = await api.get('/api/admin/fridge-status?all=true');
+      // Фильтруем только те, у которых есть координаты и они не нулевые
+      const fridgesWithLocation = res.data.filter((f: any) => 
+        f.location && 
+        f.location.coordinates && 
+        f.location.coordinates[0] !== 0 && 
+        f.location.coordinates[1] !== 0
+      );
+      setMapFridges(fridgesWithLocation);
+    } catch (error) {
+      console.error('Ошибка загрузки данных для карты:', error);
+    } finally {
+      setMapLoading(false);
+    }
+  }, [user]);
+
+  // Загрузка данных для карты при монтировании
+  useEffect(() => {
+    loadMapData();
+  }, [loadMapData]);
 
   // Загрузка холодильников
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
@@ -173,11 +233,16 @@ export default function AccountantDashboard() {
 
     try {
       setSaving(true);
+      // Для бухгалтера всегда используем его город
+      const cityIdToSend = user?.role === 'accountant' && user?.cityId 
+        ? user.cityId 
+        : newFridge.cityId || undefined;
+      
       const res = await api.post('/api/admin/fridges', {
         name: newFridge.name.trim(),
         address: newFridge.address.trim() || undefined,
         description: newFridge.description.trim() || undefined,
-        cityId: newFridge.cityId || undefined,
+        cityId: cityIdToSend,
       });
 
       setSelectedFridge(res.data);
@@ -185,6 +250,8 @@ export default function AccountantDashboard() {
       setShowQRModal(true);
       setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
       loadFridges(0, true);
+      // Обновляем карту
+      loadMapData();
     } catch (e: any) {
       alert('Ошибка: ' + (e?.response?.data?.error || e.message));
     } finally {
@@ -329,6 +396,8 @@ export default function AccountantDashboard() {
       });
       setShowStatusModal(false);
       loadFridges(0, true);
+      // Обновляем карту
+      loadMapData();
       alert('Статус изменен');
     } catch (e: any) {
       alert('Ошибка: ' + (e?.response?.data?.error || e.message));
@@ -399,6 +468,24 @@ export default function AccountantDashboard() {
 
       {/* Аналитика */}
       <AnalyticsPanel endpoint="/api/admin/analytics/accountant" />
+
+      {/* Карта холодильников */}
+      <Card>
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">
+          Карта холодильников {user?.role === 'accountant' && user?.cityId && cities.length > 0 && `- ${cities[0]?.name}`}
+        </h2>
+        {mapLoading ? (
+          <div className="h-[480px] flex items-center justify-center">
+            <LoadingSpinner />
+          </div>
+        ) : mapFridges.length === 0 ? (
+          <div className="h-[480px] flex items-center justify-center text-slate-500">
+            <p>Нет холодильников с координатами для отображения на карте</p>
+          </div>
+        ) : (
+          <AdminFridgeMap fridges={mapFridges} />
+        )}
+      </Card>
 
       {/* Фильтры */}
       <Card>
@@ -515,15 +602,26 @@ export default function AccountantDashboard() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Город</label>
-                <select
-                  value={newFridge.cityId}
-                  onChange={(e) => setNewFridge({ ...newFridge, cityId: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {cities.map((c) => (
-                    <option key={c._id} value={c._id}>{c.name}</option>
-                  ))}
-                </select>
+                {user?.role === 'accountant' && user?.cityId ? (
+                  // Для бухгалтера показываем только его город (только для чтения)
+                  <input
+                    type="text"
+                    value={cities.find(c => c._id === user.cityId)?.name || 'Город не назначен'}
+                    disabled
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-600 cursor-not-allowed"
+                  />
+                ) : (
+                  // Для админа - выбор города
+                  <select
+                    value={newFridge.cityId}
+                    onChange={(e) => setNewFridge({ ...newFridge, cityId: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {cities.map((c) => (
+                      <option key={c._id} value={c._id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Описание</label>
