@@ -16,8 +16,22 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    
+    // Validate input
+    if (!username.trim()) {
+      setError('Введите имя пользователя');
+      setLoading(false);
+      return;
+    }
+    if (!password.trim()) {
+      setError('Введите пароль');
+      setLoading(false);
+      return;
+    }
+    
     try {
-      const userData = await login(username, password);
+      console.log('[Login] Attempting login for:', username);
+      const userData = await login(username.trim(), password);
       // После успешного логина определяем, куда редиректить
       let redirectTo = from;
       
@@ -51,13 +65,24 @@ export default function LoginPage() {
       
       if (e?.response) {
         // Сервер вернул ответ с ошибкой
-        errorMessage = e.response.data?.error || e.response.data?.message || `Ошибка ${e.response.status}: ${e.response.statusText}`;
+        const serverError = e.response.data?.error || e.response.data?.message;
+        console.error('[Login] Server error response:', e.response.data);
+        
+        if (e.response.status === 401) {
+          errorMessage = serverError || 'Неверное имя пользователя или пароль';
+        } else if (e.response.status === 403) {
+          errorMessage = serverError || 'Доступ запрещен. Аккаунт может быть отключен.';
+        } else {
+          errorMessage = serverError || `Ошибка ${e.response.status}: ${e.response.statusText}`;
+        }
       } else if (e?.request) {
         // Запрос был отправлен, но ответа не получено
+        console.error('[Login] No response received:', e.request);
         errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение к интернету.';
-      } else if (e?.message) {
+      } else {
         // Ошибка при настройке запроса
-        errorMessage = e.message;
+        console.error('[Login] Request setup error:', e.message);
+        errorMessage = e?.message || 'Ошибка входа. Попробуйте еще раз.';
       }
       
       setError(errorMessage);

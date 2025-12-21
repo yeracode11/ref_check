@@ -63,16 +63,34 @@ const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fridge_ma
 
 async function start() {
   try {
+    console.log('[Server] Connecting to MongoDB...');
+    console.log('[Server] MongoDB URI:', mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')); // Hide credentials
+    
     await mongoose.connect(mongoUri, {
       autoIndex: true,
     });
+    
+    console.log('[Server] ✅ Connected to MongoDB');
+    console.log('[Server] Database:', mongoose.connection.db.databaseName);
+    
+    // Test user lookup
+    const User = require('./models/User');
+    const testUser = await User.findOne({ username: 'admin' });
+    if (testUser) {
+      console.log(`[Server] ✅ Test user 'admin' found in database`);
+    } else {
+      console.log(`[Server] ⚠️  Test user 'admin' NOT found in database`);
+      const userCount = await User.countDocuments();
+      console.log(`[Server] Total users in database: ${userCount}`);
+    }
+    
     const port = process.env.PORT || 4000;
     app.listen(port, '0.0.0.0', () => {
-    console.log(`Server listening on http://0.0.0.0:${port}`);
+      console.log(`[Server] Server listening on http://0.0.0.0:${port}`);
     });
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('Failed to start server:', err);
+    console.error('[Server] Failed to start server:', err);
     process.exit(1);
   }
 }

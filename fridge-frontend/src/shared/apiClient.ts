@@ -22,12 +22,26 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
+  // Ensure Content-Type is set for POST/PUT/PATCH requests
+  if (['post', 'put', 'patch'].includes(config.method?.toLowerCase() || '')) {
+    if (!config.headers['Content-Type']) {
+      config.headers['Content-Type'] = 'application/json';
+    }
+  }
+  
   // Log request URL for debugging
   const fullUrl = `${config.baseURL}${config.url}`;
   console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`);
   // Log request data for login requests (without password for security)
   if (config.url?.includes('/auth/login') && config.data) {
-    console.log('[API Request Data]', { username: config.data.username, password: '***' });
+    console.log('[API Request Data]', { 
+      username: config.data.username, 
+      password: '***',
+      hasUsername: !!config.data.username,
+      hasPassword: !!config.data.password,
+      dataType: typeof config.data
+    });
   }
   return config;
 });
@@ -52,7 +66,16 @@ api.interceptors.response.use(
     console.error('[API Error]', errorDetails);
     // Log full error response data for debugging
     if (error.response?.data) {
-      console.error('[API Error Data]', JSON.stringify(error.response.data, null, 2));
+      console.error('[API Error Data]', error.response.data);
+      console.error('[API Error Data JSON]', JSON.stringify(error.response.data, null, 2));
+    }
+    // Log request data for login attempts
+    if (config?.url?.includes('/auth/login')) {
+      console.error('[API Login Request Data]', {
+        username: config.data?.username,
+        hasPassword: !!config.data?.password,
+        passwordLength: config.data?.password?.length || 0
+      });
     }
 
     // Don't retry on 4xx errors (client errors)

@@ -19,11 +19,28 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'username and password are required' });
     }
 
-    const user = await User.findOne({ username });
+    // Normalize username: trim whitespace and convert to string
+    const normalizedUsername = String(username).trim();
+    console.log(`[Auth] Normalized username: "${normalizedUsername}" (original: "${username}")`);
+
+    // Try to find user - first exact match, then case-insensitive
+    let user = await User.findOne({ username: normalizedUsername });
     if (!user) {
-      console.log(`[Auth] User not found: ${username}`);
+      // Try case-insensitive search
+      user = await User.findOne({ 
+        username: { $regex: new RegExp(`^${normalizedUsername}$`, 'i') }
+      });
+    }
+    
+    if (!user) {
+      // Log all usernames for debugging
+      const allUsers = await User.find({}, 'username').limit(10);
+      console.log(`[Auth] User not found: ${normalizedUsername}`);
+      console.log(`[Auth] Sample usernames in DB:`, allUsers.map(u => u.username));
       return res.status(401).json({ error: 'Invalid username or password' });
     }
+    
+    console.log(`[Auth] User found: ${user.username} (ID: ${user._id}, Role: ${user.role})`);
 
     if (!user.active) {
       console.log(`[Auth] Account disabled for user: ${username}`);
