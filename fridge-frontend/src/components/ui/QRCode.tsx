@@ -29,36 +29,62 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
+      @page {
+        size: A4;
+        margin: 0;
+        padding: 0;
+      }
       @media print {
+        * {
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        html, body {
+          width: 100% !important;
+          height: 100% !important;
+          overflow: hidden !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
         body * {
-          visibility: hidden;
+          visibility: hidden !important;
         }
         #qr-print-global-container,
         #qr-print-global-container * {
           visibility: visible !important;
         }
         #qr-print-global-container {
-          position: absolute !important;
+          position: fixed !important;
           left: 0 !important;
           top: 0 !important;
           width: 100% !important;
-          height: 100vh !important;
+          height: 100% !important;
+          min-height: auto !important;
+          max-height: 100% !important;
           display: flex !important;
           flex-direction: column !important;
           align-items: center !important;
           justify-content: center !important;
           background: white !important;
           z-index: 999999 !important;
+          page-break-after: avoid !important;
+          page-break-inside: avoid !important;
+          overflow: hidden !important;
         }
         #qr-print-global-container .qr-print-image {
-          max-width: 80% !important;
+          max-width: 70% !important;
+          max-height: 70% !important;
           height: auto !important;
+          page-break-after: avoid !important;
+          page-break-inside: avoid !important;
         }
         #qr-print-global-container .qr-print-text {
           margin-top: 20px !important;
           font-size: 24px !important;
           font-weight: bold !important;
           text-align: center !important;
+          page-break-before: avoid !important;
+          page-break-after: avoid !important;
         }
       }
     `;
@@ -182,13 +208,14 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
         globalPrintContainer.style.left = '-9999px';
         globalPrintContainer.style.top = '0';
         globalPrintContainer.style.width = '100%';
-        globalPrintContainer.style.height = '100vh';
+        globalPrintContainer.style.minHeight = '100%';
         globalPrintContainer.style.display = 'flex';
         globalPrintContainer.style.flexDirection = 'column';
         globalPrintContainer.style.alignItems = 'center';
         globalPrintContainer.style.justifyContent = 'center';
         globalPrintContainer.style.background = 'white';
         globalPrintContainer.style.zIndex = '999999';
+        globalPrintContainer.style.overflow = 'hidden';
         document.body.appendChild(globalPrintContainer);
       }
 
