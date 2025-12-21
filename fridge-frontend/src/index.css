@@ -6,4 +6,17 @@
 html, body, #root { height: 100%; }
 body { margin: 0; }
 
+/* Ensure Leaflet map doesn't overlap modals */
+/* Leaflet map z-index is typically 400-700, modals use 1000+ */
+.leaflet-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure map controls don't overlap modals */
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 500;
+}
+
 

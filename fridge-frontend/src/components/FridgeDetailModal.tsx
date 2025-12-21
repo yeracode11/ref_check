@@ -238,8 +238,16 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-4" 
+        onClick={onClose}
+        style={{ zIndex: 1000 }}
+      >
+        <div 
+          className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 relative z-[1001]" 
+          onClick={(e) => e.stopPropagation()}
+          style={{ zIndex: 1001 }}
+        >
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-slate-900"></div>
           </div>
@@ -250,8 +258,16 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
 
   if (error || !fridge) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-4" 
+        onClick={onClose}
+        style={{ zIndex: 1000 }}
+      >
+        <div 
+          className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 relative z-[1001]" 
+          onClick={(e) => e.stopPropagation()}
+          style={{ zIndex: 1001 }}
+        >
           <div className="text-center py-8">
             <div className="text-red-500 mb-4">⚠️</div>
             <p className="text-red-600">{error || 'Не удалось загрузить данные'}</p>
@@ -265,10 +281,15 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-4" 
+      onClick={onClose}
+      style={{ zIndex: 1000 }}
+    >
       <div 
-        className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col" 
+        className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col relative z-[1001]" 
         onClick={(e) => e.stopPropagation()}
+        style={{ zIndex: 1001 }}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
@@ -548,7 +569,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
 
         {/* QR Modal */}
         {showQR && (
-          <div className="absolute inset-0 bg-white rounded-xl flex flex-col z-50">
+          <div className="absolute inset-0 bg-white rounded-xl flex flex-col z-[1002]" style={{ zIndex: 1002 }}>
             <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
               <h3 className="font-semibold text-slate-900">QR-код: {fridge.name}</h3>
               <button

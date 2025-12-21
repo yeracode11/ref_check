@@ -27,12 +27,16 @@ export function MobileMenu({ isOpen, onClose, navItems }: MobileMenuProps) {
     <>
       {/* Overlay */}
       <div
-        className="fixed inset-0 bg-black/50 z-40 md:hidden"
+        className="fixed inset-0 bg-black/50 z-[850] md:hidden"
         onClick={onClose}
+        style={{ zIndex: 850 }}
       />
       
       {/* Menu */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-white shadow-xl z-50 md:hidden transform transition-transform duration-300 ease-in-out">
+      <div 
+        className="fixed inset-y-0 left-0 w-64 bg-white shadow-xl z-[900] md:hidden transform transition-transform duration-300 ease-in-out"
+        style={{ zIndex: 900 }}
+      >
         <div className="flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b">

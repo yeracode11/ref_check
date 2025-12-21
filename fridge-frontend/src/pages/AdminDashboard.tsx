@@ -953,12 +953,14 @@ export default function AdminDashboard() {
       {/* Модальное окно для QR-кода */}
       {selectedQRFridge && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-4"
           onClick={() => setSelectedQRFridge(null)}
+          style={{ zIndex: 1000 }}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 relative z-[1001]"
             onClick={(e) => e.stopPropagation()}
+            style={{ zIndex: 1001 }}
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-slate-900">QR-код холодильника</h3>

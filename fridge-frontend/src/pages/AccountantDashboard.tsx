@@ -855,8 +855,16 @@ export default function AccountantDashboard() {
 
       {/* Модальное окно: QR-код */}
       {showQRModal && selectedFridge && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowQRModal(false)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-4" 
+          onClick={() => setShowQRModal(false)}
+          style={{ zIndex: 1000 }}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 relative z-[1001]" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ zIndex: 1001 }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-slate-900">QR-код холодильника</h3>
               <button onClick={() => setShowQRModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl">×</button>
