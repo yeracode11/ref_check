@@ -10,24 +10,33 @@ const router = express.Router();
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+    
+    // Log login attempt (without password)
+    console.log(`[Auth] Login attempt for username: ${username}`);
+    
     if (!username || !password) {
+      console.log('[Auth] Missing username or password');
       return res.status(400).json({ error: 'username and password are required' });
     }
 
     const user = await User.findOne({ username });
     if (!user) {
+      console.log(`[Auth] User not found: ${username}`);
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
     if (!user.active) {
+      console.log(`[Auth] Account disabled for user: ${username}`);
       return res.status(403).json({ error: 'Account is disabled' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
+      console.log(`[Auth] Invalid password for user: ${username}`);
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
+    console.log(`[Auth] Successful login for user: ${username} (${user.role})`);
     const token = generateToken(user);
     const userObj = user.toObject();
     delete userObj.password;
@@ -37,6 +46,7 @@ router.post('/login', async (req, res) => {
       user: userObj,
     });
   } catch (err) {
+    console.error('[Auth] Login error:', err);
     return res.status(500).json({ error: 'Login failed', details: err.message });
   }
 });

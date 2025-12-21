@@ -50,6 +50,10 @@ api.interceptors.response.use(
     };
     
     console.error('[API Error]', errorDetails);
+    // Log full error response data for debugging
+    if (error.response?.data) {
+      console.error('[API Error Data]', JSON.stringify(error.response.data, null, 2));
+    }
 
     // Don't retry on 4xx errors (client errors)
     if (error.response?.status >= 400 && error.response?.status < 500) {
