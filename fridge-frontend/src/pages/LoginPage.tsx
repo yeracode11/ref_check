@@ -45,7 +45,22 @@ export default function LoginPage() {
       
       navigate(redirectTo, { replace: true });
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Ошибка входа');
+      console.error('Login error:', e);
+      // Более детальная обработка ошибок
+      let errorMessage = 'Ошибка входа';
+      
+      if (e?.response) {
+        // Сервер вернул ответ с ошибкой
+        errorMessage = e.response.data?.error || e.response.data?.message || `Ошибка ${e.response.status}: ${e.response.statusText}`;
+      } else if (e?.request) {
+        // Запрос был отправлен, но ответа не получено
+        errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение к интернету.';
+      } else if (e?.message) {
+        // Ошибка при настройке запроса
+        errorMessage = e.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

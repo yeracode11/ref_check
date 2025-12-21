@@ -5,10 +5,8 @@ import axios from 'axios';
 // For production, set VITE_API_URL in .env.production or use the default
 const baseURL = import.meta.env.VITE_API_URL || 'https://stellref.kz';
 
-// Log base URL only in development
-if (import.meta.env.DEV) {
-  console.log('API Base URL:', baseURL);
-}
+// Log base URL (always, for debugging)
+console.log('API Base URL:', baseURL);
 
 export const api = axios.create({ 
   baseURL,
@@ -21,11 +19,9 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  // Log request URL for debugging (only in development)
-  if (import.meta.env.DEV) {
-    const fullUrl = `${config.baseURL}${config.url}`;
-    console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`);
-  }
+  // Log request URL for debugging
+  const fullUrl = `${config.baseURL}${config.url}`;
+  console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`);
   return config;
 });
 
@@ -34,12 +30,28 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const config = error.config;
+    
+    // Log error details for debugging
+    const errorDetails = {
+      url: `${config?.baseURL}${config?.url}`,
+      method: config?.method,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message,
+      code: error.code,
+    };
+    
+    console.error('[API Error]', errorDetails);
 
     // Don't retry on 4xx errors (client errors)
     if (error.response?.status >= 400 && error.response?.status < 500) {
       if (error.response.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
+        // Don't redirect on login page - let LoginPage handle the error
+        if (!config.url?.includes('/auth/login')) {
+          localStorage.removeItem('token');
+          window.location.href = '/login';
+        }
       }
       return Promise.reject(error);
     }
