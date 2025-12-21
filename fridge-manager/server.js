@@ -67,9 +67,8 @@ async function start() {
       autoIndex: true,
     });
     const port = process.env.PORT || 4000;
-    app.listen(port, () => {
-      // eslint-disable-next-line no-console
-      console.log(`Server listening on http://localhost:${port}`);
+    app.listen(port, '0.0.0.0', () => {
+    console.log(`Server listening on http://0.0.0.0:${port}`);
     });
   } catch (err) {
     // eslint-disable-next-line no-console

@@ -1,6 +1,14 @@
 import axios from 'axios';
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+// Get API URL from environment variable or use production default
+// In Vite, environment variables are embedded at build time
+// For production, set VITE_API_URL in .env.production or use the default
+const baseURL = import.meta.env.VITE_API_URL || 'https://stellref.kz';
+
+// Log base URL only in development
+if (import.meta.env.DEV) {
+  console.log('API Base URL:', baseURL);
+}
 
 export const api = axios.create({ 
   baseURL,
@@ -12,6 +20,11 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Log request URL for debugging (only in development)
+  if (import.meta.env.DEV) {
+    const fullUrl = `${config.baseURL}${config.url}`;
+    console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`);
   }
   return config;
 });
