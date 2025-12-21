@@ -64,7 +64,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     });
 
     // Для бухгалтера фильтруем по городу
-    let fridgeQuery: any = {};
+    let fridgeQuery = {};
     if (req.user.role === 'accountant' && req.user.cityId) {
       fridgeQuery.cityId = req.user.cityId;
     }
