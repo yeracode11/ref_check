@@ -63,13 +63,9 @@ export default function FridgesList() {
           if (city) {
             setAccountantCityName(city.name);
             setSelectedCityId(city._id);
-          } else if (res.data.length > 0 && !selectedCityId) {
-            setSelectedCityId(res.data[0]._id);
           }
-        } else if (res.data.length > 0 && !selectedCityId) {
-          // Для остальных - автоматически выбираем первый город
-          setSelectedCityId(res.data[0]._id);
         }
+        // Для остальных (админов) - не выбираем город по умолчанию, показываем все города
       } catch (e: any) {
         console.error('Failed to load cities', e);
       } finally {
@@ -81,12 +77,8 @@ export default function FridgesList() {
 
   // Загрузка холодильников (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
-    // Для бухгалтера город фильтруется на бэкенде, для остальных нужен выбор
-    if (!isAccountant && !isManager && !selectedCityId) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
+    // Для бухгалтера и менеджера город фильтруется на бэкенде
+    // Для остальных (админов) - если selectedCityId пустой, загружаем все холодильники
 
     let alive = true;
     if (reset) {
@@ -99,6 +91,7 @@ export default function FridgesList() {
       const params = new URLSearchParams();
       if (showOnlyActive) params.append('active', 'true');
       // Для бухгалтера/менеджера город добавляется на бэкенде автоматически
+      // Для админов - если выбран город, фильтруем по нему, иначе показываем все
       if (!isAccountant && !isManager && selectedCityId) {
         params.append('cityId', selectedCityId);
       }
@@ -155,11 +148,11 @@ export default function FridgesList() {
 
   // Загрузка при изменении фильтров
   useEffect(() => {
-    // Для бухгалтера загружаем сразу, для остальных - когда выбран город
-    if (isAccountant || isManager || selectedCityId) {
+    // Для бухгалтера/менеджера загружаем сразу, для админов - всегда (даже если город не выбран - показываем все)
+    if (isAccountant || isManager || !citiesLoading) {
       loadFridges(0, true);
     }
-  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant, isManager]);
+  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant, isManager, citiesLoading]);
 
   // Бесконечный скролл
   useEffect(() => {
@@ -339,7 +332,7 @@ export default function FridgesList() {
         <EmptyState
           icon="🧊"
           title={searchQuery ? "Ничего не найдено" : "Нет холодильников"}
-          description={searchQuery ? "Попробуйте изменить поисковый запрос" : `В городе "${selectedCity?.name || ''}" пока нет холодильников.`}
+          description={searchQuery ? "Попробуйте изменить поисковый запрос" : selectedCityId ? `В городе "${selectedCity?.name || ''}" пока нет холодильников.` : "Холодильники не найдены."}
         />
       ) : (
         <>

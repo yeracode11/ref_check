@@ -7,6 +7,7 @@ import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
 import { QRCode } from '../components/ui/QRCode';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
+import { showToast } from '../components/ui/Toast';
 
 type ClientInfo = {
   name?: string;
@@ -328,6 +329,12 @@ export default function AdminDashboard() {
 
     try {
       setCreatingFridge(true);
+      
+      // Показываем toast и закрываем модальное окно сразу
+      showToast('Холодильник добавляется... Можете закрыть окно, мы сообщим когда он будет готов.', 'info', 5000);
+      setShowAddFridgeModal(false);
+      
+      // Создаем холодильник в фоне
       const response = await api.post('/api/admin/fridges', {
         name: newFridge.name.trim(),
         address: newFridge.address.trim() || undefined,
@@ -344,14 +351,22 @@ export default function AdminDashboard() {
         city: response.data.cityId,
         location: response.data.location,
         status: 'never',
+        warehouseStatus: response.data.warehouseStatus || 'warehouse',
+        visitStatus: 'never',
       };
       
-      // Сбрасываем состояние загрузки и закрываем модальное окно сразу
+      // Сбрасываем состояние загрузки
       setCreatingFridge(false);
-      setShowAddFridgeModal(false);
       
       // Очищаем форму
       setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
+      
+      // Добавляем новый холодильник в начало списка сразу (мгновенное отображение)
+      setFridges((prev) => [createdFridge, ...prev]);
+      setTotalFridges((prev) => prev + 1);
+      
+      // Показываем успешное уведомление
+      showToast(`Холодильник "${createdFridge.name}" успешно добавлен!`, 'success', 4000);
       
       // Открываем QR-код с небольшой задержкой, чтобы не блокировать UI
       requestAnimationFrame(() => {
@@ -360,13 +375,14 @@ export default function AdminDashboard() {
         }, 100);
       });
 
-      // Перезагружаем данные в фоне (не блокируя UI)
+      // Перезагружаем данные в фоне для синхронизации (не блокируя UI)
       (async () => {
         try {
           const [fridgeStatusRes] = await Promise.all([
             api.get('/api/admin/fridge-status?all=true'),
           ]);
           setAllFridges(fridgeStatusRes.data);
+          // Обновляем список с сервера для синхронизации
           loadFridges(0, true);
         } catch (e) {
           console.error('Ошибка обновления данных после создания:', e);
@@ -375,7 +391,7 @@ export default function AdminDashboard() {
     } catch (e: any) {
       console.error('Ошибка создания холодильника:', e);
       const errorMessage = e?.response?.data?.error || e?.message || 'Неизвестная ошибка';
-      alert('Ошибка при создании холодильника: ' + errorMessage);
+      showToast(`Ошибка при создании холодильника: ${errorMessage}`, 'error', 5000);
       setCreatingFridge(false);
     }
   };

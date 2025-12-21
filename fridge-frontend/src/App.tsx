@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { MobileMenu, BurgerButton } from './components/MobileMenu';
+import { ToastContainer } from './components/ui/Toast';
 
 export default function App() {
   const location = useLocation();
@@ -139,6 +140,7 @@ export default function App() {
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         <Outlet />
       </main>
+      <ToastContainer />
     </div>
   );
 }

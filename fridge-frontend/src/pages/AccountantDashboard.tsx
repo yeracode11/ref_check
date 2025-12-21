@@ -8,6 +8,7 @@ import { QRCode } from '../components/ui/QRCode';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
+import { showToast } from '../components/ui/Toast';
 
 type ClientInfo = {
   name?: string;
@@ -233,6 +234,11 @@ export default function AccountantDashboard() {
 
     try {
       setSaving(true);
+      
+      // Показываем toast и закрываем модальное окно сразу
+      showToast('Холодильник добавляется... Можете закрыть окно, мы сообщим когда он будет готов.', 'info', 5000);
+      setShowAddModal(false);
+      
       // Для бухгалтера всегда используем его город
       const cityIdToSend = user?.role === 'accountant' && user?.cityId 
         ? user.cityId 
@@ -245,9 +251,27 @@ export default function AccountantDashboard() {
         cityId: cityIdToSend,
       });
 
-      // Закрываем модальное окно и очищаем форму сразу
-      setShowAddModal(false);
+      // Преобразуем ответ в формат Fridge
+      const newFridgeItem: Fridge = {
+        _id: res.data._id,
+        code: res.data.code,
+        name: res.data.name,
+        address: res.data.address,
+        cityId: res.data.cityId,
+        warehouseStatus: res.data.warehouseStatus || 'warehouse',
+        clientInfo: res.data.clientInfo || null,
+        createdAt: res.data.createdAt || new Date().toISOString(),
+      };
+
+      // Очищаем форму
       setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
+      
+      // Добавляем новый холодильник в начало списка сразу (мгновенное отображение)
+      setFridges((prev) => [newFridgeItem, ...prev]);
+      setTotalFridges((prev) => prev + 1);
+      
+      // Показываем успешное уведомление
+      showToast(`Холодильник "${res.data.name}" успешно добавлен!`, 'success', 4000);
       
       // Открываем QR-код с небольшой задержкой, чтобы не блокировать UI
       requestAnimationFrame(() => {
@@ -257,12 +281,12 @@ export default function AccountantDashboard() {
         }, 100);
       });
       
-      // Обновляем данные в фоне
+      // Обновляем данные в фоне для синхронизации
       loadFridges(0, true);
       // Обновляем карту
       loadMapData();
     } catch (e: any) {
-      alert('Ошибка: ' + (e?.response?.data?.error || e.message));
+      showToast(`Ошибка: ${e?.response?.data?.error || e.message}`, 'error', 5000);
     } finally {
       setSaving(false);
     }
