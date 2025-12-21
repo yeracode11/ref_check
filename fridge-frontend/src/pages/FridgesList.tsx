@@ -65,7 +65,7 @@ export default function FridgesList() {
             setSelectedCityId(city._id);
           }
         }
-        // Для остальных (админов) - не выбираем город по умолчанию, показываем все города
+        // Для остальных (админов) - не выбираем город по умолчанию (selectedCityId остается пустым = "Все города")
       } catch (e: any) {
         console.error('Failed to load cities', e);
       } finally {
@@ -78,7 +78,7 @@ export default function FridgesList() {
   // Загрузка холодильников (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
     // Для бухгалтера и менеджера город фильтруется на бэкенде
-    // Для остальных (админов) - если selectedCityId пустой, загружаем все холодильники
+    // Для остальных (админов) - если selectedCityId пустой, загружаем все холодильники из всех городов
 
     let alive = true;
     if (reset) {
@@ -91,10 +91,11 @@ export default function FridgesList() {
       const params = new URLSearchParams();
       if (showOnlyActive) params.append('active', 'true');
       // Для бухгалтера/менеджера город добавляется на бэкенде автоматически
-      // Для админов - если выбран город, фильтруем по нему, иначе показываем все
-      if (!isAccountant && !isManager && selectedCityId) {
+      // Для админов - если выбран город, фильтруем по нему, иначе (пустая строка = "Все города") показываем все
+      if (!isAccountant && !isManager && selectedCityId && selectedCityId.trim() !== '') {
         params.append('cityId', selectedCityId);
       }
+      // Если selectedCityId пустой - не добавляем параметр cityId, backend вернет все холодильники
       if (searchQuery.trim()) {
         params.append('search', searchQuery.trim());
       }
@@ -220,8 +221,10 @@ export default function FridgesList() {
           <p className="text-slate-500 mt-1">
             {searchQuery ? (
               <>Найдено: <span className="font-medium">{items.length}</span> из {total}</>
+            ) : selectedCityId ? (
+              <>В городе "{selectedCity?.name || ''}": <span className="font-medium">{items.length}</span> из {total}</>
             ) : (
-              <>Показано: <span className="font-medium">{items.length}</span> из {total} • Активных: {activeCount} • Неактивных: {inactiveCount}</>
+              <>Всего холодильников: <span className="font-medium">{items.length}</span> из {total} • Активных: {activeCount} • Неактивных: {inactiveCount}</>
             )}
           </p>
         )}
@@ -322,13 +325,7 @@ export default function FridgesList() {
         </Card>
       )}
 
-      {!isAccountant && !selectedCityId && !citiesLoading ? (
-        <EmptyState
-          icon="🏙️"
-          title="Выберите город"
-          description="Выберите город из списка выше, чтобы увидеть холодильники."
-        />
-      ) : items.length === 0 && !loading ? (
+      {items.length === 0 && !loading ? (
         <EmptyState
           icon="🧊"
           title={searchQuery ? "Ничего не найдено" : "Нет холодильников"}
