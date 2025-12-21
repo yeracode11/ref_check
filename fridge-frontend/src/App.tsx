@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { MobileMenu, BurgerButton } from './components/MobileMenu';
@@ -41,31 +41,32 @@ export default function App() {
     }
   }, [user, location.pathname, navigate]);
 
-  const baseNavItems = [
-    { path: '/', label: 'Отметки', icon: '📋' },
-    { path: '/fridges', label: 'Холодильники', icon: '🧊' },
-    { path: '/new', label: 'Новая отметка', icon: '➕' },
-  ];
+  // Мемоизируем navItems для оптимизации
+  const navItems = useMemo(() => {
+    const baseNavItems = [
+      { path: '/', label: 'Отметки', icon: '📋' },
+      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+      { path: '/new', label: 'Новая отметка', icon: '➕' },
+    ];
 
-  // Для админа показываем Холодильники, Админ, Пользователи, Города
-  const adminNavItems = [
-    { path: '/fridges', label: 'Холодильники', icon: '🧊' },
-    { path: '/admin', label: 'Админ', icon: '🛠️' },
-    { path: '/users', label: 'Пользователи', icon: '👥' },
-    { path: '/cities', label: 'Города', icon: '🏙️' },
-  ];
+    const adminNavItems = [
+      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+      { path: '/admin', label: 'Админ', icon: '🛠️' },
+      { path: '/users', label: 'Пользователи', icon: '👥' },
+      { path: '/cities', label: 'Города', icon: '🏙️' },
+    ];
 
-  // Для бухгалтера показываем Холодильники и Управление
-  const accountantNavItems = [
-    { path: '/fridges', label: 'Холодильники', icon: '🧊' },
-    { path: '/accountant', label: 'Управление', icon: '📊' },
-  ];
-  
-  const navItems = user?.role === 'admin' 
-    ? adminNavItems 
-    : user?.role === 'accountant' 
-      ? accountantNavItems 
-      : baseNavItems;
+    const accountantNavItems = [
+      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+      { path: '/accountant', label: 'Управление', icon: '📊' },
+    ];
+    
+    return user?.role === 'admin' 
+      ? adminNavItems 
+      : user?.role === 'accountant' 
+        ? accountantNavItems 
+        : baseNavItems;
+  }, [user?.role]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">

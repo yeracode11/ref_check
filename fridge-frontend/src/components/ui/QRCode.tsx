@@ -17,6 +17,19 @@ let printStyleAdded = false;
 export function QRCode({ value, title, code, size = 200, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+
+  // Ленивая загрузка QR-кода - показываем только после того, как компонент отрендерился
+  useEffect(() => {
+    // Используем requestAnimationFrame для отложенной загрузки
+    const timer = requestAnimationFrame(() => {
+      // Дополнительная небольшая задержка для обеспечения плавности
+      setTimeout(() => {
+        setIsVisible(true);
+      }, 50);
+    });
+    return () => cancelAnimationFrame(timer);
+  }, []);
 
   // Добавляем стили для печати (только один раз)
   useEffect(() => {
@@ -284,21 +297,27 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
 
   return (
     <div className={`flex flex-col items-center gap-3 ${className}`}>
-      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-        <QRCodeSVG
-          id={`qr-svg-${code || 'default'}`}
-          value={value}
-          size={size}
-          level="L"
-          style={{ height: 'auto', maxWidth: '100%', width: '100%' }}
-        />
-        {(title || code) && (
-          <div className="mt-3 text-center">
-            {code && <div className="font-semibold text-sm text-slate-900">#{code}</div>}
-            {title && (
-              <div className="text-xs text-slate-500 mt-1 truncate max-w-[200px]">{title}</div>
+      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm min-h-[200px] flex items-center justify-center">
+        {isVisible ? (
+          <>
+            <QRCodeSVG
+              id={`qr-svg-${code || 'default'}`}
+              value={value}
+              size={size}
+              level="L"
+              style={{ height: 'auto', maxWidth: '100%', width: '100%' }}
+            />
+            {(title || code) && (
+              <div className="mt-3 text-center">
+                {code && <div className="font-semibold text-sm text-slate-900">#{code}</div>}
+                {title && (
+                  <div className="text-xs text-slate-500 mt-1 truncate max-w-[200px]">{title}</div>
+                )}
+              </div>
             )}
-          </div>
+          </>
+        ) : (
+          <div className="text-slate-400 text-sm">Загрузка QR-кода...</div>
         )}
       </div>
       <div className="flex flex-col sm:flex-row gap-2">
@@ -306,7 +325,7 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
           type="button"
           variant="primary"
           onClick={printQR}
-          disabled={printing}
+          disabled={printing || !isVisible}
           className="text-sm"
         >
           {printing ? 'Печать...' : '🖨️ Печать QR'}
@@ -315,7 +334,7 @@ export function QRCode({ value, title, code, size = 200, className = '' }: QRCod
           type="button"
           variant="secondary"
           onClick={downloadQR}
-          disabled={downloading}
+          disabled={downloading || !isVisible}
           className="text-sm"
         >
           {downloading ? 'Скачивание...' : '📥 Скачать QR'}

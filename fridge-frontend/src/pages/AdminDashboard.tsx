@@ -335,7 +335,7 @@ export default function AdminDashboard() {
         cityId: newFridge.cityId || undefined,
       });
 
-      // Показываем QR-код для нового холодильника
+      // Показываем QR-код для нового холодильника (отложенно для лучшей производительности)
       const createdFridge: AdminFridge = {
         id: response.data._id,
         code: response.data.code,
@@ -346,13 +346,19 @@ export default function AdminDashboard() {
         status: 'never',
       };
       
-      // Сбрасываем состояние загрузки сразу, чтобы показать QR-код
+      // Сбрасываем состояние загрузки и закрываем модальное окно сразу
       setCreatingFridge(false);
-      setSelectedQRFridge(createdFridge);
       setShowAddFridgeModal(false);
       
       // Очищаем форму
       setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
+      
+      // Открываем QR-код с небольшой задержкой, чтобы не блокировать UI
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          setSelectedQRFridge(createdFridge);
+        }, 100);
+      });
 
       // Перезагружаем данные в фоне (не блокируя UI)
       (async () => {

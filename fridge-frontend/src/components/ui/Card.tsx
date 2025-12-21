@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, memo } from 'react';
 
 type CardProps = {
   children: ReactNode;
@@ -6,7 +6,7 @@ type CardProps = {
   onClick?: () => void;
 };
 
-export function Card({ children, className = '', onClick }: CardProps) {
+export const Card = memo(function Card({ children, className = '', onClick }: CardProps) {
   return (
     <div
       className={`bg-white rounded-lg shadow-sm border border-slate-200 p-4 hover:shadow-md transition-shadow ${onClick ? 'cursor-pointer' : ''} ${className}`}
@@ -15,7 +15,7 @@ export function Card({ children, className = '', onClick }: CardProps) {
       {children}
     </div>
   );
-}
+});
 
 type BadgeProps = {
   children: ReactNode;
@@ -23,7 +23,7 @@ type BadgeProps = {
   className?: string;
 };
 
-export function Badge({ children, variant = 'info', className = '' }: BadgeProps) {
+export const Badge = memo(function Badge({ children, variant = 'info', className = '' }: BadgeProps) {
   const variants = {
     success: 'bg-green-100 text-green-700 border-green-200',
     error: 'bg-red-100 text-red-700 border-red-200',
@@ -36,7 +36,7 @@ export function Badge({ children, variant = 'info', className = '' }: BadgeProps
       {children}
     </span>
   );
-}
+});
 
 type ButtonProps = {
   children: ReactNode;
@@ -47,7 +47,7 @@ type ButtonProps = {
   className?: string;
 };
 
-export function Button({ children, onClick, type = 'button', variant = 'primary', disabled = false, className = '' }: ButtonProps) {
+export const Button = memo(function Button({ children, onClick, type = 'button', variant = 'primary', disabled = false, className = '' }: ButtonProps) {
   const variants = {
     primary: 'bg-slate-900 hover:bg-slate-800 text-white',
     secondary: 'bg-slate-100 hover:bg-slate-200 text-slate-900',
@@ -64,5 +64,5 @@ export function Button({ children, onClick, type = 'button', variant = 'primary'
       {children}
     </button>
   );
-}
+});
 

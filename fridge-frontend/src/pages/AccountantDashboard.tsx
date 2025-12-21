@@ -245,10 +245,19 @@ export default function AccountantDashboard() {
         cityId: cityIdToSend,
       });
 
-      setSelectedFridge(res.data);
+      // Закрываем модальное окно и очищаем форму сразу
       setShowAddModal(false);
-      setShowQRModal(true);
       setNewFridge({ name: '', address: '', description: '', cityId: cities[0]?._id || '' });
+      
+      // Открываем QR-код с небольшой задержкой, чтобы не блокировать UI
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          setSelectedFridge(res.data);
+          setShowQRModal(true);
+        }, 100);
+      });
+      
+      // Обновляем данные в фоне
       loadFridges(0, true);
       // Обновляем карту
       loadMapData();

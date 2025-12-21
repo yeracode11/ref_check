@@ -1,16 +1,18 @@
-export function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  const sizes = {
+import { memo, useMemo } from 'react';
+
+export const LoadingSpinner = memo(function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const sizes = useMemo(() => ({
     sm: 'w-4 h-4',
     md: 'w-6 h-6',
     lg: 'w-8 h-8',
-  };
+  }), []);
 
   return (
     <div className={`${sizes[size]} animate-spin rounded-full border-2 border-slate-300 border-t-slate-900`} />
   );
-}
+});
 
-export function LoadingCard() {
+export const LoadingCard = memo(function LoadingCard() {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 animate-pulse">
       <div className="space-y-3">
@@ -20,7 +22,7 @@ export function LoadingCard() {
       </div>
     </div>
   );
-}
+});
 
 type EmptyStateProps = {
   icon?: string;
@@ -29,9 +31,9 @@ type EmptyStateProps = {
   message?: string; // short alternative prop
 };
 
-export function EmptyState({ icon = '📭', title, description, message }: EmptyStateProps) {
-  const displayTitle = title || message || 'Пусто';
-  const displayDescription = description || '';
+export const EmptyState = memo(function EmptyState({ icon = '📭', title, description, message }: EmptyStateProps) {
+  const displayTitle = useMemo(() => title || message || 'Пусто', [title, message]);
+  const displayDescription = useMemo(() => description || '', [description]);
 
   return (
     <div className="text-center py-12">
@@ -40,5 +42,5 @@ export function EmptyState({ icon = '📭', title, description, message }: Empty
       {displayDescription && <p className="text-slate-500">{displayDescription}</p>}
     </div>
   );
-}
+});
 

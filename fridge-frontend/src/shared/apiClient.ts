@@ -8,8 +8,10 @@ let baseURL = import.meta.env.VITE_API_URL || 'https://stellref.kz';
 // Normalize baseURL: remove trailing slash to avoid double slashes
 baseURL = baseURL.replace(/\/+$/, '');
 
-// Log base URL (always, for debugging)
-console.log('API Base URL:', baseURL);
+// Log base URL only in development
+if (import.meta.env.DEV) {
+  console.log('API Base URL:', baseURL);
+}
 
 export const api = axios.create({ 
   baseURL,
@@ -30,18 +32,20 @@ api.interceptors.request.use((config) => {
     }
   }
   
-  // Log request URL for debugging
-  const fullUrl = `${config.baseURL}${config.url}`;
-  console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`);
-  // Log request data for login requests (without password for security)
-  if (config.url?.includes('/auth/login') && config.data) {
-    console.log('[API Request Data]', { 
-      username: config.data.username, 
-      password: '***',
-      hasUsername: !!config.data.username,
-      hasPassword: !!config.data.password,
-      dataType: typeof config.data
-    });
+  // Log request URL only in development
+  if (import.meta.env.DEV) {
+    const fullUrl = `${config.baseURL}${config.url}`;
+    console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`);
+    // Log request data for login requests (without password for security)
+    if (config.url?.includes('/auth/login') && config.data) {
+      console.log('[API Request Data]', { 
+        username: config.data.username, 
+        password: '***',
+        hasUsername: !!config.data.username,
+        hasPassword: !!config.data.password,
+        dataType: typeof config.data
+      });
+    }
   }
   return config;
 });
@@ -52,30 +56,32 @@ api.interceptors.response.use(
   async (error) => {
     const config = error.config;
     
-    // Log error details for debugging
-    const errorDetails = {
-      url: `${config?.baseURL}${config?.url}`,
-      method: config?.method,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message,
-      code: error.code,
-    };
-    
-    console.error('[API Error]', errorDetails);
-    // Log full error response data for debugging
-    if (error.response?.data) {
-      console.error('[API Error Data]', error.response.data);
-      console.error('[API Error Data JSON]', JSON.stringify(error.response.data, null, 2));
-    }
-    // Log request data for login attempts
-    if (config?.url?.includes('/auth/login')) {
-      console.error('[API Login Request Data]', {
-        username: config.data?.username,
-        hasPassword: !!config.data?.password,
-        passwordLength: config.data?.password?.length || 0
-      });
+    // Log error details only in development
+    if (import.meta.env.DEV) {
+      const errorDetails = {
+        url: `${config?.baseURL}${config?.url}`,
+        method: config?.method,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+        code: error.code,
+      };
+      
+      console.error('[API Error]', errorDetails);
+      // Log full error response data for debugging
+      if (error.response?.data) {
+        console.error('[API Error Data]', error.response.data);
+        console.error('[API Error Data JSON]', JSON.stringify(error.response.data, null, 2));
+      }
+      // Log request data for login attempts
+      if (config?.url?.includes('/auth/login')) {
+        console.error('[API Login Request Data]', {
+          username: config.data?.username,
+          hasPassword: !!config.data?.password,
+          passwordLength: config.data?.password?.length || 0
+        });
+      }
     }
 
     // Don't retry on 4xx errors (client errors)
@@ -96,7 +102,9 @@ api.interceptors.response.use(
       config._retryCount = (config._retryCount || 0) + 1;
 
       if (config._retryCount <= 3) {
-        console.log(`Retrying request (${config._retryCount}/3):`, config.url);
+        if (import.meta.env.DEV) {
+          console.log(`Retrying request (${config._retryCount}/3):`, config.url);
+        }
         await new Promise(resolve => setTimeout(resolve, 1000 * config._retryCount)); // Exponential backoff
         return api(config);
       }
