@@ -578,29 +578,51 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
             imported += batch.length;
             console.log(`[Import] Inserted batch ${Math.floor(i / batchSize) + 1}, total imported: ${imported}`);
           } catch (batchErr) {
-            // Если батч не прошел, пробуем вставлять по одной
+            // Если батч не прошел из-за дубликатов, пробуем вставлять по одной с проверкой
             console.error(`[Import] Batch insert failed, trying individual inserts:`, batchErr.message);
             for (const record of batch) {
               try {
+                // Дополнительная проверка перед вставкой
+                const exists = await Fridge.findOne({ code: record.code });
+                if (exists) {
+                  duplicates++;
+                  continue;
+                }
                 await Fridge.create(record);
                 imported++;
               } catch (err) {
-                errors++;
-                console.error(`[Import] Error inserting ${record.code}:`, err.message);
+                // Если ошибка дубликата, считаем как дубликат
+                if (err.code === 11000 || err.message?.includes('duplicate')) {
+                  duplicates++;
+                } else {
+                  errors++;
+                  console.error(`[Import] Error inserting ${record.code}:`, err.message);
+                }
               }
             }
           }
         }
       } catch (err) {
         console.error('[Import] Bulk insert error:', err);
-        // Fallback: пробуем вставлять по одной
+        // Fallback: пробуем вставлять по одной с проверкой дубликатов
         for (const record of recordsToInsert) {
           try {
+            // Проверяем, не существует ли уже такой код
+            const exists = await Fridge.findOne({ code: record.code });
+            if (exists) {
+              duplicates++;
+              continue;
+            }
             await Fridge.create(record);
             imported++;
           } catch (err) {
-            errors++;
-            console.error(`[Import] Error inserting ${record.code}:`, err.message);
+            // Если ошибка дубликата, считаем как дубликат
+            if (err.code === 11000 || err.message?.includes('duplicate')) {
+              duplicates++;
+            } else {
+              errors++;
+              console.error(`[Import] Error inserting ${record.code}:`, err.message);
+            }
           }
         }
       }
