@@ -537,26 +537,72 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     }
 
     // Импортируем в базу данных
-    let imported = 0;
+    // Оптимизация: загружаем все существующие коды в память для быстрой проверки
+    console.log('[Import] Loading existing fridge codes into memory...');
+    const existingFridges = await Fridge.find({}, { code: 1 }).lean();
+    const existingCodes = new Set(existingFridges.map(f => f.code));
+    console.log('[Import] Found', existingCodes.size, 'existing fridges');
+
+    // Фильтруем записи, исключая дубликаты
+    const recordsToInsert = [];
     let duplicates = 0;
+    
+    for (const record of records) {
+      if (existingCodes.has(record.code)) {
+        duplicates++;
+        continue;
+      }
+      // Добавляем код в Set, чтобы избежать дубликатов в текущем импорте
+      existingCodes.add(record.code);
+      recordsToInsert.push(record);
+    }
+
+    console.log('[Import] Starting bulk insert for', recordsToInsert.length, 'records (skipped', duplicates, 'duplicates)');
+
+    let imported = 0;
     let errors = 0;
 
-    console.log('[Import] Starting database import for', records.length, 'records');
-
-    for (const record of records) {
+    // Используем bulkWrite для массовой вставки (быстрее чем отдельные create)
+    if (recordsToInsert.length > 0) {
       try {
-        // Проверяем, существует ли уже такой код
-        const existing = await Fridge.findOne({ code: record.code });
-        if (existing) {
-          duplicates++;
-          continue;
+        // Разбиваем на батчи по 100 записей для избежания перегрузки
+        const batchSize = 100;
+        for (let i = 0; i < recordsToInsert.length; i += batchSize) {
+          const batch = recordsToInsert.slice(i, i + batchSize);
+          const operations = batch.map(record => ({
+            insertOne: { document: record }
+          }));
+          
+          try {
+            await Fridge.bulkWrite(operations, { ordered: false });
+            imported += batch.length;
+            console.log(`[Import] Inserted batch ${Math.floor(i / batchSize) + 1}, total imported: ${imported}`);
+          } catch (batchErr) {
+            // Если батч не прошел, пробуем вставлять по одной
+            console.error(`[Import] Batch insert failed, trying individual inserts:`, batchErr.message);
+            for (const record of batch) {
+              try {
+                await Fridge.create(record);
+                imported++;
+              } catch (err) {
+                errors++;
+                console.error(`[Import] Error inserting ${record.code}:`, err.message);
+              }
+            }
+          }
         }
-
-        await Fridge.create(record);
-        imported++;
       } catch (err) {
-        errors++;
-        console.error(`Ошибка при импорте ${record.code}:`, err.message);
+        console.error('[Import] Bulk insert error:', err);
+        // Fallback: пробуем вставлять по одной
+        for (const record of recordsToInsert) {
+          try {
+            await Fridge.create(record);
+            imported++;
+          } catch (err) {
+            errors++;
+            console.error(`[Import] Error inserting ${record.code}:`, err.message);
+          }
+        }
       }
     }
 
