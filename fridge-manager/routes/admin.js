@@ -1072,51 +1072,9 @@ router.patch('/fridges/:id', authenticateToken, requireAdmin, async (req, res) =
   }
 });
 
-// DELETE /api/admin/fridges/:id
-// Удалить холодильник
-router.delete('/fridges/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const fridge = await Fridge.findById(req.params.id);
-    if (!fridge) {
-      return res.status(404).json({ error: 'Холодильник не найден' });
-    }
-
-    // Также удаляем связанные чек-ины
-    const deletedCheckins = await Checkin.deleteMany({ fridgeId: fridge.code });
-
-    await Fridge.findByIdAndDelete(req.params.id);
-
-    return res.json({ 
-      message: 'Холодильник удалён', 
-      id: req.params.id,
-      code: fridge.code,
-      deletedCheckins: deletedCheckins.deletedCount,
-    });
-  } catch (err) {
-    return res.status(500).json({ error: 'Ошибка удаления холодильника', details: err.message });
-  }
-});
-
-// DELETE /api/admin/fridges/:id/soft
-// Мягкое удаление (деактивация) холодильника
-router.delete('/fridges/:id/soft', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const fridge = await Fridge.findById(req.params.id);
-    if (!fridge) {
-      return res.status(404).json({ error: 'Холодильник не найден' });
-    }
-
-    fridge.active = false;
-    await fridge.save();
-
-    return res.json({ message: 'Холодильник деактивирован', id: req.params.id });
-  } catch (err) {
-    return res.status(500).json({ error: 'Ошибка деактивации холодильника', details: err.message });
-  }
-});
-
 // DELETE /api/admin/fridges/all
 // Удаление всех холодильников (только для админа, необратимая операция)
+// ВАЖНО: Этот роут должен быть ПЕРЕД /fridges/:id, чтобы Express обрабатывал точное совпадение первым
 router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) => {
   let checkinsDeleted = 0;
   let deletedCount = 0;
@@ -1214,6 +1172,49 @@ router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) 
       error: 'Ошибка удаления всех холодильников', 
       details: err.message || 'Неизвестная ошибка'
     });
+  }
+});
+
+// DELETE /api/admin/fridges/:id
+// Удалить холодильник
+router.delete('/fridges/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const fridge = await Fridge.findById(req.params.id);
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    // Также удаляем связанные чек-ины
+    const deletedCheckins = await Checkin.deleteMany({ fridgeId: fridge.code });
+
+    await Fridge.findByIdAndDelete(req.params.id);
+
+    return res.json({ 
+      message: 'Холодильник удалён', 
+      id: req.params.id,
+      code: fridge.code,
+      deletedCheckins: deletedCheckins.deletedCount,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка удаления холодильника', details: err.message });
+  }
+});
+
+// DELETE /api/admin/fridges/:id/soft
+// Мягкое удаление (деактивация) холодильника
+router.delete('/fridges/:id/soft', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const fridge = await Fridge.findById(req.params.id);
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    fridge.active = false;
+    await fridge.save();
+
+    return res.json({ message: 'Холодильник деактивирован', id: req.params.id });
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка деактивации холодильника', details: err.message });
   }
 });
 
