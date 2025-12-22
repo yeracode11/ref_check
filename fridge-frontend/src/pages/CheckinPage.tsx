@@ -47,7 +47,8 @@ export default function CheckinPage() {
         // Сначала пробуем с текущим кодом
         let res = await api.get(`/api/fridges?code=${encodeURIComponent(code)}`);
         if (!alive) return;
-        let data: Fridge[] = res.data;
+        // API возвращает объект с полем data, которое содержит массив холодильников
+        let data: Fridge[] = Array.isArray(res.data) ? res.data : (res.data?.data || []);
         
         // Если не нашли, пробуем декодировать код ещё раз (на случай двойного кодирования)
         if ((!data || data.length === 0) && code.includes('%')) {
@@ -55,21 +56,22 @@ export default function CheckinPage() {
             const decodedCode = decodeURIComponent(code);
             res = await api.get(`/api/fridges?code=${encodeURIComponent(decodedCode)}`);
             if (!alive) return;
-            data = res.data;
+            data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
           } catch {
             // Игнорируем ошибку декодирования
           }
         }
         
-        if (!data || data.length === 0) {
+        if (!data || data.length === 0 || !data[0]) {
           setError(`Холодильник с кодом "${code}" не найден. Проверьте правильность кода в QR-коде.`);
           setLoading(false);
           return;
         }
         
-        setFridge(data[0]);
-        if (data[0].address) {
-          setAddress(data[0].address);
+        const fridgeData = data[0];
+        setFridge(fridgeData);
+        if (fridgeData.address) {
+          setAddress(fridgeData.address);
         }
         setError(null);
       } catch (e: any) {

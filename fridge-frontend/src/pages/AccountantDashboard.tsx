@@ -76,6 +76,7 @@ export default function AccountantDashboard() {
   const [selectedFridge, setSelectedFridge] = useState<Fridge | null>(null);
   const [selectedFridgeDetailId, setSelectedFridgeDetailId] = useState<string | null>(null); // Для детального просмотра
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   
   // Импорт Excel
   const [importing, setImporting] = useState(false);
@@ -110,6 +111,41 @@ export default function AccountantDashboard() {
 
   const observerTarget = useRef<HTMLDivElement | null>(null);
   const isCreatingRef = useRef(false); // Защита от двойного вызова
+
+  // Экспорт холодильников в Excel (для бухгалтера — только его город, для админа — все)
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true);
+      const response = await api.get('/api/admin/export-fridges', {
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+
+      // Имя файла из заголовка, если есть
+      const contentDisposition = response.headers['content-disposition'];
+      let fileName = 'холодильники.xlsx';
+      if (contentDisposition) {
+        const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (fileNameMatch && fileNameMatch[1]) {
+          fileName = decodeURIComponent(fileNameMatch[1].replace(/['"]/g, ''));
+        }
+      }
+
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Ошибка экспорта:', e);
+      alert('Ошибка при экспорте файла: ' + (e?.message || 'Неизвестная ошибка'));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Загрузка городов
   useEffect(() => {
@@ -503,6 +539,28 @@ export default function AccountantDashboard() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             <span>Добавить холодильник</span>
+          </button>
+          <button
+            onClick={handleExportExcel}
+            disabled={exporting || fridges.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
+          >
+            {exporting ? (
+              <>
+                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Экспорт...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Экспорт в Excel</span>
+              </>
+            )}
           </button>
         </div>
       </div>

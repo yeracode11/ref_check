@@ -148,7 +148,8 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 
 // GET /api/admin/export-fridges
 // Экспорт всех холодильников в Excel
-router.get('/export-fridges', authenticateToken, requireAdmin, async (req, res) => {
+// Доступно админам (все города) и бухгалтерам (только их город)
+router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     // Агрегируем последние отметки по каждому холодильнику
     const lastCheckins = await Checkin.aggregate([
@@ -168,7 +169,13 @@ router.get('/export-fridges', authenticateToken, requireAdmin, async (req, res) 
       }
     });
 
-    const fridges = await Fridge.find({}).populate('cityId', 'name code').sort({ code: 1 });
+    // Если пользователь бухгалтер — экспортируем только холодильники его города
+    const fridgeFilter = {};
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      fridgeFilter.cityId = req.user.cityId;
+    }
+
+    const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').sort({ code: 1 });
 
     const now = Date.now();
 
