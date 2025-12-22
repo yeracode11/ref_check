@@ -289,7 +289,7 @@ export default function AdminDashboard() {
         },
         timeout: 300000, // 5 минут
         // Явно указываем, что это FormData, чтобы axios не пытался сериализовать как JSON
-        transformRequest: [(data) => {
+        transformRequest: [(data: any) => {
           // Если это FormData, возвращаем как есть
           if (data instanceof FormData) {
             console.log('[API] transformRequest: FormData detected, returning as-is');
@@ -298,7 +298,7 @@ export default function AdminDashboard() {
           // Для других типов данных используем стандартную сериализацию
           return data;
         }],
-        onUploadProgress: (progressEvent) => {
+        onUploadProgress: (progressEvent: any) => {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             setUploadProgress(percentCompleted);
