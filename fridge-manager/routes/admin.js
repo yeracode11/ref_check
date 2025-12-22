@@ -244,30 +244,73 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
 // POST /api/admin/import-fridges
 // Импорт холодильников из Excel файла (доступен для админов и бухгалтеров)
 router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req, res, next) => {
+  console.log('[Import] Starting file upload...');
+  console.log('[Import] Request headers:', {
+    'content-type': req.headers['content-type'],
+    'content-length': req.headers['content-length']
+  });
+  console.log('[Import] Request body keys:', Object.keys(req.body || {}));
+  
   // Обработка загрузки файла с обработкой ошибок
   upload.single('file')(req, res, (err) => {
     if (err) {
-      console.error('Multer upload error:', err);
+      console.error('[Import] Multer upload error:', err);
+      console.error('[Import] Multer error code:', err.code);
+      console.error('[Import] Multer error message:', err.message);
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер: 100MB' });
+        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер: 100MB', details: err.message });
       }
       return res.status(400).json({ error: 'Ошибка загрузки файла', details: err.message });
     }
+    console.log('[Import] File uploaded successfully:', {
+      fieldname: req.file?.fieldname,
+      originalname: req.file?.originalname,
+      mimetype: req.file?.mimetype,
+      size: req.file?.size
+    });
     next();
   });
 }, async (req, res) => {
   try {
+    console.log('[Import] Processing import request...');
+    console.log('[Import] File object:', req.file ? {
+      fieldname: req.file.fieldname,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      bufferLength: req.file.buffer?.length
+    } : 'NO FILE');
+    
     if (!req.file) {
+      console.error('[Import] No file in request');
       return res.status(400).json({ error: 'Файл не загружен. Убедитесь, что вы выбрали файл.' });
     }
 
     // Читаем Excel файл из буфера
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    console.log('[Import] Reading Excel file...');
+    let workbook;
+    try {
+      workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      console.log('[Import] Excel file read successfully, sheets:', workbook.SheetNames);
+    } catch (xlsxErr) {
+      console.error('[Import] Error reading Excel file:', xlsxErr);
+      return res.status(400).json({ 
+        error: 'Ошибка чтения Excel файла', 
+        details: xlsxErr.message || 'Файл поврежден или имеет неподдерживаемый формат' 
+      });
+    }
+    
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     
+    if (!worksheet) {
+      console.error('[Import] Worksheet not found');
+      return res.status(400).json({ error: 'Лист не найден в Excel файле' });
+    }
+    
     // Конвертируем в JSON (массив объектов)
     const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+    console.log('[Import] Raw data rows:', rawData.length);
 
     // Ищем строку с заголовками (обычно строка 5, индексация с 0)
     let headerRow = -1;
@@ -277,13 +320,18 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         const rowStr = row.map(cell => String(cell || '').toLowerCase()).join(' ');
         if (rowStr.includes('адрес') || rowStr.includes('контрагент')) {
           headerRow = i;
+          console.log('[Import] Found header row at index:', i);
           break;
         }
       }
     }
 
     if (headerRow === -1) {
-      return res.status(400).json({ error: 'Не найдена строка с заголовками в Excel файле' });
+      console.error('[Import] Header row not found. First 5 rows:', rawData.slice(0, 5));
+      return res.status(400).json({ 
+        error: 'Не найдена строка с заголовками в Excel файле',
+        details: 'Убедитесь, что в файле есть колонки "Адрес" или "Контрагент"'
+      });
     }
 
     const headers = rawData[headerRow].map(h => String(h || '').trim());

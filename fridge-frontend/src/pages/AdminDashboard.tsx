@@ -295,6 +295,14 @@ export default function AdminDashboard() {
       setUploadProgress(0);
     } catch (e: any) {
       console.error('Ошибка импорта:', e);
+      console.error('Ошибка импорта (полные данные):', {
+        message: e?.message,
+        code: e?.code,
+        status: e?.response?.status,
+        statusText: e?.response?.statusText,
+        data: e?.response?.data,
+        config: e?.config
+      });
       
       // Проверяем тип ошибки
       let errorMessage = 'Неизвестная ошибка';
@@ -302,16 +310,28 @@ export default function AdminDashboard() {
         errorMessage = 'Превышено время ожидания. Файл слишком большой или сервер не отвечает. Попробуйте уменьшить размер файла или повторите попытку позже.';
       } else if (e?.message?.includes('CORS') || e?.code === 'ERR_NETWORK') {
         errorMessage = 'Сетевая ошибка. Проверьте подключение к интернету и настройки CORS на сервере.';
-      } else if (e?.response?.data?.error) {
-        errorMessage = e.response.data.error;
-        if (e.response.data.details) {
-          errorMessage += ': ' + e.response.data.details;
+      } else if (e?.response?.data) {
+        // Детальная обработка ответа от сервера
+        if (e.response.data.error) {
+          errorMessage = e.response.data.error;
+          if (e.response.data.details) {
+            errorMessage += '\n\nДетали: ' + e.response.data.details;
+          }
+        } else if (e.response.data.message) {
+          errorMessage = e.response.data.message;
+        } else {
+          errorMessage = `Ошибка ${e.response.status}: ${e.response.statusText || 'Bad Request'}`;
+          if (typeof e.response.data === 'string') {
+            errorMessage += '\n\n' + e.response.data;
+          } else if (typeof e.response.data === 'object') {
+            errorMessage += '\n\n' + JSON.stringify(e.response.data, null, 2);
+          }
         }
       } else if (e?.message) {
         errorMessage = e.message;
       }
       
-      alert('Ошибка при импорте файла: ' + errorMessage);
+      alert('Ошибка при импорте файла:\n\n' + errorMessage);
     } finally {
       setImporting(false);
       // Не сбрасываем прогресс сразу, чтобы пользователь видел, что загрузка завершилась
