@@ -278,23 +278,43 @@ export default function AdminDashboard() {
       // Проверяем, что файл добавлен в FormData
       console.log('FormData создан, проверка содержимого...');
       for (const pair of formData.entries()) {
-        console.log('FormData entry:', pair[0], pair[1]);
+        console.log('FormData entry:', pair[0], pair[1] instanceof File ? `File: ${pair[1].name} (${pair[1].size} bytes)` : pair[1]);
       }
 
-      // Axios автоматически установит правильный Content-Type для FormData с boundary
-      const response = await api.post('/api/admin/import-fridges', formData, {
+      // Явно создаем конфигурацию для axios, чтобы убедиться, что FormData обрабатывается правильно
+      // Важно: не устанавливаем Content-Type - axios должен автоматически установить multipart/form-data
+      const axiosConfig = {
         headers: {
-          // Не устанавливаем Content-Type - axios сделает это автоматически для FormData
-          // Но явно указываем, что это FormData
+          // НЕ устанавливаем Content-Type - axios сделает это автоматически для FormData
         },
         timeout: 300000, // 5 минут
+        // Явно указываем, что это FormData, чтобы axios не пытался сериализовать как JSON
+        transformRequest: [(data) => {
+          // Если это FormData, возвращаем как есть
+          if (data instanceof FormData) {
+            console.log('[API] transformRequest: FormData detected, returning as-is');
+            return data;
+          }
+          // Для других типов данных используем стандартную сериализацию
+          return data;
+        }],
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             setUploadProgress(percentCompleted);
           }
         },
+      };
+
+      console.log('Отправка запроса с конфигурацией:', {
+        url: '/api/admin/import-fridges',
+        method: 'POST',
+        hasFormData: formData instanceof FormData,
+        formDataType: formData.constructor.name,
+        configHeaders: axiosConfig.headers
       });
+
+      const response = await api.post('/api/admin/import-fridges', formData, axiosConfig);
 
       setUploadProgress(100);
       setImportResult(response.data);

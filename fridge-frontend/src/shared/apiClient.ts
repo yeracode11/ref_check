@@ -28,14 +28,38 @@ api.interceptors.request.use((config) => {
   // Ensure Content-Type is set for POST/PUT/PATCH requests
   // НО: для FormData не устанавливаем Content-Type - axios сделает это автоматически с boundary
   if (['post', 'put', 'patch'].includes(config.method?.toLowerCase() || '')) {
-    // Проверяем, является ли data FormData
-    const isFormData = config.data instanceof FormData;
+    // Специальная обработка для запросов импорта - они всегда используют FormData
+    const isImportRequest = config.url?.includes('/import-fridges');
     
-    if (!isFormData && !config.headers['Content-Type']) {
-      config.headers['Content-Type'] = 'application/json';
-    } else if (isFormData) {
-      // Удаляем Content-Type для FormData, чтобы axios установил правильный с boundary
+    // Проверяем, является ли data FormData (несколько способов проверки)
+    const isFormData = config.data instanceof FormData || 
+                      (typeof FormData !== 'undefined' && config.data instanceof FormData) ||
+                      (config.data && typeof config.data.append === 'function' && typeof config.data.entries === 'function');
+    
+    // Логируем информацию о запросе для отладки
+    if (isImportRequest) {
+      console.log('[API] Import request interceptor:', {
+        isFormData,
+        isImportRequest,
+        hasData: !!config.data,
+        dataType: config.data?.constructor?.name,
+        dataProto: Object.getPrototypeOf(config.data)?.constructor?.name,
+        isFormDataInstance: config.data instanceof FormData,
+        hasAppend: typeof config.data?.append === 'function',
+        hasEntries: typeof config.data?.entries === 'function',
+        contentType: config.headers['Content-Type'],
+        headers: Object.keys(config.headers || {})
+      });
+    }
+    
+    // Для запросов импорта всегда удаляем Content-Type (даже если FormData не распознан)
+    if (isFormData || isImportRequest) {
+      // Удаляем Content-Type для FormData, чтобы axios установил правильный multipart/form-data с boundary
       delete config.headers['Content-Type'];
+      console.log('[API] FormData or import request detected, removed Content-Type header - axios will set multipart/form-data');
+    } else if (!config.headers['Content-Type']) {
+      // Только для не-FormData устанавливаем application/json
+      config.headers['Content-Type'] = 'application/json';
     }
   }
   

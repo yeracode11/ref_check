@@ -25,8 +25,37 @@ const corsOptions = {
   optionsSuccessStatus: 200, // Для старых браузеров
 };
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+// Важно: express.json() не должен обрабатывать multipart/form-data
+// Multer должен обработать multipart/form-data до того, как express.json() попытается парсить тело
+// Используем условный middleware для body парсеров
+app.use((req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+  console.log('[Server] Request Content-Type:', contentType);
+  
+  // Если это multipart/form-data, пропускаем json и urlencoded парсеры
+  if (contentType.includes('multipart/form-data')) {
+    console.log('[Server] Skipping body parsers for multipart/form-data request');
+    return next();
+  }
+  
+  // Для остальных запросов используем стандартные парсеры
+  if (contentType.includes('application/json')) {
+    return express.json({ limit: '100mb' })(req, res, next);
+  }
+  
+  // Для application/x-www-form-urlencoded
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    return express.urlencoded({ extended: true, limit: '100mb' })(req, res, next);
+  }
+  
+  // Если Content-Type не указан или другой, пробуем оба парсера
+  express.json({ limit: '100mb' })(req, res, (err) => {
+    if (err) return next(err);
+    express.urlencoded({ extended: true, limit: '100mb' })(req, res, next);
+  });
+});
+
 app.use(morgan('dev'));
 
 // Health check
