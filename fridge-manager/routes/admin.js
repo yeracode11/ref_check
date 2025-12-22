@@ -1115,6 +1115,52 @@ router.delete('/fridges/:id/soft', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+// DELETE /api/admin/fridges/all
+// Удаление всех холодильников (только для админа, необратимая операция)
+router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    // Получаем количество холодильников перед удалением
+    const count = await Fridge.countDocuments();
+    
+    if (count === 0) {
+      return res.json({ 
+        message: 'Нет холодильников для удаления', 
+        deleted: 0,
+        checkinsDeleted: 0
+      });
+    }
+
+    // Получаем все коды холодильников для удаления связанных checkins
+    const fridges = await Fridge.find({}, { code: 1 });
+    const fridgeCodes = fridges.map(f => f.code).filter(Boolean);
+
+    // Удаляем все связанные отметки посещений
+    let checkinsDeleted = 0;
+    if (fridgeCodes.length > 0) {
+      const checkinResult = await Checkin.deleteMany({ fridgeId: { $in: fridgeCodes } });
+      checkinsDeleted = checkinResult.deletedCount || 0;
+    }
+
+    // Удаляем все холодильники
+    const deleteResult = await Fridge.deleteMany({});
+    const deletedCount = deleteResult.deletedCount || 0;
+
+    console.log(`[Admin] Deleted all fridges: ${deletedCount} fridges, ${checkinsDeleted} checkins`);
+
+    return res.json({ 
+      message: `Удалено ${deletedCount} холодильников и ${checkinsDeleted} отметок посещений`, 
+      deleted: deletedCount,
+      checkinsDeleted: checkinsDeleted
+    });
+  } catch (err) {
+    console.error('[Admin] Error deleting all fridges:', err);
+    return res.status(500).json({ 
+      error: 'Ошибка удаления всех холодильников', 
+      details: err.message 
+    });
+  }
+});
+
 module.exports = router;
 
 
