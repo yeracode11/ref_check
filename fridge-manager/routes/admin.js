@@ -373,14 +373,33 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         return res.status(400).json({ error: 'Город бухгалтера не найден' });
       }
     } else {
-      // Для админа - используем Тараз по умолчанию
-      city = await City.findOne({ code: 'taras' });
+      // Для админа - используем Тараз по умолчанию (код региона 08)
+      // Сначала ищем по коду региона
+      city = await City.findOne({ code: '08' });
       if (!city) {
-        city = await City.create({
-          name: 'Тараз',
-          code: 'taras',
-          active: true,
-        });
+        // Если не найден по коду, ищем по имени
+        city = await City.findOne({ name: 'Тараз' });
+        if (!city) {
+          // Если не найден, создаем новый (с обработкой возможного дубликата)
+          try {
+            city = await City.create({
+              name: 'Тараз',
+              code: '08',
+              active: true,
+            });
+          } catch (createErr) {
+            // Если возникла ошибка дубликата, пытаемся найти город снова
+            if (createErr.code === 11000 || createErr.message?.includes('duplicate')) {
+              console.log('[Import] City creation failed due to duplicate, trying to find existing city');
+              city = await City.findOne({ $or: [{ code: '08' }, { name: 'Тараз' }] });
+              if (!city) {
+                throw createErr; // Если все еще не найден, пробрасываем ошибку
+              }
+            } else {
+              throw createErr;
+            }
+          }
+        }
       }
     }
 
@@ -531,14 +550,32 @@ router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req,
           return res.status(400).json({ error: 'Город бухгалтера не найден' });
         }
       } else {
-        // Для админа - по умолчанию Тараз
-        city = await City.findOne({ code: 'taras' });
+        // Для админа - по умолчанию Тараз (код региона 08)
+        city = await City.findOne({ code: '08' });
         if (!city) {
-          city = await City.create({
-            name: 'Тараз',
-            code: 'taras',
-            active: true,
-          });
+          // Если не найден по коду, ищем по имени
+          city = await City.findOne({ name: 'Тараз' });
+          if (!city) {
+            // Если не найден, создаем новый (с обработкой возможного дубликата)
+            try {
+              city = await City.create({
+                name: 'Тараз',
+                code: '08',
+                active: true,
+              });
+            } catch (createErr) {
+              // Если возникла ошибка дубликата, пытаемся найти город снова
+              if (createErr.code === 11000 || createErr.message?.includes('duplicate')) {
+                console.log('[Admin] City creation failed due to duplicate, trying to find existing city');
+                city = await City.findOne({ $or: [{ code: '08' }, { name: 'Тараз' }] });
+                if (!city) {
+                  throw createErr; // Если все еще не найден, пробрасываем ошибку
+                }
+              } else {
+                throw createErr;
+              }
+            }
+          }
         }
       }
     }
