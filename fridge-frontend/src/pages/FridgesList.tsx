@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
@@ -28,12 +29,15 @@ const SEARCH_DEBOUNCE_MS = 500; // Задержка перед поиском (�
 
 export default function FridgesList() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isAccountant = user?.role === 'accountant';
   const isManager = user?.role === 'manager';
   
   const [items, setItems] = useState<Fridge[]>([]);
   const [cities, setCities] = useState<City[]>([]);
-  const [selectedCityId, setSelectedCityId] = useState<string>('');
+  // Получаем выбранный город из URL параметров при инициализации
+  const cityIdFromUrl = searchParams.get('city') || '';
+  const [selectedCityId, setSelectedCityId] = useState<string>(cityIdFromUrl);
   const [accountantCityName, setAccountantCityName] = useState<string>('');
   const [searchInput, setSearchInput] = useState(''); // Ввод пользователя
   const [searchQuery, setSearchQuery] = useState(''); // Фактический запрос для поиска
@@ -64,8 +68,27 @@ export default function FridgesList() {
             setAccountantCityName(city.name);
             setSelectedCityId(city._id);
           }
+        } else if (!isAccountant && !isManager) {
+          // Для админов - проверяем URL параметр, если есть валидный город, используем его
+          const urlCityId = searchParams.get('city') || '';
+          if (urlCityId) {
+            const city = res.data.find((c: City) => c._id === urlCityId);
+            if (city) {
+              setSelectedCityId(urlCityId);
+            } else {
+              // Если город из URL не найден, очищаем параметр
+              setSearchParams((prev) => {
+                const newParams = new URLSearchParams(prev);
+                newParams.delete('city');
+                return newParams;
+              });
+              setSelectedCityId(''); // Сбрасываем на "Все города"
+            }
+          } else if (!urlCityId && !selectedCityId) {
+            // Если в URL нет параметра и selectedCityId пустой, оставляем "Все города"
+            setSelectedCityId('');
+          }
         }
-        // Для остальных (админов) - не выбираем город по умолчанию (selectedCityId остается пустым = "Все города")
       } catch (e: any) {
         console.error('Failed to load cities', e);
       } finally {
@@ -73,7 +96,7 @@ export default function FridgesList() {
       }
     })();
     return () => { alive = false; };
-  }, [isAccountant, user?.cityId]);
+  }, [isAccountant, isManager, user?.cityId, searchParams, setSearchParams]);
 
   // Загрузка холодильников (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
@@ -246,7 +269,20 @@ export default function FridgesList() {
               ) : (
                 <select
                   value={selectedCityId}
-                  onChange={(e) => setSelectedCityId(e.target.value)}
+                  onChange={(e) => {
+                    const newCityId = e.target.value;
+                    setSelectedCityId(newCityId);
+                    // Обновляем URL параметр
+                    setSearchParams((prev) => {
+                      const newParams = new URLSearchParams(prev);
+                      if (newCityId) {
+                        newParams.set('city', newCityId);
+                      } else {
+                        newParams.delete('city');
+                      }
+                      return newParams;
+                    });
+                  }}
                   className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 bg-white"
                 >
                   <option value="">Все города</option>
