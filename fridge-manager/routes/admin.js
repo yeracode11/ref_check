@@ -459,18 +459,23 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
 
       processedRows++;
 
-      // Получаем адрес
+      // Получаем адрес (может быть пустым)
       const address = addressIdx >= 0 ? String(row[addressIdx] || '').trim() : '';
-      if (!address || address === 'null' || address === 'undefined') {
+      
+      // Получаем контрагента (название) - используем для проверки, что строка не пустая
+      const contractor = contractorIdx >= 0 ? String(row[contractorIdx] || '').trim() : '';
+      
+      // Пропускаем строку только если она полностью пустая (нет ни адреса, ни контрагента)
+      if ((!address || address === 'null' || address === 'undefined') && 
+          (!contractor || contractor === 'null' || contractor === 'undefined')) {
         skippedNoAddress++;
         if (processedRows <= 5) {
-          console.log(`[Import] Row ${i} skipped - no address. Row data:`, row.slice(0, 5));
+          console.log(`[Import] Row ${i} skipped - empty row. Row data:`, row.slice(0, 5));
         }
-        continue; // Пропускаем строки без адреса
+        continue; // Пропускаем полностью пустые строки
       }
 
-      // Получаем контрагента (название)
-      const contractor = contractorIdx >= 0 ? String(row[contractorIdx] || '').trim() : '';
+      // Используем контрагента для названия, если он есть
       const name = contractor || `Холодильник ${codeCounter}`;
 
       // Формируем описание
