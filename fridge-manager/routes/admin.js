@@ -1118,8 +1118,20 @@ router.delete('/fridges/:id/soft', authenticateToken, requireAdmin, async (req, 
 // DELETE /api/admin/fridges/all
 // Удаление всех холодильников (только для админа, необратимая операция)
 router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) => {
+  let checkinsDeleted = 0;
+  let deletedCount = 0;
+  
   try {
     console.log('[Admin] Starting deletion of all fridges...');
+    console.log('[Admin] User:', req.user?.username, req.user?.role);
+    
+    // Проверяем, что модели доступны
+    if (!Fridge) {
+      throw new Error('Fridge model is not available');
+    }
+    if (!Checkin) {
+      console.warn('[Admin] Checkin model is not available, will skip checkin deletion');
+    }
     
     // Получаем количество холодильников перед удалением
     let count = 0;
@@ -1128,6 +1140,7 @@ router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) 
       console.log(`[Admin] Found ${count} fridges to delete`);
     } catch (countErr) {
       console.error('[Admin] Error counting fridges:', countErr);
+      console.error('[Admin] Count error stack:', countErr.stack);
       return res.status(500).json({ 
         error: 'Ошибка при подсчете холодильников', 
         details: countErr.message 
@@ -1144,25 +1157,27 @@ router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) 
 
     // Удаляем все связанные отметки посещений
     // Сначала удаляем все checkins, так как они ссылаются на холодильники
-    let checkinsDeleted = 0;
-    try {
-      console.log('[Admin] Deleting all checkins...');
-      const checkinResult = await Checkin.deleteMany({});
-      checkinsDeleted = checkinResult.deletedCount || 0;
-      console.log(`[Admin] Deleted ${checkinsDeleted} checkins`);
-    } catch (checkinErr) {
-      // Логируем ошибку, но продолжаем удаление холодильников
-      console.error('[Admin] Error deleting checkins (continuing with fridge deletion):', checkinErr);
-      console.error('[Admin] Checkin error details:', {
-        message: checkinErr.message,
-        name: checkinErr.name,
-        stack: checkinErr.stack
-      });
-      // Не прерываем выполнение, просто продолжаем
+    if (Checkin) {
+      try {
+        console.log('[Admin] Deleting all checkins...');
+        const checkinResult = await Checkin.deleteMany({});
+        checkinsDeleted = checkinResult.deletedCount || 0;
+        console.log(`[Admin] Deleted ${checkinsDeleted} checkins`);
+      } catch (checkinErr) {
+        // Логируем ошибку, но продолжаем удаление холодильников
+        console.error('[Admin] Error deleting checkins (continuing with fridge deletion):', checkinErr);
+        console.error('[Admin] Checkin error message:', checkinErr.message);
+        console.error('[Admin] Checkin error name:', checkinErr.name);
+        if (checkinErr.stack) {
+          console.error('[Admin] Checkin error stack:', checkinErr.stack);
+        }
+        // Не прерываем выполнение, просто продолжаем
+      }
+    } else {
+      console.log('[Admin] Skipping checkin deletion (model not available)');
     }
 
     // Удаляем все холодильники
-    let deletedCount = 0;
     try {
       console.log('[Admin] Deleting all fridges...');
       const deleteResult = await Fridge.deleteMany({});
@@ -1170,11 +1185,11 @@ router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) 
       console.log(`[Admin] Deleted ${deletedCount} fridges`);
     } catch (fridgeErr) {
       console.error('[Admin] Error deleting fridges:', fridgeErr);
-      console.error('[Admin] Fridge error details:', {
-        message: fridgeErr.message,
-        name: fridgeErr.name,
-        stack: fridgeErr.stack
-      });
+      console.error('[Admin] Fridge error message:', fridgeErr.message);
+      console.error('[Admin] Fridge error name:', fridgeErr.name);
+      if (fridgeErr.stack) {
+        console.error('[Admin] Fridge error stack:', fridgeErr.stack);
+      }
       return res.status(500).json({ 
         error: 'Ошибка удаления холодильников', 
         details: fridgeErr.message 
@@ -1190,11 +1205,14 @@ router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) 
     });
   } catch (err) {
     console.error('[Admin] Unexpected error deleting all fridges:', err);
-    console.error('[Admin] Error stack:', err.stack);
+    console.error('[Admin] Error message:', err.message);
+    console.error('[Admin] Error name:', err.name);
+    if (err.stack) {
+      console.error('[Admin] Error stack:', err.stack);
+    }
     return res.status(500).json({ 
       error: 'Ошибка удаления всех холодильников', 
-      details: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      details: err.message || 'Неизвестная ошибка'
     });
   }
 });
