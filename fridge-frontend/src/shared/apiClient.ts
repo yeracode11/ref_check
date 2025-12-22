@@ -26,9 +26,16 @@ api.interceptors.request.use((config) => {
   }
   
   // Ensure Content-Type is set for POST/PUT/PATCH requests
+  // НО: для FormData не устанавливаем Content-Type - axios сделает это автоматически с boundary
   if (['post', 'put', 'patch'].includes(config.method?.toLowerCase() || '')) {
-    if (!config.headers['Content-Type']) {
+    // Проверяем, является ли data FormData
+    const isFormData = config.data instanceof FormData;
+    
+    if (!isFormData && !config.headers['Content-Type']) {
       config.headers['Content-Type'] = 'application/json';
+    } else if (isFormData) {
+      // Удаляем Content-Type для FormData, чтобы axios установил правильный с boundary
+      delete config.headers['Content-Type'];
     }
   }
   

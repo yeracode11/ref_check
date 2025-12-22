@@ -259,13 +259,33 @@ export default function AdminDashboard() {
       setImportResult(null);
       setUploadProgress(0);
 
+      // Проверяем, что файл существует
+      if (!importFile) {
+        alert('Файл не выбран');
+        return;
+      }
+
+      console.log('Подготовка файла к отправке:', {
+        name: importFile.name,
+        size: importFile.size,
+        type: importFile.type,
+        lastModified: importFile.lastModified
+      });
+
       const formData = new FormData();
       formData.append('file', importFile);
+
+      // Проверяем, что файл добавлен в FormData
+      console.log('FormData создан, проверка содержимого...');
+      for (const pair of formData.entries()) {
+        console.log('FormData entry:', pair[0], pair[1]);
+      }
 
       // Axios автоматически установит правильный Content-Type для FormData с boundary
       const response = await api.post('/api/admin/import-fridges', formData, {
         headers: {
           // Не устанавливаем Content-Type - axios сделает это автоматически для FormData
+          // Но явно указываем, что это FormData
         },
         timeout: 300000, // 5 минут
         onUploadProgress: (progressEvent) => {
