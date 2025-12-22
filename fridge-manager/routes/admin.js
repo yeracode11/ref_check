@@ -282,6 +282,8 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
 }, async (req, res) => {
   try {
     console.log('[Import] Processing import request...');
+    console.log('[Import] Request body:', req.body);
+    console.log('[Import] Request query:', req.query);
     console.log('[Import] File object:', req.file ? {
       fieldname: req.file.fieldname,
       originalname: req.file.originalname,
@@ -365,42 +367,40 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     const tpIdx = findColumnIndex(['тп']);
 
     // Определяем город для импорта
-    // Если бухгалтер - используем его город, иначе ищем/создаем Тараз
+    // Приоритет: cityId из запроса > город бухгалтера > ошибка
     let city;
-    if (req.user.role === 'accountant' && req.user.cityId) {
+    const requestedCityId = req.body.cityId || req.query.cityId;
+    
+    console.log('[Import] City selection:', {
+      requestedCityId,
+      userRole: req.user.role,
+      userCityId: req.user.cityId
+    });
+    
+    if (requestedCityId) {
+      // Если указан cityId в запросе, используем его
+      city = await City.findById(requestedCityId);
+      if (!city) {
+        return res.status(400).json({ error: 'Указанный город не найден' });
+      }
+      console.log('[Import] Using requested city:', city.name, city.code);
+      
+      // Для бухгалтера проверяем, что он может импортировать только в свой город
+      if (req.user.role === 'accountant' && req.user.cityId) {
+        if (city._id.toString() !== req.user.cityId.toString()) {
+          return res.status(403).json({ error: 'Доступ запрещён: можно импортировать только в свой город' });
+        }
+      }
+    } else if (req.user.role === 'accountant' && req.user.cityId) {
+      // Если бухгалтер и cityId не указан, используем его город
       city = await City.findById(req.user.cityId);
       if (!city) {
         return res.status(400).json({ error: 'Город бухгалтера не найден' });
       }
+      console.log('[Import] Using accountant city:', city.name, city.code);
     } else {
-      // Для админа - используем Тараз по умолчанию (код региона 08)
-      // Сначала ищем по коду региона
-      city = await City.findOne({ code: '08' });
-      if (!city) {
-        // Если не найден по коду, ищем по имени
-        city = await City.findOne({ name: 'Тараз' });
-        if (!city) {
-          // Если не найден, создаем новый (с обработкой возможного дубликата)
-          try {
-            city = await City.create({
-              name: 'Тараз',
-              code: '08',
-              active: true,
-            });
-          } catch (createErr) {
-            // Если возникла ошибка дубликата, пытаемся найти город снова
-            if (createErr.code === 11000 || createErr.message?.includes('duplicate')) {
-              console.log('[Import] City creation failed due to duplicate, trying to find existing city');
-              city = await City.findOne({ $or: [{ code: '08' }, { name: 'Тараз' }] });
-              if (!city) {
-                throw createErr; // Если все еще не найден, пробрасываем ошибку
-              }
-            } else {
-              throw createErr;
-            }
-          }
-        }
-      }
+      // Для админа cityId обязателен
+      return res.status(400).json({ error: 'Не указан город для импорта. Пожалуйста, выберите город.' });
     }
 
     // Парсим данные
@@ -551,31 +551,34 @@ router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req,
         }
       } else {
         // Для админа - по умолчанию Тараз (код региона 08)
-        city = await City.findOne({ code: '08' });
+        // Ищем город по коду или имени (приоритет коду)
+        city = await City.findOne({ $or: [{ code: '08' }, { name: 'Тараз' }] });
         if (!city) {
-          // Если не найден по коду, ищем по имени
-          city = await City.findOne({ name: 'Тараз' });
-          if (!city) {
-            // Если не найден, создаем новый (с обработкой возможного дубликата)
-            try {
-              city = await City.create({
-                name: 'Тараз',
-                code: '08',
-                active: true,
-              });
-            } catch (createErr) {
-              // Если возникла ошибка дубликата, пытаемся найти город снова
-              if (createErr.code === 11000 || createErr.message?.includes('duplicate')) {
-                console.log('[Admin] City creation failed due to duplicate, trying to find existing city');
-                city = await City.findOne({ $or: [{ code: '08' }, { name: 'Тараз' }] });
-                if (!city) {
-                  throw createErr; // Если все еще не найден, пробрасываем ошибку
-                }
+          // Если не найден, создаем новый (с обработкой возможного дубликата)
+          try {
+            city = await City.create({
+              name: 'Тараз',
+              code: '08',
+              active: true,
+            });
+            console.log('[Admin] Created new city: Тараз (08)');
+          } catch (createErr) {
+            // Если возникла ошибка дубликата, пытаемся найти город снова
+            if (createErr.code === 11000 || createErr.message?.includes('duplicate')) {
+              console.log('[Admin] City creation failed due to duplicate, trying to find existing city');
+              city = await City.findOne({ $or: [{ code: '08' }, { name: 'Тараз' }] });
+              if (!city) {
+                console.error('[Admin] City not found after duplicate error, this should not happen');
+                throw createErr; // Если все еще не найден, пробрасываем ошибку
               } else {
-                throw createErr;
+                console.log('[Admin] Found existing city after duplicate error:', city.name, city.code);
               }
+            } else {
+              throw createErr;
             }
           }
+        } else {
+          console.log('[Admin] Using existing city:', city.name, city.code);
         }
       }
     }

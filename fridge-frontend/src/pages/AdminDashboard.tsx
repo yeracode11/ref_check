@@ -73,6 +73,8 @@ export default function AdminDashboard() {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importCityId, setImportCityId] = useState<string>(''); // Выбранный город для импорта
+  const [showImportModal, setShowImportModal] = useState(false); // Модальное окно выбора города
   const [importResult, setImportResult] = useState<{ imported: number; duplicates: number; errors: number; total: number } | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showAddFridgeModal, setShowAddFridgeModal] = useState(false);
@@ -254,6 +256,11 @@ export default function AdminDashboard() {
       return;
     }
 
+    if (!importCityId) {
+      alert('Пожалуйста, выберите город для импорта');
+      return;
+    }
+
     try {
       setImporting(true);
       setImportResult(null);
@@ -274,6 +281,7 @@ export default function AdminDashboard() {
 
       const formData = new FormData();
       formData.append('file', importFile);
+      formData.append('cityId', importCityId); // Добавляем выбранный город
 
       // Проверяем, что файл добавлен в FormData
       console.log('FormData создан, проверка содержимого...');
@@ -330,8 +338,10 @@ export default function AdminDashboard() {
 
       alert(`Импорт завершен!\nИмпортировано: ${response.data.imported}\nДубликаты: ${response.data.duplicates}\nОшибки: ${response.data.errors}`);
       
-      // Очищаем файл после успешного импорта
+      // Очищаем файл и закрываем модальное окно после успешного импорта
       setImportFile(null);
+      setImportCityId('');
+      setShowImportModal(false);
       setUploadProgress(0);
     } catch (e: any) {
       console.error('Ошибка импорта:', e);
@@ -578,61 +588,48 @@ export default function AdminDashboard() {
               <input
                 type="file"
                 accept=".xlsx,.xls"
-                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setImportFile(file);
+                  if (file) {
+                    // Открываем модальное окно для выбора города
+                    setShowImportModal(true);
+                    // Если города еще не загружены, загружаем их
+                    if (cities.length === 0) {
+                      api.get('/api/cities?active=true').then(res => {
+                        setCities(res.data);
+                        if (res.data.length > 0) {
+                          setImportCityId(res.data[0]._id);
+                        }
+                      });
+                    } else if (cities.length > 0) {
+                      setImportCityId(cities[0]._id);
+                    }
+                  }
+                }}
                 className="hidden"
                 disabled={importing}
               />
             </label>
-            {importFile && (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-slate-600 max-w-[150px] truncate">{importFile.name}</span>
-                  <span className="text-xs text-slate-500">
-                    ({(importFile.size / 1024 / 1024).toFixed(2)} MB)
-                  </span>
-                  <button
-                    onClick={handleImportExcel}
-                    disabled={importing}
-                    className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                  >
-                    {importing ? (
-                      <>
-                        <svg className="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Импорт...
-                      </>
-                    ) : (
-                      'Загрузить'
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setImportFile(null);
-                      setUploadProgress(0);
-                    }}
-                    disabled={importing}
-                    className="px-2 py-1.5 text-slate-600 hover:text-slate-800 disabled:opacity-50"
-                    title="Отменить"
-                  >
-                    ✕
-                  </button>
-                </div>
-                {importing && uploadProgress > 0 && (
-                  <div className="w-full max-w-md">
-                    <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
-                      <span>Загрузка файла...</span>
-                      <span>{uploadProgress}%</span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
-                        style={{ width: `${uploadProgress}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
+            {importFile && !showImportModal && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600 max-w-[150px] truncate">{importFile.name}</span>
+                <span className="text-xs text-slate-500">
+                  ({(importFile.size / 1024 / 1024).toFixed(2)} MB)
+                </span>
+                <button
+                  onClick={() => {
+                    setImportFile(null);
+                    setImportCityId('');
+                    setShowImportModal(false);
+                    setUploadProgress(0);
+                  }}
+                  disabled={importing}
+                  className="px-2 py-1.5 text-slate-600 hover:text-slate-800 disabled:opacity-50"
+                  title="Отменить"
+                >
+                  ✕
+                </button>
               </div>
             )}
           </div>
@@ -1187,6 +1184,127 @@ export default function AdminDashboard() {
               >
                 Отмена
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно выбора города для импорта */}
+      {showImportModal && importFile && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => !importing && setShowImportModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-900">Импорт холодильников из Excel</h3>
+              {!importing && (
+                <button
+                  onClick={() => {
+                    setShowImportModal(false);
+                    setImportFile(null);
+                    setImportCityId('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            
+            <div className="space-y-4">
+              {/* Информация о файле */}
+              {importFile && (
+                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900">{importFile.name}</p>
+                    <p className="text-xs text-slate-500">{(importFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Выбор города */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Выберите город для импорта <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={importCityId}
+                  onChange={(e) => setImportCityId(e.target.value)}
+                  disabled={importing || cities.length === 0}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {cities.length === 0 ? (
+                    <option value="">Загрузка городов...</option>
+                  ) : (
+                    <>
+                      <option value="">-- Выберите город --</option>
+                      {cities.map((city) => (
+                        <option key={city._id} value={city._id}>
+                          {city.name} ({city.code})
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                {cities.length === 0 && (
+                  <p className="text-xs text-slate-500 mt-1">Загрузка списка городов...</p>
+                )}
+              </div>
+
+              {/* Прогресс загрузки */}
+              {importing && uploadProgress > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-slate-600">Загрузка файла...</span>
+                    <span className="text-sm font-medium text-slate-900">{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Результат импорта */}
+              {importResult && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm font-medium text-green-900 mb-2">Импорт завершен!</p>
+                  <div className="text-sm text-green-700 space-y-1">
+                    <p>Импортировано: <strong>{importResult.imported}</strong></p>
+                    <p>Дубликаты: <strong>{importResult.duplicates}</strong></p>
+                    {importResult.errors > 0 && (
+                      <p className="text-red-600">Ошибки: <strong>{importResult.errors}</strong></p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Кнопки */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleImportExcel}
+                  disabled={!importCityId || importing || cities.length === 0}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {importing ? 'Импорт...' : 'Импортировать'}
+                </button>
+                {!importing && (
+                  <button
+                    onClick={() => {
+                      setShowImportModal(false);
+                      setImportFile(null);
+                      setImportCityId('');
+                      setImportResult(null);
+                    }}
+                    className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
+                  >
+                    Отмена
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
