@@ -77,6 +77,7 @@ export default function AdminDashboard() {
   const [showImportModal, setShowImportModal] = useState(false); // Модальное окно выбора города
   const [importResult, setImportResult] = useState<{ imported: number; duplicates: number; errors: number; total: number } | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [processingProgress, setProcessingProgress] = useState<string>(''); // Прогресс обработки на сервере
   const [showAddFridgeModal, setShowAddFridgeModal] = useState(false);
   const [newFridge, setNewFridge] = useState({ name: '', address: '', description: '', cityId: '' });
   const [creatingFridge, setCreatingFridge] = useState(false);
@@ -265,6 +266,7 @@ export default function AdminDashboard() {
       setImporting(true);
       setImportResult(null);
       setUploadProgress(0);
+      setProcessingProgress('Загрузка файла...');
 
       // Проверяем, что файл существует
       if (!importFile) {
@@ -295,7 +297,7 @@ export default function AdminDashboard() {
         headers: {
           // НЕ устанавливаем Content-Type - axios сделает это автоматически для FormData
         },
-        timeout: 300000, // 5 минут
+        timeout: 600000, // 10 минут (увеличено для больших файлов)
         // Явно указываем, что это FormData, чтобы axios не пытался сериализовать как JSON
         transformRequest: [(data: any) => {
           // Если это FormData, возвращаем как есть
@@ -310,6 +312,9 @@ export default function AdminDashboard() {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             setUploadProgress(percentCompleted);
+            if (percentCompleted >= 100) {
+              setProcessingProgress('Обработка данных на сервере...');
+            }
           }
         },
       };
@@ -322,9 +327,11 @@ export default function AdminDashboard() {
         configHeaders: axiosConfig.headers
       });
 
+      setProcessingProgress('Обработка данных на сервере...');
       const response = await api.post('/api/admin/import-fridges', formData, axiosConfig);
 
       setUploadProgress(100);
+      setProcessingProgress('Импорт завершен!');
       setImportResult(response.data);
 
       // Перезагружаем данные
@@ -343,6 +350,7 @@ export default function AdminDashboard() {
       setImportCityId('');
       setShowImportModal(false);
       setUploadProgress(0);
+      setProcessingProgress('');
     } catch (e: any) {
       console.error('Ошибка импорта:', e);
       console.error('Ошибка импорта (полные данные):', {
@@ -384,6 +392,7 @@ export default function AdminDashboard() {
       alert('Ошибка при импорте файла:\n\n' + errorMessage);
     } finally {
       setImporting(false);
+      setProcessingProgress('');
       // Не сбрасываем прогресс сразу, чтобы пользователь видел, что загрузка завершилась
       setTimeout(() => {
         if (!importing) {
@@ -1265,6 +1274,20 @@ export default function AdminDashboard() {
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
+                </div>
+              )}
+
+              {/* Прогресс обработки на сервере */}
+              {importing && processingProgress && uploadProgress >= 100 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-slate-600">{processingProgress}</span>
+                    <LoadingSpinner size="sm" />
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                    <div className="bg-green-600 h-2 rounded-full animate-pulse" style={{ width: '100%' }} />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Пожалуйста, подождите. Это может занять несколько минут для больших файлов...</p>
                 </div>
               )}
 

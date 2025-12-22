@@ -116,9 +116,14 @@ async function start() {
     }
     
     const port = process.env.PORT || 4000;
-    app.listen(port, '0.0.0.0', () => {
+    const server = app.listen(port, '0.0.0.0', () => {
       console.log(`[Server] Server listening on http://0.0.0.0:${port}`);
     });
+    
+    // Увеличиваем таймауты для длительных операций (импорт больших файлов)
+    server.timeout = 600000; // 10 минут
+    server.keepAliveTimeout = 65000; // 65 секунд
+    server.headersTimeout = 66000; // 66 секунд (должен быть больше keepAliveTimeout)
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[Server] Failed to start server:', err);
