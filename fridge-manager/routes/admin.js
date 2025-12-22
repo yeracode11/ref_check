@@ -252,16 +252,16 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
 
 // POST /api/admin/import-fridges
 // Импорт холодильников из Excel файла (доступен для админов и бухгалтеров)
+// Используем upload.fields([]) чтобы multer обрабатывал и файл, и другие поля FormData
 router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req, res, next) => {
   console.log('[Import] Starting file upload...');
   console.log('[Import] Request headers:', {
     'content-type': req.headers['content-type'],
     'content-length': req.headers['content-length']
   });
-  console.log('[Import] Request body keys:', Object.keys(req.body || {}));
   
-  // Обработка загрузки файла с обработкой ошибок
-  upload.single('file')(req, res, (err) => {
+  // Используем fields чтобы обработать и файл, и другие поля
+  upload.fields([{ name: 'file', maxCount: 1 }])(req, res, (err) => {
     if (err) {
       console.error('[Import] Multer upload error:', err);
       console.error('[Import] Multer error code:', err.code);
@@ -271,12 +271,18 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
       return res.status(400).json({ error: 'Ошибка загрузки файла', details: err.message });
     }
+    
+    // Multer обрабатывает файлы в req.files, а другие поля в req.body
+    const file = req.files && req.files['file'] ? req.files['file'][0] : null;
+    req.file = file; // Для совместимости с остальным кодом
+    
     console.log('[Import] File uploaded successfully:', {
       fieldname: req.file?.fieldname,
       originalname: req.file?.originalname,
       mimetype: req.file?.mimetype,
       size: req.file?.size
     });
+    console.log('[Import] Request body after multer:', req.body);
     next();
   });
 }, async (req, res) => {
@@ -346,7 +352,10 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     }
 
     const headers = rawData[headerRow].map(h => String(h || '').trim());
-    const dataStartRow = headerRow + 2; // Данные начинаются через 2 строки после заголовков
+    const dataStartRow = headerRow + 1; // Данные начинаются сразу после заголовков
+    
+    console.log('[Import] Headers found:', headers);
+    console.log('[Import] Data will start from row:', dataStartRow);
 
     // Находим индексы нужных колонок
     const findColumnIndex = (keywords) => {
@@ -366,13 +375,27 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     const addressIdx = findColumnIndex(['адрес']);
     const tpIdx = findColumnIndex(['тп']);
 
+    console.log('[Import] Column indices:', {
+      contractorIdx,
+      contractNumIdx,
+      quantityIdx,
+      spvIdx,
+      addressIdx,
+      tpIdx,
+      headers: headers.slice(0, 10) // Первые 10 заголовков для отладки
+    });
+
     // Определяем город для импорта
     // Приоритет: cityId из запроса > город бухгалтера > ошибка
     let city;
-    const requestedCityId = req.body.cityId || req.query.cityId;
+    // Multer помещает текстовые поля FormData в req.body
+    const requestedCityId = req.body?.cityId || req.query?.cityId;
     
     console.log('[Import] City selection:', {
       requestedCityId,
+      reqBodyKeys: Object.keys(req.body || {}),
+      reqBodyCityId: req.body?.cityId,
+      reqQueryCityId: req.query?.cityId,
       userRole: req.user.role,
       userCityId: req.user.cityId
     });
@@ -416,13 +439,35 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
     }
 
+    console.log('[Import] Starting to parse data:', {
+      dataStartRow,
+      totalRows: rawData.length,
+      rowsToProcess: rawData.length - dataStartRow,
+      codeCounter
+    });
+
+    let skippedNoAddress = 0;
+    let skippedEmptyRow = 0;
+    let processedRows = 0;
+
     for (let i = dataStartRow; i < rawData.length; i++) {
       const row = rawData[i];
-      if (!row || !Array.isArray(row)) continue;
+      if (!row || !Array.isArray(row)) {
+        skippedEmptyRow++;
+        continue;
+      }
+
+      processedRows++;
 
       // Получаем адрес
       const address = addressIdx >= 0 ? String(row[addressIdx] || '').trim() : '';
-      if (!address || address === 'null' || address === 'undefined') continue; // Пропускаем строки без адреса
+      if (!address || address === 'null' || address === 'undefined') {
+        skippedNoAddress++;
+        if (processedRows <= 5) {
+          console.log(`[Import] Row ${i} skipped - no address. Row data:`, row.slice(0, 5));
+        }
+        continue; // Пропускаем строки без адреса
+      }
 
       // Получаем контрагента (название)
       const contractor = contractorIdx >= 0 ? String(row[contractorIdx] || '').trim() : '';
@@ -471,10 +516,27 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       codeCounter++;
     }
 
+    console.log('[Import] Parsing complete:', {
+      recordsFound: records.length,
+      skippedNoAddress,
+      skippedEmptyRow,
+      processedRows
+    });
+
+    if (records.length === 0) {
+      console.log('[Import] No records to import. Sample rows:', rawData.slice(dataStartRow, dataStartRow + 5));
+      return res.status(400).json({ 
+        error: 'Не найдено данных для импорта',
+        details: `Обработано строк: ${processedRows}, пропущено без адреса: ${skippedNoAddress}, пропущено пустых: ${skippedEmptyRow}. Убедитесь, что в файле есть колонка "Адрес" с данными.`
+      });
+    }
+
     // Импортируем в базу данных
     let imported = 0;
     let duplicates = 0;
     let errors = 0;
+
+    console.log('[Import] Starting database import for', records.length, 'records');
 
     for (const record of records) {
       try {
@@ -493,15 +555,20 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
     }
 
-    return res.json({
+    const result = {
       success: true,
       imported,
       duplicates,
       errors,
       total: records.length,
-    });
+    };
+    
+    console.log('[Import] Import complete:', result);
+    
+    return res.json(result);
   } catch (err) {
-    console.error('Ошибка импорта:', err);
+    console.error('[Import] Error during import:', err);
+    console.error('[Import] Error stack:', err.stack);
     return res
       .status(500)
       .json({ error: 'Failed to import fridges', details: err.message });
@@ -550,36 +617,8 @@ router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req,
           return res.status(400).json({ error: 'Город бухгалтера не найден' });
         }
       } else {
-        // Для админа - по умолчанию Тараз (код региона 08)
-        // Ищем город по коду или имени (приоритет коду)
-        city = await City.findOne({ $or: [{ code: '08' }, { name: 'Тараз' }] });
-        if (!city) {
-          // Если не найден, создаем новый (с обработкой возможного дубликата)
-          try {
-            city = await City.create({
-              name: 'Тараз',
-              code: '08',
-              active: true,
-            });
-            console.log('[Admin] Created new city: Тараз (08)');
-          } catch (createErr) {
-            // Если возникла ошибка дубликата, пытаемся найти город снова
-            if (createErr.code === 11000 || createErr.message?.includes('duplicate')) {
-              console.log('[Admin] City creation failed due to duplicate, trying to find existing city');
-              city = await City.findOne({ $or: [{ code: '08' }, { name: 'Тараз' }] });
-              if (!city) {
-                console.error('[Admin] City not found after duplicate error, this should not happen');
-                throw createErr; // Если все еще не найден, пробрасываем ошибку
-              } else {
-                console.log('[Admin] Found existing city after duplicate error:', city.name, city.code);
-              }
-            } else {
-              throw createErr;
-            }
-          }
-        } else {
-          console.log('[Admin] Using existing city:', city.name, city.code);
-        }
+        // Для админа cityId обязателен при создании холодильника
+        return res.status(400).json({ error: 'Не указан город. Пожалуйста, выберите город для холодильника.' });
       }
     }
 

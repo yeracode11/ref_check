@@ -28,14 +28,16 @@ app.use(cors(corsOptions));
 
 // Важно: express.json() не должен обрабатывать multipart/form-data
 // Multer должен обработать multipart/form-data до того, как express.json() попытается парсить тело
+// Multer автоматически обрабатывает все поля FormData (и файлы, и текстовые поля)
 // Используем условный middleware для body парсеров
 app.use((req, res, next) => {
   const contentType = req.headers['content-type'] || '';
   console.log('[Server] Request Content-Type:', contentType);
   
   // Если это multipart/form-data, пропускаем json и urlencoded парсеры
+  // Multer обработает все поля FormData (и файлы, и текстовые поля)
   if (contentType.includes('multipart/form-data')) {
-    console.log('[Server] Skipping body parsers for multipart/form-data request');
+    console.log('[Server] Skipping body parsers for multipart/form-data request (multer will handle it)');
     return next();
   }
   
