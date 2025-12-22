@@ -2,7 +2,9 @@
  * Скрипт для удаления дубликатов холодильников
  * 
  * Использование:
+ *   cd fridge-manager
  *   node remove_duplicate_fridges.js
+ *   node remove_duplicate_fridges.js --confirm
  * 
  * Скрипт найдет и удалит дубликаты по коду холодильника,
  * оставляя самую старую запись (по дате создания)
@@ -10,13 +12,8 @@
 
 require('dotenv').config();
 const mongoose = require('mongoose');
-const path = require('path');
-
-// Определяем путь к моделям в зависимости от того, откуда запущен скрипт
-const scriptDir = __dirname;
-const modelsPath = path.join(scriptDir, 'fridge-manager', 'models');
-const Fridge = require(path.join(modelsPath, 'Fridge'));
-const Checkin = require(path.join(modelsPath, 'Checkin'));
+const Fridge = require('./models/Fridge');
+const Checkin = require('./models/Checkin');
 
 async function removeDuplicates() {
   try {
