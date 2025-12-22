@@ -109,6 +109,7 @@ export default function AccountantDashboard() {
   });
 
   const observerTarget = useRef<HTMLDivElement | null>(null);
+  const isCreatingRef = useRef(false); // Защита от двойного вызова
 
   // Загрузка городов
   useEffect(() => {
@@ -227,12 +228,18 @@ export default function AccountantDashboard() {
 
   // Создание холодильника
   const handleCreateFridge = async () => {
+    // Защита от двойного вызова
+    if (isCreatingRef.current || saving) {
+      return;
+    }
+
     if (!newFridge.name.trim()) {
       alert('Укажите название холодильника');
       return;
     }
 
     try {
+      isCreatingRef.current = true;
       setSaving(true);
       
       // Показываем toast и закрываем модальное окно сразу
@@ -288,6 +295,7 @@ export default function AccountantDashboard() {
     } catch (e: any) {
       showToast(`Ошибка: ${e?.response?.data?.error || e.message}`, 'error', 5000);
     } finally {
+      isCreatingRef.current = false;
       setSaving(false);
     }
   };

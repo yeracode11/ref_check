@@ -80,6 +80,7 @@ export default function AdminDashboard() {
   const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>('all'); // 'all' для всех городов
   // Метки на карте отключены по требованию (показываем пустую карту)
   const observerTarget = useRef<HTMLDivElement | null>(null);
+  const isCreatingRef = useRef(false); // Защита от двойного вызова
 
   // Загрузка городов
   useEffect(() => {
@@ -322,12 +323,18 @@ export default function AdminDashboard() {
 
   // Функция для создания нового холодильника
   const handleCreateFridge = async () => {
+    // Защита от двойного вызова
+    if (isCreatingRef.current || creatingFridge) {
+      return;
+    }
+
     if (!newFridge.name.trim()) {
       alert('Пожалуйста, укажите название холодильника');
       return;
     }
 
     try {
+      isCreatingRef.current = true;
       setCreatingFridge(true);
       
       // Показываем toast и закрываем модальное окно сразу
@@ -356,6 +363,7 @@ export default function AdminDashboard() {
       };
       
       // Сбрасываем состояние загрузки
+      isCreatingRef.current = false;
       setCreatingFridge(false);
       
       // Очищаем форму
@@ -392,6 +400,7 @@ export default function AdminDashboard() {
       console.error('Ошибка создания холодильника:', e);
       const errorMessage = e?.response?.data?.error || e?.message || 'Неизвестная ошибка';
       showToast(`Ошибка при создании холодильника: ${errorMessage}`, 'error', 5000);
+      isCreatingRef.current = false;
       setCreatingFridge(false);
     }
   };

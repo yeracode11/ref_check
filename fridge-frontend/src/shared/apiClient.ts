@@ -97,7 +97,13 @@ api.interceptors.response.use(
     }
 
     // Retry on network errors or 5xx errors (up to 3 times)
-    if (!config._retry && (error.code === 'ERR_NETWORK' || error.code === 'ERR_CONNECTION_CLOSED' || (error.response?.status >= 500))) {
+    // НЕ повторяем POST/PUT/PATCH запросы на создание/изменение ресурсов, чтобы избежать дублирования
+    const isMutationRequest = ['post', 'put', 'patch', 'delete'].includes(config?.method?.toLowerCase() || '');
+    const isCreateFridgeRequest = config?.url?.includes('/fridges') && config?.method?.toLowerCase() === 'post';
+    
+    if (!config._retry && 
+        !isCreateFridgeRequest && // Не повторяем создание холодильников
+        (error.code === 'ERR_NETWORK' || error.code === 'ERR_CONNECTION_CLOSED' || (error.response?.status >= 500))) {
       config._retry = true;
       config._retryCount = (config._retryCount || 0) + 1;
 
