@@ -54,21 +54,30 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     const limitNum = shouldPaginate && limit ? Math.max(1, Math.min(100, Number(limit))) : undefined;
     const skipNum = shouldPaginate && skip ? Math.max(0, Number(skip)) : 0;
 
-    // Агрегируем последние отметки по каждому холодильнику
-    const lastCheckins = await Checkin.aggregate([
-      { $sort: { fridgeId: 1, visitedAt: -1 } },
+    // Агрегируем статистику по каждому холодильнику: последняя отметка, первая отметка, общее количество
+    const statsByFridgeId = new Map();
+    const checkinStats = await Checkin.aggregate([
+      { $sort: { fridgeId: 1, visitedAt: 1 } }, // Сортируем по дате для получения первой и последней
       {
         $group: {
           _id: '$fridgeId',
-          lastVisit: { $first: '$visitedAt' },
+          firstVisit: { $first: '$visitedAt' },
+          firstLocation: { $first: '$location' },
+          lastVisit: { $last: '$visitedAt' },
+          lastLocation: { $last: '$location' },
+          totalCheckins: { $sum: 1 },
         },
       },
     ]);
 
-    const lastByFridgeId = new Map();
-    lastCheckins.forEach((c) => {
-      if (c && c._id) {
-        lastByFridgeId.set(c._id, c.lastVisit);
+    checkinStats.forEach((s) => {
+      if (s && s._id) {
+        statsByFridgeId.set(s._id, {
+          lastVisit: s.lastVisit,
+          firstLocation: s.firstLocation,
+          lastLocation: s.lastLocation,
+          totalCheckins: s.totalCheckins,
+        });
       }
     });
 
