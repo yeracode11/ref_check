@@ -54,7 +54,7 @@ const FridgeSchema = new mongoose.Schema(
     clientInfo: { type: ClientInfoSchema },
     // История изменений статуса
     statusHistory: [{
-      status: { type: String, enum: ['warehouse', 'installed', 'returned'] },
+      status: { type: String, enum: ['warehouse', 'installed', 'returned', 'moved'] },
       changedAt: { type: Date, default: Date.now },
       changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       notes: { type: String },
