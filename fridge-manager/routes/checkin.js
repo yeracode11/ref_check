@@ -102,11 +102,17 @@ router.post('/', async (req, res) => {
             if (distance !== null && distance > 50) {
               // Местоположение изменилось более чем на 50 метров - статус "moved"
               newWarehouseStatus = 'moved';
-            } else if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
-              // Если еще не установлен, устанавливаем
-              newWarehouseStatus = 'installed';
+            } else {
+              // Местоположение не изменилось или изменилось незначительно
+              if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
+                // Если еще не установлен, устанавливаем
+                newWarehouseStatus = 'installed';
+              } else if (fridge.warehouseStatus === 'moved') {
+                // Если был перемещен, но теперь координаты совпадают - возвращаем к установленному
+                newWarehouseStatus = 'installed';
+              }
+              // Если уже установлен и координаты не изменились - оставляем "installed"
             }
-            // Если местоположение не изменилось и уже установлен - оставляем "installed"
           }
         }
         
