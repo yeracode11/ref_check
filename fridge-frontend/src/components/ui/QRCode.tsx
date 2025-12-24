@@ -93,11 +93,13 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
         }
         #qr-print-global-container .qr-print-text {
           margin-top: 20px !important;
-          font-size: 36px !important;
+          font-size: 28px !important;
           font-weight: bold !important;
           text-align: center !important;
           page-break-before: avoid !important;
           page-break-after: avoid !important;
+          white-space: normal !important;
+          word-wrap: break-word !important;
         }
       }
     `;
@@ -129,7 +131,14 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
         img.onload = () => {
           // Добавляем отступы для текста
           const padding = 40;
-          const textHeight = title || code ? 80 : 0; // Увеличено для большего текста
+          // Вычисляем высоту текста: код + название (может быть несколько строк)
+          let textHeight = 0;
+          if (code) textHeight += 40; // Высота для кода
+          if (title) {
+            // Примерная оценка: каждая строка ~20px, максимум 3 строки
+            const maxLines = 3;
+            textHeight += maxLines * 25; // Высота для названия с переносами
+          }
           canvas.width = size + padding * 2;
           canvas.height = size + padding * 2 + textHeight;
 
@@ -143,16 +152,43 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
             // Добавляем текст
             if (title || code) {
               ctx.fillStyle = 'black';
-              ctx.font = '900 32px Arial'; // font-weight 900 для максимальной жирности, увеличен размер
+              ctx.font = 'bold 24px Arial'; // Уменьшен размер, но оставлен bold
               ctx.textAlign = 'center';
               if (code) {
                 ctx.fillText(`#${code}`, canvas.width / 2, size + padding + 30);
               }
               if (title) {
-                ctx.fillStyle = 'black'; // Черный цвет вместо серого для лучшей видимости
-                ctx.font = 'bold 22px Arial'; // Жирный шрифт для названия, увеличен размер
-                const displayTitle = title.length > 30 ? title.substring(0, 30) + '...' : title;
-                ctx.fillText(displayTitle, canvas.width / 2, size + padding + 55);
+                ctx.fillStyle = 'black';
+                ctx.font = 'bold 16px Arial'; // Уменьшен размер, но оставлен bold
+                ctx.textAlign = 'center';
+                
+                // Перенос текста на несколько строк
+                const maxWidth = size - 20; // Максимальная ширина текста (чуть меньше ширины QR)
+                const words = title.split(' ');
+                const lines: string[] = [];
+                let currentLine = '';
+                
+                for (let i = 0; i < words.length; i++) {
+                  const testLine = currentLine ? `${currentLine} ${words[i]}` : words[i];
+                  const metrics = ctx.measureText(testLine);
+                  
+                  if (metrics.width > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = words[i];
+                  } else {
+                    currentLine = testLine;
+                  }
+                }
+                if (currentLine) {
+                  lines.push(currentLine);
+                }
+                
+                // Рисуем каждую строку
+                const lineHeight = 20;
+                const startY = size + padding + 50;
+                lines.forEach((line, index) => {
+                  ctx.fillText(line, canvas.width / 2, startY + (index * lineHeight));
+                });
               }
             }
           }
@@ -253,11 +289,15 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
         }
         if (title) {
           const titleText = document.createElement('div');
-          titleText.style.fontSize = '28px';
+          titleText.style.fontSize = '20px';
           titleText.style.fontWeight = 'bold'; // Жирный шрифт для названия
           titleText.style.color = '#000'; // Черный цвет вместо серого
           titleText.style.marginTop = '10px';
-          titleText.textContent = title.length > 50 ? title.substring(0, 50) + '...' : title;
+          titleText.style.whiteSpace = 'normal';
+          titleText.style.wordWrap = 'break-word';
+          titleText.style.maxWidth = '80%';
+          titleText.style.margin = '10px auto 0';
+          titleText.textContent = title; // Полный текст с переносами
           textDiv.appendChild(titleText);
         }
         globalPrintContainer.appendChild(textDiv);
