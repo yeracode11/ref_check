@@ -125,6 +125,16 @@ export default function AdminDashboard() {
           api.get('/api/checkins'),
         ]);
         if (!alive) return;
+        // Логируем для отладки
+        console.log('[AdminDashboard] Загружено холодильников:', fridgeStatusRes.data.length);
+        const withCoords = fridgeStatusRes.data.filter((f: AdminFridge) => 
+          f.location && f.location.coordinates && 
+          Array.isArray(f.location.coordinates) && 
+          f.location.coordinates.length === 2 &&
+          f.location.coordinates[0] !== 0 && 
+          f.location.coordinates[1] !== 0
+        );
+        console.log('[AdminDashboard] Холодильников с координатами:', withCoords.length);
         setAllFridges(fridgeStatusRes.data);
         setCheckins(checkinsRes.data);
         setError(null);
@@ -538,12 +548,24 @@ export default function AdminDashboard() {
     });
   }
   
+  // Фильтруем холодильники с координатами для карты
+  const fridgesWithLocation = fridgesByCity.filter((f) => {
+    if (!f.location || !f.location.coordinates) return false;
+    if (!Array.isArray(f.location.coordinates) || f.location.coordinates.length !== 2) return false;
+    const [lng, lat] = f.location.coordinates;
+    // Проверяем, что координаты валидные (не нули и не NaN)
+    if (typeof lng !== 'number' || typeof lat !== 'number') return false;
+    if (isNaN(lng) || isNaN(lat)) return false;
+    if (lng === 0 && lat === 0) return false;
+    return true;
+  });
+
   const fridgesForMap: AdminFridge[] = filterQuery
-    ? fridgesByCity.filter((f) => {
+    ? fridgesWithLocation.filter((f) => {
         const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
         return text.includes(filterQuery);
       })
-    : fridgesByCity;
+    : fridgesWithLocation;
   const filteredAllFridges = allFridges;
 
   // Фильтрация загруженных холодильников для списка
