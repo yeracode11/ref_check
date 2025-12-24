@@ -182,7 +182,18 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const [deleting, setDeleting] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', address: '', description: '' });
+  const [showEditClientModal, setShowEditClientModal] = useState(false);
+  const [clientForm, setClientForm] = useState<ClientInfo>({
+    name: '',
+    inn: '',
+    contractNumber: '',
+    contactPhone: '',
+    contactPerson: '',
+    installDate: '',
+    notes: '',
+  });
   const [saving, setSaving] = useState(false);
+  const [savingClient, setSavingClient] = useState(false);
 
   // Загрузка истории посещений
   const loadCheckins = async (fridgeCode?: string) => {
@@ -535,6 +546,27 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             >
               📱 QR-код
             </button>
+            {isAccountant && (
+              <button
+                onClick={() => {
+                  if (fridge) {
+                    setClientForm({
+                      name: fridge.clientInfo?.name || '',
+                      inn: fridge.clientInfo?.inn || '',
+                      contractNumber: fridge.clientInfo?.contractNumber || '',
+                      contactPhone: fridge.clientInfo?.contactPhone || '',
+                      contactPerson: fridge.clientInfo?.contactPerson || '',
+                      installDate: fridge.clientInfo?.installDate ? fridge.clientInfo.installDate.substring(0, 10) : '',
+                      notes: fridge.clientInfo?.notes || '',
+                    });
+                    setShowEditClientModal(true);
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+              >
+                ✏️ Редактировать
+              </button>
+            )}
             {isAdmin && (
               <>
                 <button
@@ -703,6 +735,115 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   <button
                     onClick={() => setShowEditModal(false)}
                     disabled={saving}
+                    className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Модальное окно редактирования данных клиента (для бухгалтера) */}
+        {showEditClientModal && fridge && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4 z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">
+                Данные клиента: {fridge.name}
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Название ИП/организации</label>
+                  <input
+                    type="text"
+                    value={clientForm.name || ''}
+                    onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">ИНН</label>
+                  <input
+                    type="text"
+                    value={clientForm.inn || ''}
+                    onChange={(e) => setClientForm({ ...clientForm, inn: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Номер договора</label>
+                  <input
+                    type="text"
+                    value={clientForm.contractNumber || ''}
+                    onChange={(e) => setClientForm({ ...clientForm, contractNumber: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Контактный телефон</label>
+                  <input
+                    type="text"
+                    value={clientForm.contactPhone || ''}
+                    onChange={(e) => setClientForm({ ...clientForm, contactPhone: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Контактное лицо</label>
+                  <input
+                    type="text"
+                    value={clientForm.contactPerson || ''}
+                    onChange={(e) => setClientForm({ ...clientForm, contactPerson: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Дата установки</label>
+                  <input
+                    type="date"
+                    value={clientForm.installDate || ''}
+                    onChange={(e) => setClientForm({ ...clientForm, installDate: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Примечания</label>
+                  <textarea
+                    value={clientForm.notes || ''}
+                    onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })}
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        setSavingClient(true);
+                        const response = await api.patch(`/api/admin/fridges/${fridge._id}/client`, {
+                          clientInfo: clientForm,
+                        });
+                        
+                        // Обновляем данные холодильника
+                        setFridge({ ...fridge, clientInfo: response.data.clientInfo });
+                        setShowEditClientModal(false);
+                        onUpdated?.();
+                        alert('Данные клиента сохранены');
+                      } catch (e: any) {
+                        alert('Ошибка: ' + (e?.response?.data?.error || e.message));
+                      } finally {
+                        setSavingClient(false);
+                      }
+                    }}
+                    disabled={savingClient}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
+                  >
+                    {savingClient ? 'Сохранение...' : 'Сохранить'}
+                  </button>
+                  <button
+                    onClick={() => setShowEditClientModal(false)}
+                    disabled={savingClient}
                     className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
                   >
                     Отмена

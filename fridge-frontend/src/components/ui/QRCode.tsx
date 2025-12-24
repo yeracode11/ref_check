@@ -129,68 +129,17 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
         const url = URL.createObjectURL(svgBlob);
 
         img.onload = () => {
-          // Добавляем отступы для текста
+          // Добавляем отступы
           const padding = 40;
-          // Вычисляем высоту текста: код + название (может быть несколько строк)
-          let textHeight = 0;
-          if (code) textHeight += 40; // Высота для кода
-          if (title) {
-            // Примерная оценка: каждая строка ~20px, максимум 3 строки
-            const maxLines = 3;
-            textHeight += maxLines * 25; // Высота для названия с переносами
-          }
           canvas.width = size + padding * 2;
-          canvas.height = size + padding * 2 + textHeight;
+          canvas.height = size + padding * 2;
 
           if (ctx) {
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Рисуем QR-код
+            // Рисуем только QR-код, без текста
             ctx.drawImage(img, padding, padding, size, size);
-
-            // Добавляем текст
-            if (title || code) {
-              ctx.fillStyle = 'black';
-              ctx.font = 'bold 24px Arial'; // Уменьшен размер, но оставлен bold
-              ctx.textAlign = 'center';
-              if (code) {
-                ctx.fillText(`#${code}`, canvas.width / 2, size + padding + 30);
-              }
-              if (title) {
-                ctx.fillStyle = 'black';
-                ctx.font = 'bold 16px Arial'; // Уменьшен размер, но оставлен bold
-                ctx.textAlign = 'center';
-                
-                // Перенос текста на несколько строк
-                const maxWidth = size - 20; // Максимальная ширина текста (чуть меньше ширины QR)
-                const words = title.split(' ');
-                const lines: string[] = [];
-                let currentLine = '';
-                
-                for (let i = 0; i < words.length; i++) {
-                  const testLine = currentLine ? `${currentLine} ${words[i]}` : words[i];
-                  const metrics = ctx.measureText(testLine);
-                  
-                  if (metrics.width > maxWidth && currentLine) {
-                    lines.push(currentLine);
-                    currentLine = words[i];
-                  } else {
-                    currentLine = testLine;
-                  }
-                }
-                if (currentLine) {
-                  lines.push(currentLine);
-                }
-                
-                // Рисуем каждую строку
-                const lineHeight = 20;
-                const startY = size + padding + 50;
-                lines.forEach((line, index) => {
-                  ctx.fillText(line, canvas.width / 2, startY + (index * lineHeight));
-                });
-              }
-            }
           }
           URL.revokeObjectURL(url);
           resolve(canvas);
