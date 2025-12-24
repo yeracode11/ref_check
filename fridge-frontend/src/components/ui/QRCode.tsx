@@ -93,7 +93,7 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
         }
         #qr-print-global-container .qr-print-text {
           margin-top: 20px !important;
-          font-size: 32px !important;
+          font-size: 36px !important;
           font-weight: bold !important;
           text-align: center !important;
           page-break-before: avoid !important;
@@ -129,7 +129,7 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
         img.onload = () => {
           // Добавляем отступы для текста
           const padding = 40;
-          const textHeight = title || code ? 60 : 0;
+          const textHeight = title || code ? 80 : 0; // Увеличено для большего текста
           canvas.width = size + padding * 2;
           canvas.height = size + padding * 2 + textHeight;
 
@@ -143,16 +143,16 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
             // Добавляем текст
             if (title || code) {
               ctx.fillStyle = 'black';
-              ctx.font = 'bold 26px Arial';
+              ctx.font = '900 32px Arial'; // font-weight 900 для максимальной жирности, увеличен размер
               ctx.textAlign = 'center';
               if (code) {
-                ctx.fillText(`#${code}`, canvas.width / 2, size + padding + 25);
+                ctx.fillText(`#${code}`, canvas.width / 2, size + padding + 30);
               }
               if (title) {
-                ctx.fillStyle = 'gray';
-                ctx.font = '18px Arial';
+                ctx.fillStyle = 'black'; // Черный цвет вместо серого для лучшей видимости
+                ctx.font = 'bold 22px Arial'; // Жирный шрифт для названия, увеличен размер
                 const displayTitle = title.length > 30 ? title.substring(0, 30) + '...' : title;
-                ctx.fillText(displayTitle, canvas.width / 2, size + padding + 45);
+                ctx.fillText(displayTitle, canvas.width / 2, size + padding + 55);
               }
             }
           }
@@ -253,9 +253,9 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
         }
         if (title) {
           const titleText = document.createElement('div');
-          titleText.style.fontSize = '24px';
-          titleText.style.fontWeight = 'normal';
-          titleText.style.color = '#666';
+          titleText.style.fontSize = '28px';
+          titleText.style.fontWeight = 'bold'; // Жирный шрифт для названия
+          titleText.style.color = '#000'; // Черный цвет вместо серого
           titleText.style.marginTop = '10px';
           titleText.textContent = title.length > 50 ? title.substring(0, 50) + '...' : title;
           textDiv.appendChild(titleText);
@@ -299,23 +299,13 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
     <div className={`flex flex-col items-center gap-3 ${className}`}>
       <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm min-h-[200px] flex items-center justify-center">
         {isVisible ? (
-          <>
-            <QRCodeSVG
-              id={`qr-svg-${code || 'default'}`}
-              value={value}
-              size={size}
-              level="L"
-              style={{ height: 'auto', maxWidth: '100%', width: '100%' }}
-            />
-            {(title || code) && (
-              <div className="mt-3 text-center">
-                {code && <div className="font-semibold text-3xl text-slate-900">#{code}</div>}
-                {title && (
-                  <div className="text-xl text-slate-500 mt-1 truncate max-w-[200px]">{title}</div>
-                )}
-              </div>
-            )}
-          </>
+          <QRCodeSVG
+            id={`qr-svg-${code || 'default'}`}
+            value={value}
+            size={size}
+            level="L"
+            style={{ height: 'auto', maxWidth: '100%', width: '100%' }}
+          />
         ) : (
           <div className="text-slate-400 text-sm">Загрузка QR-кода...</div>
         )}
