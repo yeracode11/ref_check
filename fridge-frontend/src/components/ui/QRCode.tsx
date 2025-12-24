@@ -14,7 +14,7 @@ type QRCodeProps = {
 let globalPrintContainer: HTMLDivElement | null = null;
 let printStyleAdded = false;
 
-export function QRCode({ value, title, code, size = 170, className = '' }: QRCodeProps) {
+export function QRCode({ value, title, code, size = 150, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -93,7 +93,7 @@ export function QRCode({ value, title, code, size = 170, className = '' }: QRCod
         }
         #qr-print-global-container .qr-print-text {
           margin-top: 20px !important;
-          font-size: 28px !important;
+          font-size: 32px !important;
           font-weight: bold !important;
           text-align: center !important;
           page-break-before: avoid !important;
@@ -143,14 +143,14 @@ export function QRCode({ value, title, code, size = 170, className = '' }: QRCod
             // Добавляем текст
             if (title || code) {
               ctx.fillStyle = 'black';
-              ctx.font = 'bold 22px Arial';
+              ctx.font = 'bold 26px Arial';
               ctx.textAlign = 'center';
               if (code) {
                 ctx.fillText(`#${code}`, canvas.width / 2, size + padding + 25);
               }
               if (title) {
                 ctx.fillStyle = 'gray';
-                ctx.font = '16px Arial';
+                ctx.font = '18px Arial';
                 const displayTitle = title.length > 30 ? title.substring(0, 30) + '...' : title;
                 ctx.fillText(displayTitle, canvas.width / 2, size + padding + 45);
               }
@@ -253,7 +253,7 @@ export function QRCode({ value, title, code, size = 170, className = '' }: QRCod
         }
         if (title) {
           const titleText = document.createElement('div');
-          titleText.style.fontSize = '22px';
+          titleText.style.fontSize = '24px';
           titleText.style.fontWeight = 'normal';
           titleText.style.color = '#666';
           titleText.style.marginTop = '10px';
@@ -309,9 +309,9 @@ export function QRCode({ value, title, code, size = 170, className = '' }: QRCod
             />
             {(title || code) && (
               <div className="mt-3 text-center">
-                {code && <div className="font-semibold text-xl text-slate-900">#{code}</div>}
+                {code && <div className="font-semibold text-2xl text-slate-900">#{code}</div>}
                 {title && (
-                  <div className="text-base text-slate-500 mt-1 truncate max-w-[200px]">{title}</div>
+                  <div className="text-lg text-slate-500 mt-1 truncate max-w-[200px]">{title}</div>
                 )}
               </div>
             )}
