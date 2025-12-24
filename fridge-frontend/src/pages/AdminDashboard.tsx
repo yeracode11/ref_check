@@ -842,30 +842,38 @@ export default function AdminDashboard() {
                 let statusLabel = 'Нет отметок';
                 let statusColor = 'bg-slate-200 text-slate-700';
                 
-                // Если есть посещение, всегда зеленый цвет
-                if (f.status === 'today') {
+                // Определяем статус и цвет на основе статуса карты и warehouseStatus
+                if (f.status === 'location_changed') {
+                  // Местоположение изменилось - красный
+                  statusLabel = 'Перемещен';
+                  statusColor = 'bg-red-100 text-red-700';
+                } else if (f.status === 'today') {
                   statusLabel = 'Сегодня';
                   statusColor = 'bg-green-100 text-green-700';
                 } else if (f.status === 'week') {
                   statusLabel = 'Неделя';
-                  statusColor = 'bg-green-100 text-green-700'; // Зеленый для всех с посещениями
+                  statusColor = 'bg-green-100 text-green-700';
                 } else if (f.status === 'old') {
                   statusLabel = 'Давно';
-                  statusColor = 'bg-green-100 text-green-700'; // Зеленый для всех с посещениями
+                  statusColor = 'bg-green-100 text-green-700';
                 } else {
-                  // Нет посещений - показываем warehouseStatus, но серым цветом
-                  if (f.warehouseStatus === 'returned') {
-                    statusLabel = 'Возврат';
-                  } else if (f.warehouseStatus === 'warehouse') {
-                    statusLabel = 'На складе';
-                  } else if (f.warehouseStatus === 'moved') {
+                  // Нет посещений - показываем warehouseStatus
+                  if (f.warehouseStatus === 'moved') {
                     statusLabel = 'Перемещен';
+                    statusColor = 'bg-red-100 text-red-700'; // Красный для перемещенных
                   } else if (f.warehouseStatus === 'installed') {
                     statusLabel = 'Установлен';
+                    statusColor = 'bg-green-100 text-green-700'; // Зеленый для установленных
+                  } else if (f.warehouseStatus === 'returned') {
+                    statusLabel = 'Возврат';
+                    statusColor = 'bg-yellow-100 text-yellow-700'; // Желтый для возврата
+                  } else if (f.warehouseStatus === 'warehouse') {
+                    statusLabel = 'На складе';
+                    statusColor = 'bg-slate-200 text-slate-700'; // Серый для склада
                   } else {
                     statusLabel = 'Нет отметок';
+                    statusColor = 'bg-slate-200 text-slate-700';
                   }
-                  statusColor = 'bg-slate-200 text-slate-700'; // Серый для без посещений
                 }
 
                 return (

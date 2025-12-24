@@ -141,12 +141,22 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       // - При второй и последующих отметках - сравниваем координаты первой и последней
       // - Если координаты отличаются более чем на 50 метров - красный (location_changed)
       // - Если координаты совпадают или близки - зеленый
+      // - Учитываем warehouseStatus: если moved - показываем красным, если installed - зеленым
       let status;
       const warehouseStatus = f.warehouseStatus || 'warehouse';
       
       if (!lastVisit) {
-        // Нет посещений - серый
-        status = 'never';
+        // Нет посещений - проверяем warehouseStatus
+        if (warehouseStatus === 'moved') {
+          // Холодильник был перемещен ранее (даже если нет новых отметок)
+          status = 'location_changed'; // Красный
+        } else if (warehouseStatus === 'installed') {
+          // Холодильник установлен, но нет отметок - показываем как "старая" отметка
+          status = 'old'; // Зеленый (будет отображаться зеленым)
+        } else {
+          // На складе или возврат - серый
+          status = 'never';
+        }
       } else if (totalCheckins === 1) {
         // Первая отметка - всегда зеленый
         status = visitStatus; // today, week, или old - все будут зелеными
@@ -161,8 +171,12 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
           status = visitStatus;
         }
       } else {
-        // Fallback - если не удалось сравнить координаты, используем обычный статус
-        status = visitStatus;
+        // Fallback - если не удалось сравнить координаты, используем warehouseStatus или обычный статус
+        if (warehouseStatus === 'moved') {
+          status = 'location_changed'; // Красный
+        } else {
+          status = visitStatus;
+        }
       }
 
       return {
@@ -1362,6 +1376,79 @@ router.patch('/fridges/:id/client', authenticateToken, requireAdminOrAccountant,
     return res.json(populated);
   } catch (err) {
     return res.status(500).json({ error: 'Ошибка обновления данных клиента', details: err.message });
+  }
+});
+
+// PATCH /api/admin/fridges/:id/status
+// Изменить статус холодильника (warehouseStatus) - доступно для бухгалтера и админа
+router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  try {
+    const { warehouseStatus, clientInfo, notes } = req.body;
+
+    if (!warehouseStatus || !['warehouse', 'installed', 'returned', 'moved'].includes(warehouseStatus)) {
+      return res.status(400).json({ error: 'Некорректный статус' });
+    }
+
+    const fridge = await Fridge.findById(req.params.id);
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    // Для бухгалтера проверяем, что холодильник принадлежит его городу
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      if (fridge.cityId && fridge.cityId.toString() !== req.user.cityId.toString()) {
+        return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
+      }
+    }
+
+    // Обновляем warehouseStatus
+    const oldStatus = fridge.warehouseStatus;
+    fridge.warehouseStatus = warehouseStatus;
+
+    // Обновляем clientInfo если передан
+    if (clientInfo !== undefined) {
+      if (!clientInfo || Object.keys(clientInfo).length === 0) {
+        fridge.clientInfo = null;
+      } else {
+        const cleanValue = (value) => {
+          if (value === null || value === undefined) return undefined;
+          const trimmed = String(value).trim();
+          return trimmed === '' ? undefined : trimmed;
+        };
+        
+        fridge.clientInfo = {
+          name: cleanValue(clientInfo.name),
+          inn: cleanValue(clientInfo.inn),
+          contractNumber: cleanValue(clientInfo.contractNumber),
+          contactPhone: cleanValue(clientInfo.contactPhone),
+          contactPerson: cleanValue(clientInfo.contactPerson),
+          installDate: cleanValue(clientInfo.installDate),
+          notes: cleanValue(clientInfo.notes),
+        };
+        
+        const hasAnyValue = Object.values(fridge.clientInfo).some(v => v !== undefined);
+        if (!hasAnyValue) {
+          fridge.clientInfo = null;
+        }
+      }
+    }
+
+    // Добавляем запись в историю статусов
+    if (oldStatus !== warehouseStatus) {
+      fridge.statusHistory.push({
+        status: warehouseStatus,
+        changedAt: new Date(),
+        changedBy: req.user._id,
+        notes: notes || `Изменен статус с "${oldStatus}" на "${warehouseStatus}"`,
+      });
+    }
+
+    await fridge.save();
+
+    const populated = await Fridge.findById(fridge._id).populate('cityId', 'name code');
+    return res.json(populated);
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка изменения статуса', details: err.message });
   }
 });
 
