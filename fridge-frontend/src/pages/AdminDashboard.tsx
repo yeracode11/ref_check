@@ -27,7 +27,7 @@ type AdminFridge = {
   city?: { _id?: string; name: string; code: string } | null;
   location?: { type: 'Point'; coordinates: [number, number] };
   lastVisit?: string | null;
-  status: 'today' | 'week' | 'old' | 'never' | 'warehouse';
+  status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed';
   warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
   visitStatus?: 'today' | 'week' | 'old' | 'never';
   clientInfo?: ClientInfo | null;
