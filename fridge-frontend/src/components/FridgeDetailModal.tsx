@@ -31,7 +31,7 @@ type CheckinItem = {
   visitedAt: string;
   address?: string;
   notes?: string;
-  location?: { lat: number; lng: number };
+  location?: { type: 'Point'; coordinates: [number, number] };
 };
 
 type FridgeDetail = {
@@ -90,7 +90,7 @@ function getStatusColor(status: string) {
 }
 
 // Мини-карта для отображения местоположения
-function MiniMap({ location, name }: { location: { coordinates: [number, number] }; name: string }) {
+function MiniMap({ location, name, height = '200px' }: { location: { coordinates: [number, number] }; name: string; height?: string }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
@@ -159,7 +159,7 @@ function MiniMap({ location, name }: { location: { coordinates: [number, number]
   }
 
   return (
-    <div className="w-full h-[200px] rounded-lg overflow-hidden border border-slate-200">
+    <div className="w-full rounded-lg overflow-hidden border border-slate-200" style={{ height }}>
       <div ref={mapRef} className="w-full h-full" />
       <style>{`
         .custom-marker { background: transparent !important; border: none !important; }
@@ -186,6 +186,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', address: '', description: '' });
   const [showEditClientModal, setShowEditClientModal] = useState(false);
+  const [selectedCheckin, setSelectedCheckin] = useState<CheckinItem | null>(null);
   const [clientForm, setClientForm] = useState<ClientInfo>({
     name: '',
     inn: '',
@@ -506,38 +507,47 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {checkins.map((c, idx) => (
-                    <div key={c.id || idx} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-slate-900">👤 {c.managerId}</span>
-                            <span className="text-slate-400 text-xs">{formatDate(c.visitedAt)}</span>
+                  {checkins.map((c, idx) => {
+                    const hasLocation = c.location && c.location.coordinates && c.location.coordinates.length === 2;
+                    const [lng, lat] = hasLocation && c.location?.coordinates ? c.location.coordinates : [0, 0];
+                    return (
+                      <div 
+                        key={c.id || idx} 
+                        className={`bg-slate-50 rounded-lg p-3 border border-slate-100 ${hasLocation ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-colors' : ''}`}
+                        onClick={() => hasLocation && setSelectedCheckin(c)}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-slate-900">👤 {c.managerId}</span>
+                              <span className="text-slate-400 text-xs">{formatDate(c.visitedAt)}</span>
+                            </div>
+                            {c.address && (
+                              <p className="text-sm text-slate-600 mt-1">
+                                <span className="text-slate-400">📍</span> {c.address}
+                              </p>
+                            )}
+                            {c.notes && (
+                              <p className="text-sm text-slate-500 mt-1 italic">{c.notes}</p>
+                            )}
+                            {hasLocation && (
+                              <p className="text-xs mt-1 text-blue-600">
+                                <GeocodedAddress
+                                  lat={lat}
+                                  lng={lng}
+                                  className="text-blue-600"
+                                />
+                                {hasLocation && <span className="ml-2 text-blue-500">Нажмите для просмотра на карте</span>}
+                              </p>
+                            )}
                           </div>
-                          {c.address && (
-                            <p className="text-sm text-slate-600 mt-1">
-                              <span className="text-slate-400">📍</span> {c.address}
-                            </p>
-                          )}
-                          {c.notes && (
-                            <p className="text-sm text-slate-500 mt-1 italic">{c.notes}</p>
-                          )}
-                          {c.location && c.location.lat !== undefined && c.location.lng !== undefined && (
-                            <p className="text-xs mt-1">
-                              <GeocodedAddress
-                                lat={c.location.lat}
-                                lng={c.location.lng}
-                                fallback={`${c.location.lat.toFixed(6)}, ${c.location.lng.toFixed(6)}`}
-                              />
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-xs text-slate-400 bg-slate-200 px-2 py-1 rounded">
-                          #{c.id}
+                          <div className="text-xs text-slate-400 bg-slate-200 px-2 py-1 rounded">
+                            #{c.id}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -856,6 +866,59 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     Отмена
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Модальное окно с картой для выбранной отметки */}
+        {selectedCheckin && selectedCheckin.location && selectedCheckin.location.coordinates && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-4"
+            onClick={() => setSelectedCheckin(null)}
+          >
+            <div 
+              className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Местоположение отметки #{selectedCheckin.id}
+                  </h3>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {formatDate(selectedCheckin.visitedAt)} • 👤 {selectedCheckin.managerId}
+                  </p>
+                  {selectedCheckin.address && (
+                    <p className="text-sm text-slate-600 mt-1">
+                      📍 {selectedCheckin.address}
+                    </p>
+                  )}
+                  {selectedCheckin.location.coordinates && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      <GeocodedAddress
+                        lat={selectedCheckin.location.coordinates[1]}
+                        lng={selectedCheckin.location.coordinates[0]}
+                      />
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSelectedCheckin(null)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors p-2"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 min-h-0" style={{ minHeight: '400px', height: '60vh' }}>
+                {selectedCheckin.location.coordinates && (
+                  <MiniMap
+                    location={{ coordinates: selectedCheckin.location.coordinates }}
+                    name={`Отметка #${selectedCheckin.id}`}
+                  />
+                )}
               </div>
             </div>
           </div>
