@@ -55,20 +55,74 @@ router.post('/', async (req, res) => {
       reqUser: req.user ? { id: req.user.id, username: req.user.username, role: req.user.role } : null
     });
 
-    // Обновляем местоположение и адрес холодильника по последней отметке
+    // Обновляем местоположение, адрес и статус холодильника по последней отметке
     // fridgeId в чек-ине должен совпадать с code в модели Fridge
     try {
-      await Fridge.findOneAndUpdate(
-        { code: fridgeId },
-        {
-          $set: {
-            location,
-            // Если менеджер передал новый адрес — обновим его; иначе не трогаем старый
-            ...(req.body.address ? { address: req.body.address } : {}),
+      const fridge = await Fridge.findOne({ code: fridgeId });
+      if (!fridge) {
+        console.warn(`[Checkins] Fridge with code ${fridgeId} not found`);
+      } else {
+        // Получаем все отметки для этого холодильника
+        const allCheckins = await Checkin.find({ fridgeId }).sort({ visitedAt: 1 });
+        const totalCheckins = allCheckins.length;
+        
+        let newWarehouseStatus = fridge.warehouseStatus;
+        
+        // Функция для вычисления расстояния между двумя точками (в метрах)
+        function calculateDistance(loc1, loc2) {
+          if (!loc1 || !loc2 || !loc1.coordinates || !loc2.coordinates) {
+            return null;
+          }
+          const [lng1, lat1] = loc1.coordinates;
+          const [lng2, lat2] = loc2.coordinates;
+          
+          const R = 6371000; // Радиус Земли в метрах
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLng = (lng2 - lng1) * Math.PI / 180;
+          const a = 
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          return R * c;
+        }
+        
+        if (totalCheckins === 1) {
+          // Первая отметка - меняем статус с "warehouse" или "returned" на "installed"
+          if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
+            newWarehouseStatus = 'installed';
+          }
+        } else if (totalCheckins >= 2) {
+          // Вторая и последующие отметки - проверяем, изменилось ли местоположение
+          const firstLocation = allCheckins[0].location;
+          const lastLocation = allCheckins[allCheckins.length - 1].location;
+          
+          if (firstLocation && lastLocation) {
+            const distance = calculateDistance(firstLocation, lastLocation);
+            if (distance !== null && distance > 50) {
+              // Местоположение изменилось более чем на 50 метров - статус "moved"
+              newWarehouseStatus = 'moved';
+            } else if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
+              // Если еще не установлен, устанавливаем
+              newWarehouseStatus = 'installed';
+            }
+            // Если местоположение не изменилось и уже установлен - оставляем "installed"
+          }
+        }
+        
+        await Fridge.findOneAndUpdate(
+          { code: fridgeId },
+          {
+            $set: {
+              location,
+              warehouseStatus: newWarehouseStatus,
+              // Если менеджер передал новый адрес — обновим его; иначе не трогаем старый
+              ...(req.body.address ? { address: req.body.address } : {}),
+            },
           },
-        },
-        { new: true }
-      );
+          { new: true }
+        );
+      }
     } catch (updateErr) {
       // Не падаем, если не нашли холодильник или ошибка обновления, просто логируем
       // eslint-disable-next-line no-console

@@ -28,7 +28,7 @@ type AdminFridge = {
   location?: { type: 'Point'; coordinates: [number, number] };
   lastVisit?: string | null;
   status: 'today' | 'week' | 'old' | 'never' | 'warehouse';
-  warehouseStatus?: 'warehouse' | 'installed' | 'returned';
+  warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
   visitStatus?: 'today' | 'week' | 'old' | 'never';
   clientInfo?: ClientInfo | null;
 };
@@ -836,6 +836,10 @@ export default function AdminDashboard() {
                     statusLabel = 'Возврат';
                   } else if (f.warehouseStatus === 'warehouse') {
                     statusLabel = 'На складе';
+                  } else if (f.warehouseStatus === 'moved') {
+                    statusLabel = 'Перемещен';
+                  } else if (f.warehouseStatus === 'installed') {
+                    statusLabel = 'Установлен';
                   } else {
                     statusLabel = 'Нет отметок';
                   }

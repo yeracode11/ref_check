@@ -3,6 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Badge } from './ui/Card';
 import { QRCode } from './ui/QRCode';
+import { GeocodedAddress } from './ui/GeocodedAddress';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -17,7 +18,7 @@ type ClientInfo = {
 };
 
 type StatusHistoryItem = {
-  status: 'warehouse' | 'installed' | 'returned';
+  status: 'warehouse' | 'installed' | 'returned' | 'moved';
   changedAt: string;
   changedBy?: { username: string; fullName?: string };
   notes?: string;
@@ -41,7 +42,7 @@ type FridgeDetail = {
   description?: string;
   cityId?: { _id: string; name: string; code: string };
   location?: { type: 'Point'; coordinates: [number, number] };
-  warehouseStatus: 'warehouse' | 'installed' | 'returned';
+  warehouseStatus: 'warehouse' | 'installed' | 'returned' | 'moved';
   clientInfo?: ClientInfo;
   statusHistory?: StatusHistoryItem[];
   active: boolean;
@@ -73,6 +74,7 @@ function getStatusLabel(status: string) {
     case 'warehouse': return 'На складе';
     case 'installed': return 'Установлен';
     case 'returned': return 'Возврат';
+    case 'moved': return 'Перемещен';
     default: return status;
   }
 }
@@ -82,6 +84,7 @@ function getStatusColor(status: string) {
     case 'warehouse': return 'bg-blue-100 text-blue-700';
     case 'installed': return 'bg-green-100 text-green-700';
     case 'returned': return 'bg-blue-100 text-blue-700';
+    case 'moved': return 'bg-orange-100 text-orange-700';
     default: return 'bg-slate-100 text-slate-700';
   }
 }
@@ -520,8 +523,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                             <p className="text-sm text-slate-500 mt-1 italic">{c.notes}</p>
                           )}
                           {c.location && c.location.lat !== undefined && c.location.lng !== undefined && (
-                            <p className="text-xs text-slate-400 mt-1 font-mono">
-                              {c.location.lat.toFixed(6)}, {c.location.lng.toFixed(6)}
+                            <p className="text-xs mt-1">
+                              <GeocodedAddress
+                                lat={c.location.lat}
+                                lng={c.location.lng}
+                                fallback={`${c.location.lat.toFixed(6)}, ${c.location.lng.toFixed(6)}`}
+                              />
                             </p>
                           )}
                         </div>

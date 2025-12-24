@@ -4,6 +4,7 @@ import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingSpinner, LoadingCard, EmptyState } from '../components/ui/Loading';
+import { GeocodedAddress } from '../components/ui/GeocodedAddress';
 
 type Checkin = {
   id: number;
@@ -181,9 +182,13 @@ export default function CheckinsList() {
                         <span className="text-slate-600">{c.address}</span>
                       </div>
                     )}
-                    {c.location && (
-                      <div className="text-xs text-slate-400">
-                        Координаты: {c.location.coordinates[1].toFixed(6)}, {c.location.coordinates[0].toFixed(6)}
+                    {c.location && c.location.coordinates && (
+                      <div className="text-xs">
+                        <GeocodedAddress
+                          lat={c.location.coordinates[1]}
+                          lng={c.location.coordinates[0]}
+                          fallback={`Координаты: ${c.location.coordinates[1].toFixed(6)}, ${c.location.coordinates[0].toFixed(6)}`}
+                        />
                       </div>
                     )}
                     {c.notes && (

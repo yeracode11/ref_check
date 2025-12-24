@@ -11,8 +11,8 @@ type AdminFridgeForMap = {
   name: string;
   code: string;
   address?: string;
-  status: 'today' | 'week' | 'old' | 'never' | 'warehouse';
-  warehouseStatus?: 'warehouse' | 'installed' | 'returned';
+  status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed';
+  warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
   location?: { type: 'Point'; coordinates: [number, number] };
 };
 
@@ -21,13 +21,17 @@ type Props = {
 };
 
 // Иконки для разных статусов
-// Если есть чек-ин (посещение) = всегда зеленый
+// location_changed (местоположение изменилось) = красный
+// Если есть чек-ин (посещение) и местоположение не изменилось = зеленый
 // never (нет посещений) = серый
-function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse', hasCheckin: boolean): L.DivIcon {
+function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed', hasCheckin: boolean): L.DivIcon {
   let color = '#999999'; // серый по умолчанию (нет посещений)
   
-  // Если есть хотя бы одно посещение (чек-ин), всегда зеленый
-  if (hasCheckin || status !== 'never') {
+  // Если местоположение изменилось - красный
+  if (status === 'location_changed') {
+    color = '#dc3545'; // красный
+  } else if (hasCheckin || status !== 'never') {
+    // Если есть посещение и местоположение не изменилось - зеленый
     color = '#28a745'; // зелёный
   }
 
@@ -40,9 +44,11 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse',
 }
 
 // Функция для определения цвета кластера по статусам
-// Если есть хотя бы один маркер с посещением, кластер зеленый
+// Приоритет: location_changed (красный) > посещения (зеленый) > нет посещений (серый)
 function getClusterColor(statuses: string[]): string {
-  // Если есть хотя бы один маркер с посещением (не 'never'), кластер зеленый
+  // Если есть хотя бы один маркер с измененным местоположением - красный
+  if (statuses.some(s => s === 'location_changed')) return '#dc3545'; // красный
+  // Если есть хотя бы один маркер с посещением (не 'never') - зеленый
   const hasAnyCheckin = statuses.some(s => s !== 'never');
   if (hasAnyCheckin) return '#28a745'; // зелёный
   return '#999999'; // серый (только если все маркеры без посещений)
@@ -123,7 +129,8 @@ export function AdminFridgeMap({ fridges }: Props) {
       const warehouseLabel = f.warehouseStatus === 'warehouse' ? 'На складе' :
                             f.warehouseStatus === 'returned' ? 'Возврат на склад' :
                             'Установлен';
-      const visitLabel = f.status === 'today' ? 'Сегодня' :
+      const visitLabel = f.status === 'location_changed' ? 'Местоположение изменилось' :
+                         f.status === 'today' ? 'Сегодня' :
                          f.status === 'week' ? 'Неделя' :
                          f.status === 'old' ? 'Давно' :
                          f.status === 'warehouse' ? warehouseLabel : 'Нет отметок';

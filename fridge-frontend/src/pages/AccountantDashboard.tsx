@@ -26,7 +26,7 @@ type Fridge = {
   name: string;
   address?: string;
   cityId?: { _id: string; name: string; code: string } | null;
-  warehouseStatus: 'warehouse' | 'installed' | 'returned';
+  warehouseStatus: 'warehouse' | 'installed' | 'returned' | 'moved';
   clientInfo?: ClientInfo | null;
   createdAt: string;
 };
@@ -513,6 +513,8 @@ export default function AccountantDashboard() {
         return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
       case 'returned':
         return <Badge className="bg-blue-100 text-blue-700">Возврат</Badge>;
+      case 'moved':
+        return <Badge className="bg-orange-100 text-orange-700">Перемещен</Badge>;
       default:
         return <Badge className="bg-slate-100 text-slate-700">{status}</Badge>;
     }

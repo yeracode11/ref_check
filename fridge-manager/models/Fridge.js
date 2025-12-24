@@ -43,10 +43,10 @@ const FridgeSchema = new mongoose.Schema(
     address: { type: String },
     description: { type: String },
     active: { type: Boolean, default: true },
-    // Статус склада: 'warehouse' (на складе), 'installed' (установлен у клиента), 'returned' (возврат на склад)
+    // Статус склада: 'warehouse' (на складе), 'installed' (установлен у клиента), 'returned' (возврат на склад), 'moved' (перемещен)
     warehouseStatus: { 
       type: String, 
-      enum: ['warehouse', 'installed', 'returned'], 
+      enum: ['warehouse', 'installed', 'returned', 'moved'], 
       default: 'warehouse',
       index: true 
     },

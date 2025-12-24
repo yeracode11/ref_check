@@ -23,7 +23,7 @@ type Fridge = {
   code: string;
   name: string;
   address?: string;
-  warehouseStatus?: 'warehouse' | 'installed' | 'returned';
+  warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
   active: boolean;
 };
 
@@ -176,6 +176,8 @@ export default function CitiesManagement() {
         return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
       case 'returned':
         return <Badge className="bg-yellow-100 text-yellow-700">Возврат</Badge>;
+      case 'moved':
+        return <Badge className="bg-orange-100 text-orange-700">Перемещен</Badge>;
       default:
         return null;
     }

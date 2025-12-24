@@ -90,8 +90,32 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 
     const now = Date.now();
 
+    // Функция для вычисления расстояния между двумя точками (в метрах)
+    function calculateDistance(loc1, loc2) {
+      if (!loc1 || !loc2 || !loc1.coordinates || !loc2.coordinates) {
+        return null;
+      }
+      const [lng1, lat1] = loc1.coordinates;
+      const [lng2, lat2] = loc2.coordinates;
+      
+      // Формула гаверсинуса для расчета расстояния между двумя точками на сфере
+      const R = 6371000; // Радиус Земли в метрах
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
     const result = fridges.map((f) => {
-      const lastVisit = lastByFridgeId.get(f.code) || null; // fridgeId у нас = code в Checkin
+      const stats = statsByFridgeId.get(f.code) || null;
+      const lastVisit = stats ? stats.lastVisit : null;
+      const firstLocation = stats ? stats.firstLocation : null;
+      const lastLocation = stats ? stats.lastLocation : null;
+      const totalCheckins = stats ? stats.totalCheckins : 0;
 
       // Определяем статус визита
       let visitStatus = 'never';
@@ -103,18 +127,33 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       }
 
       // Определяем статус для отображения на карте
-      // Если есть посещение (lastVisit), всегда используем visitStatus (today/week/old)
-      // Если нет посещений, статус 'never' (серый)
-      // Убрали синий цвет для warehouse - теперь не используется
+      // Логика: 
+      // - При первой отметке (totalCheckins === 1) - зеленый
+      // - При второй и последующих отметках - сравниваем координаты первой и последней
+      // - Если координаты отличаются более чем на 50 метров - красный (location_changed)
+      // - Если координаты совпадают или близки - зеленый
       let status;
       const warehouseStatus = f.warehouseStatus || 'warehouse';
       
-      // Если есть посещение, используем статус визита (будет зеленым на карте)
-      if (lastVisit) {
-        status = visitStatus; // today, week, или old - все будут зелеными
-      } else {
+      if (!lastVisit) {
         // Нет посещений - серый
         status = 'never';
+      } else if (totalCheckins === 1) {
+        // Первая отметка - всегда зеленый
+        status = visitStatus; // today, week, или old - все будут зелеными
+      } else if (totalCheckins >= 2 && firstLocation && lastLocation) {
+        // Вторая и последующие отметки - сравниваем координаты
+        const distance = calculateDistance(firstLocation, lastLocation);
+        if (distance !== null && distance > 50) {
+          // Местоположение изменилось более чем на 50 метров - красный
+          status = 'location_changed';
+        } else {
+          // Местоположение не изменилось или изменилось незначительно - зеленый
+          status = visitStatus;
+        }
+      } else {
+        // Fallback - если не удалось сравнить координаты, используем обычный статус
+        status = visitStatus;
       }
 
       return {

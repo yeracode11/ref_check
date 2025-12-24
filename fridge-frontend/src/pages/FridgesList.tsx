@@ -4,6 +4,7 @@ import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
+import { GeocodedAddress } from '../components/ui/GeocodedAddress';
 import { useAuth } from '../contexts/AuthContext';
 
 type City = {
@@ -394,8 +395,12 @@ export default function FridgesList() {
                   )}
                   
                   {f.location && f.location.coordinates[0] !== 0 && (
-                    <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded font-mono">
-                      {f.location.coordinates[1].toFixed(6)}, {f.location.coordinates[0].toFixed(6)}
+                    <div className="text-xs bg-slate-50 p-2 rounded">
+                      <GeocodedAddress
+                        lat={f.location.coordinates[1]}
+                        lng={f.location.coordinates[0]}
+                        fallback={`${f.location.coordinates[1].toFixed(6)}, ${f.location.coordinates[0].toFixed(6)}`}
+                      />
                     </div>
                   )}
                   
