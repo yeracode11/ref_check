@@ -953,9 +953,12 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       warehouse: 0,
       installed: 0,
       returned: 0,
+      moved: 0,
     };
     fridgesByStatus.forEach((s) => {
-      if (s._id) statusCounts[s._id] = s.count;
+      if (s._id && statusCounts.hasOwnProperty(s._id)) {
+        statusCounts[s._id] = s.count;
+      }
     });
 
     return res.json({
@@ -1109,9 +1112,10 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
       warehouse: 0,
       installed: 0,
       returned: 0,
+      moved: 0,
     };
     cityFridges.forEach((f) => {
-      if (f.warehouseStatus) {
+      if (f.warehouseStatus && statusCounts.hasOwnProperty(f.warehouseStatus)) {
         statusCounts[f.warehouseStatus] = (statusCounts[f.warehouseStatus] || 0) + 1;
       }
     });
