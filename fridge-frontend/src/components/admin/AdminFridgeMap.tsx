@@ -21,17 +21,15 @@ type Props = {
 };
 
 // Иконки для разных статусов
-// warehouse (на складе/возврат) = синий
-// today (установлен + сегодня) = зеленый
-// week (установлен + неделя) = желтый
-// old (установлен + давно) = красный
-// never = серый
-function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse'): L.DivIcon {
-  let color = '#999999'; // серый по умолчанию
-  if (status === 'warehouse') color = '#2196F3'; // синий (склад/возврат)
-  else if (status === 'today') color = '#28a745'; // зелёный
-  else if (status === 'week') color = '#ffc107'; // жёлтый
-  else if (status === 'old') color = '#dc3545'; // красный
+// Если есть чек-ин (посещение) = всегда зеленый
+// never (нет посещений) = серый
+function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse', hasCheckin: boolean): L.DivIcon {
+  let color = '#999999'; // серый по умолчанию (нет посещений)
+  
+  // Если есть хотя бы одно посещение (чек-ин), всегда зеленый
+  if (hasCheckin || status !== 'never') {
+    color = '#28a745'; // зелёный
+  }
 
   return L.divIcon({
     className: 'custom-marker',
@@ -42,12 +40,12 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse')
 }
 
 // Функция для определения цвета кластера по статусам
+// Если есть хотя бы один маркер с посещением, кластер зеленый
 function getClusterColor(statuses: string[]): string {
-  if (statuses.includes('today')) return '#28a745'; // зелёный
-  if (statuses.includes('warehouse')) return '#2196F3'; // синий (склад)
-  if (statuses.includes('week')) return '#ffc107'; // жёлтый
-  if (statuses.includes('old')) return '#dc3545'; // красный
-  return '#999999'; // серый
+  // Если есть хотя бы один маркер с посещением (не 'never'), кластер зеленый
+  const hasAnyCheckin = statuses.some(s => s !== 'never');
+  if (hasAnyCheckin) return '#28a745'; // зелёный
+  return '#999999'; // серый (только если все маркеры без посещений)
 }
 
 export function AdminFridgeMap({ fridges }: Props) {
@@ -116,7 +114,10 @@ export function AdminFridgeMap({ fridges }: Props) {
       const position: [number, number] = [lat, lng];
       bounds.push(position);
 
-      const icon = getMarkerIcon(f.status);
+      // Определяем, есть ли посещения (чек-ины)
+      // Если статус не 'never', значит есть посещения
+      const hasCheckin = f.status !== 'never';
+      const icon = getMarkerIcon(f.status, hasCheckin);
       const marker = L.marker(position, { icon, status: f.status } as any);
 
       const warehouseLabel = f.warehouseStatus === 'warehouse' ? 'На складе' :

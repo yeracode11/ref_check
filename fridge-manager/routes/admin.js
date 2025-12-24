@@ -103,19 +103,18 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       }
 
       // Определяем статус для отображения на карте
-      // warehouse/returned = желтый (приоритет)
-      // installed + today = зеленый
-      // installed + week = желтый (но не склад)
-      // installed + old = красный
-      // installed + never = серый
+      // Если есть посещение (lastVisit), всегда используем visitStatus (today/week/old)
+      // Если нет посещений, статус 'never' (серый)
+      // Убрали синий цвет для warehouse - теперь не используется
       let status;
       const warehouseStatus = f.warehouseStatus || 'warehouse';
       
-      if (warehouseStatus === 'warehouse' || warehouseStatus === 'returned') {
-        status = 'warehouse'; // желтый - на складе или возврат
+      // Если есть посещение, используем статус визита (будет зеленым на карте)
+      if (lastVisit) {
+        status = visitStatus; // today, week, или old - все будут зелеными
       } else {
-        // installed - используем visitStatus
-        status = visitStatus;
+        // Нет посещений - серый
+        status = 'never';
       }
 
       return {
@@ -1254,6 +1253,65 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
 // ==========================================
 // ПОЛНОЕ УПРАВЛЕНИЕ ХОЛОДИЛЬНИКАМИ
 // ==========================================
+
+// PATCH /api/admin/fridges/:id/client
+// Обновить данные клиента (доступно для бухгалтера)
+router.patch('/fridges/:id/client', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  try {
+    const { clientInfo } = req.body;
+
+    const fridge = await Fridge.findById(req.params.id);
+    if (!fridge) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    // Для бухгалтера проверяем, что холодильник принадлежит его городу
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      if (fridge.cityId && fridge.cityId.toString() !== req.user.cityId.toString()) {
+        return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
+      }
+    }
+
+    // Обновляем clientInfo
+    if (clientInfo !== undefined) {
+      // Если clientInfo пустой объект или null, очищаем данные
+      if (!clientInfo || Object.keys(clientInfo).length === 0) {
+        fridge.clientInfo = null;
+      } else {
+        // Обновляем или создаем clientInfo
+        // Обрабатываем пустые строки: если поле пустое, сохраняем как undefined (чтобы не хранить пустые строки)
+        const cleanValue = (value) => {
+          if (value === null || value === undefined) return undefined;
+          const trimmed = String(value).trim();
+          return trimmed === '' ? undefined : trimmed;
+        };
+        
+        fridge.clientInfo = {
+          name: cleanValue(clientInfo.name),
+          inn: cleanValue(clientInfo.inn),
+          contractNumber: cleanValue(clientInfo.contractNumber),
+          contactPhone: cleanValue(clientInfo.contactPhone),
+          contactPerson: cleanValue(clientInfo.contactPerson),
+          installDate: cleanValue(clientInfo.installDate),
+          notes: cleanValue(clientInfo.notes),
+        };
+        
+        // Если все поля пустые, удаляем clientInfo
+        const hasAnyValue = Object.values(fridge.clientInfo).some(v => v !== undefined);
+        if (!hasAnyValue) {
+          fridge.clientInfo = null;
+        }
+      }
+    }
+
+    await fridge.save();
+
+    const populated = await Fridge.findById(fridge._id).populate('cityId', 'name code');
+    return res.json(populated);
+  } catch (err) {
+    return res.status(500).json({ error: 'Ошибка обновления данных клиента', details: err.message });
+  }
+});
 
 // PATCH /api/admin/fridges/:id
 // Редактировать холодильник

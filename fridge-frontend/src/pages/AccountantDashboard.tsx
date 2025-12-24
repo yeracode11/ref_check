@@ -357,14 +357,30 @@ export default function AccountantDashboard() {
 
     try {
       setSaving(true);
-      await api.patch(`/api/admin/fridges/${selectedFridge._id}/client`, {
+      const response = await api.patch(`/api/admin/fridges/${selectedFridge._id}/client`, {
         clientInfo: clientForm,
       });
+      
+      // Обновляем данные холодильника в списке
+      setFridges((prev) => 
+        prev.map((f) => 
+          f._id === selectedFridge._id 
+            ? { ...f, clientInfo: response.data.clientInfo }
+            : f
+        )
+      );
+      
+      // Обновляем selectedFridge, если он все еще выбран
+      if (selectedFridge._id === response.data._id) {
+        setSelectedFridge(response.data);
+      }
+      
       setShowEditModal(false);
-      loadFridges(0, true);
-      alert('Данные клиента сохранены');
+      showToast('Данные клиента успешно сохранены', 'success');
     } catch (e: any) {
-      alert('Ошибка: ' + (e?.response?.data?.error || e.message));
+      console.error('Ошибка сохранения данных клиента:', e);
+      const errorMessage = e?.response?.data?.error || e?.response?.data?.details || e?.message || 'Неизвестная ошибка';
+      showToast(`Ошибка сохранения: ${errorMessage}`, 'error');
     } finally {
       setSaving(false);
     }

@@ -525,14 +525,9 @@ export default function AdminDashboard() {
   // Статистика на основе всех холодильников (для карты)
   const filterQuery = fridgeFilter.trim().toLowerCase();
   
-  // Фильтруем холодильники для карты: показываем только те, у которых есть реальные отметки посещений
-  // Проверяем visitStatus (статус последнего визита), а не общий status
-  // Холодильники со статусом 'warehouse' без отметок не должны показываться
-  const fridgesWithCheckins = allFridges.filter(f => {
-    // Показываем только если есть реальная отметка посещения (visitStatus !== 'never')
-    // или если есть lastVisit (дата последнего посещения)
-    return f.visitStatus && f.visitStatus !== 'never' || f.lastVisit;
-  });
+  // Показываем все холодильники с координатами на карте
+  // Теперь не фильтруем по статусу - все холодильники с координатами отображаются
+  const fridgesWithCheckins = allFridges;
   
   // Фильтрация по городу для карты
   let fridgesByCity = fridgesWithCheckins;
@@ -559,7 +554,8 @@ export default function AdminDashboard() {
       })
     : fridges;
 
-  const warehouseFridges = filteredAllFridges.filter((f) => f.status === 'warehouse').length;
+  // Статистика по warehouseStatus (для информации, но не для цвета маркера)
+  const warehouseFridges = filteredAllFridges.filter((f) => f.warehouseStatus === 'warehouse' || f.warehouseStatus === 'returned').length;
   const todayFridges = filteredAllFridges.filter((f) => f.status === 'today').length;
   const weekFridges = filteredAllFridges.filter((f) => f.status === 'week').length;
   const oldFridges = filteredAllFridges.filter((f) => f.status === 'old').length;
@@ -823,18 +819,27 @@ export default function AdminDashboard() {
               {filteredFridges.map((f) => {
                 let statusLabel = 'Нет отметок';
                 let statusColor = 'bg-slate-200 text-slate-700';
-                if (f.status === 'warehouse') {
-                  statusLabel = f.warehouseStatus === 'returned' ? 'Возврат' : 'На складе';
-                  statusColor = 'bg-blue-100 text-blue-700';
-                } else if (f.status === 'today') {
+                
+                // Если есть посещение, всегда зеленый цвет
+                if (f.status === 'today') {
                   statusLabel = 'Сегодня';
                   statusColor = 'bg-green-100 text-green-700';
                 } else if (f.status === 'week') {
                   statusLabel = 'Неделя';
-                  statusColor = 'bg-yellow-100 text-yellow-700';
+                  statusColor = 'bg-green-100 text-green-700'; // Зеленый для всех с посещениями
                 } else if (f.status === 'old') {
                   statusLabel = 'Давно';
-                  statusColor = 'bg-red-100 text-red-700';
+                  statusColor = 'bg-green-100 text-green-700'; // Зеленый для всех с посещениями
+                } else {
+                  // Нет посещений - показываем warehouseStatus, но серым цветом
+                  if (f.warehouseStatus === 'returned') {
+                    statusLabel = 'Возврат';
+                  } else if (f.warehouseStatus === 'warehouse') {
+                    statusLabel = 'На складе';
+                  } else {
+                    statusLabel = 'Нет отметок';
+                  }
+                  statusColor = 'bg-slate-200 text-slate-700'; // Серый для без посещений
                 }
 
                 return (
