@@ -309,9 +309,9 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
             />
             {(title || code) && (
               <div className="mt-3 text-center">
-                {code && <div className="font-semibold text-2xl text-slate-900">#{code}</div>}
+                {code && <div className="font-semibold text-3xl text-slate-900">#{code}</div>}
                 {title && (
-                  <div className="text-lg text-slate-500 mt-1 truncate max-w-[200px]">{title}</div>
+                  <div className="text-xl text-slate-500 mt-1 truncate max-w-[200px]">{title}</div>
                 )}
               </div>
             )}
