@@ -249,8 +249,61 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
 
     const now = Date.now();
 
-    // Подготавливаем данные для Excel
-    const excelData = fridges.map((f) => {
+    // Функция для reverse geocoding (конвертация координат в адрес)
+    const axios = require('axios');
+    const geocodeCache = new Map();
+    let lastGeocodeRequest = 0;
+    
+    async function reverseGeocode(lat, lng) {
+      if (!lat || !lng || (lat === 0 && lng === 0)) return null;
+      
+      const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+      if (geocodeCache.has(cacheKey)) {
+        return geocodeCache.get(cacheKey);
+      }
+      
+      try {
+        // Соблюдаем лимит Nominatim (1 запрос в секунду)
+        const now = Date.now();
+        const timeSinceLastRequest = now - lastGeocodeRequest;
+        if (timeSinceLastRequest < 1000) {
+          await new Promise(resolve => setTimeout(resolve, 1000 - timeSinceLastRequest));
+        }
+        lastGeocodeRequest = Date.now();
+        
+        const response = await axios.get(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+          {
+            headers: {
+              'User-Agent': 'FridgeManager/1.0',
+            },
+            timeout: 5000,
+          }
+        );
+        
+        if (response.data && response.data.address) {
+          const addr = response.data.address;
+          const parts = [];
+          if (addr.road) parts.push(addr.road);
+          if (addr.house_number) parts.push(addr.house_number);
+          if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
+          const address = parts.length > 0 ? parts.join(', ') : response.data.display_name || null;
+          if (address) {
+            geocodeCache.set(cacheKey, address);
+            return address;
+          }
+        }
+        return null;
+      } catch (error) {
+        console.error('[Geocoding] Error:', error.message);
+        return null;
+      }
+    }
+
+    // Подготавливаем данные для Excel с конвертацией координат в адреса
+    const excelData = [];
+    for (let i = 0; i < fridges.length; i++) {
+      const f = fridges[i];
       const lastVisit = lastByFridgeId.get(f.code) || null;
       
       let status = 'Нет отметок';
@@ -261,20 +314,43 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
         else status = 'Давно';
       }
 
-      return {
+      // Конвертируем координаты в адрес
+      let geocodedAddress = '';
+      if (f.location && f.location.coordinates && f.location.coordinates[0] !== 0 && f.location.coordinates[1] !== 0) {
+        const [lng, lat] = f.location.coordinates;
+        const addr = await reverseGeocode(lat, lng);
+        geocodedAddress = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      }
+
+      excelData.push({
         'Код': f.code || '',
         'Название': f.name || '',
         'Город': f.cityId?.name || '',
         'Адрес': f.address || '',
+        'Адрес по координатам': geocodedAddress,
         'Описание': f.description || '',
         'Статус': status,
-        'Последний визит': lastVisit ? new Date(lastVisit).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' }) : '',
+        'Последний визит': lastVisit ? (() => {
+          // Конвертируем UTC время в UTC+5 (Казахстан)
+          const date = new Date(lastVisit);
+          const utcTime = date.getTime();
+          const localTime = new Date(utcTime + (5 * 60 * 60 * 1000)); // +5 часов
+          return localTime.toLocaleString('ru-RU', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        })() : '',
         'Активен': f.active ? 'Да' : 'Нет',
-        'Координаты': f.location && f.location.coordinates 
-          ? `${f.location.coordinates[1]}, ${f.location.coordinates[0]}` 
-          : '',
-      };
-    });
+      });
+      
+      // Небольшая задержка между запросами для больших отчетов
+      if (i < fridges.length - 1 && i % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
 
     // Создаем рабочую книгу Excel
     const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -287,11 +363,11 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       { wch: 30 }, // Название
       { wch: 15 }, // Город
       { wch: 40 }, // Адрес
+      { wch: 50 }, // Адрес по координатам
       { wch: 30 }, // Описание
       { wch: 12 }, // Статус
       { wch: 20 }, // Последний визит
       { wch: 10 }, // Активен
-      { wch: 25 }, // Координаты
     ];
     worksheet['!cols'] = columnWidths;
 

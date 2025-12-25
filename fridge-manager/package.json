@@ -10,6 +10,7 @@
     "clear-checkins": "node scripts/clear-all-checkins.js"
   },
   "dependencies": {
+    "axios": "^1.13.2",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
