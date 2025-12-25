@@ -664,8 +664,8 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
 
         {/* Модальное окно подтверждения удаления */}
         {showDeleteConfirm && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center">
-            <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center z-[1200]" style={{ zIndex: 1200 }}>
+            <div className="bg-white rounded-lg p-6 max-w-sm mx-4 relative z-[1201]" style={{ zIndex: 1201 }}>
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить холодильник?</h3>
               <p className="text-slate-600 text-sm mb-4">
                 Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> (#{fridge.code})?
@@ -706,8 +706,8 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
 
         {/* Модальное окно редактирования */}
         {showEditModal && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4">
-            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4 z-[1200]" style={{ zIndex: 1200 }}>
+            <div className="bg-white rounded-lg p-6 max-w-md w-full relative z-[1201]" style={{ zIndex: 1201 }}>
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Редактировать холодильник</h3>
               <p className="text-sm text-slate-500 mb-4">Измените название, адрес или описание холодильника</p>
               <div className="space-y-4">
@@ -784,8 +784,8 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
 
         {/* Модальное окно редактирования данных клиента (для бухгалтера) */}
         {showEditClientModal && fridge && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4 z-50">
-            <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4 z-[1200]" style={{ zIndex: 1200 }}>
+            <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto relative z-[1201]" style={{ zIndex: 1201 }}>
               <h3 className="text-lg font-semibold text-slate-900 mb-4">
                 Данные клиента: {fridge.name}
               </h3>
