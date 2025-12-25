@@ -1453,8 +1453,8 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
 });
 
 // PATCH /api/admin/fridges/:id
-// Редактировать холодильник
-router.patch('/fridges/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Редактировать холодильник (доступно для админа и бухгалтера)
+router.patch('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const { name, address, description, cityId, active } = req.body;
 
@@ -1463,11 +1463,24 @@ router.patch('/fridges/:id', authenticateToken, requireAdmin, async (req, res) =
       return res.status(404).json({ error: 'Холодильник не найден' });
     }
 
+    // Для бухгалтера проверяем, что холодильник принадлежит его городу
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      if (fridge.cityId && fridge.cityId.toString() !== req.user.cityId.toString()) {
+        return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
+      }
+    }
+
+    // Бухгалтер может редактировать только название, адрес и описание
+    // Админ может редактировать все поля, включая cityId и active
     if (name !== undefined) fridge.name = name;
     if (address !== undefined) fridge.address = address;
     if (description !== undefined) fridge.description = description;
-    if (cityId !== undefined) fridge.cityId = cityId || null;
-    if (active !== undefined) fridge.active = active;
+    
+    // Только админ может менять cityId и active
+    if (req.user.role === 'admin') {
+      if (cityId !== undefined) fridge.cityId = cityId || null;
+      if (active !== undefined) fridge.active = active;
+    }
 
     await fridge.save();
 

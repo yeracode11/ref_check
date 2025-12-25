@@ -564,25 +564,42 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               📱 QR-код
             </button>
             {isAccountant && (
-              <button
-                onClick={() => {
-                  if (fridge) {
-                    setClientForm({
-                      name: fridge.clientInfo?.name || '',
-                      inn: fridge.clientInfo?.inn || '',
-                      contractNumber: fridge.clientInfo?.contractNumber || '',
-                      contactPhone: fridge.clientInfo?.contactPhone || '',
-                      contactPerson: fridge.clientInfo?.contactPerson || '',
-                      installDate: fridge.clientInfo?.installDate ? fridge.clientInfo.installDate.substring(0, 10) : '',
-                      notes: fridge.clientInfo?.notes || '',
-                    });
-                    setShowEditClientModal(true);
-                  }
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
-              >
-                ✏️ Редактировать
-              </button>
+              <>
+                <button
+                  onClick={() => {
+                    if (fridge) {
+                      setEditForm({
+                        name: fridge.name,
+                        address: fridge.address || '',
+                        description: fridge.description || '',
+                      });
+                      setShowEditModal(true);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+                >
+                  ✏️ Редактировать
+                </button>
+                <button
+                  onClick={() => {
+                    if (fridge) {
+                      setClientForm({
+                        name: fridge.clientInfo?.name || '',
+                        inn: fridge.clientInfo?.inn || '',
+                        contractNumber: fridge.clientInfo?.contractNumber || '',
+                        contactPhone: fridge.clientInfo?.contactPhone || '',
+                        contactPerson: fridge.clientInfo?.contactPerson || '',
+                        installDate: fridge.clientInfo?.installDate ? fridge.clientInfo.installDate.substring(0, 10) : '',
+                        notes: fridge.clientInfo?.notes || '',
+                      });
+                      setShowEditClientModal(true);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
+                >
+                  👤 Данные клиента
+                </button>
+              </>
             )}
             {isAdmin && (
               <>

@@ -356,7 +356,7 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
       // Очищаем контейнер перед добавлением нового содержимого
       globalPrintContainer.innerHTML = '';
 
-      // Создаем изображение для печати
+      // Создаем изображение для печати (текст уже включен в canvas)
       const printImg = document.createElement('img');
       printImg.className = 'qr-print-image';
       printImg.src = dataUrl;
@@ -364,29 +364,6 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
       printImg.style.maxWidth = '80%';
       printImg.style.height = 'auto';
       globalPrintContainer.appendChild(printImg);
-
-      // Добавляем текст если есть
-      if (code || title) {
-        const textDiv = document.createElement('div');
-        textDiv.className = 'qr-print-text';
-        if (code) {
-          textDiv.textContent = `#${code}`;
-        }
-        if (title) {
-          const titleText = document.createElement('div');
-          titleText.style.fontSize = '20px';
-          titleText.style.fontWeight = 'bold'; // Жирный шрифт для названия
-          titleText.style.color = '#000'; // Черный цвет вместо серого
-          titleText.style.marginTop = '10px';
-          titleText.style.whiteSpace = 'normal';
-          titleText.style.wordWrap = 'break-word';
-          titleText.style.maxWidth = '80%';
-          titleText.style.margin = '10px auto 0';
-          titleText.textContent = title; // Полный текст с переносами
-          textDiv.appendChild(titleText);
-        }
-        globalPrintContainer.appendChild(textDiv);
-      }
 
       // Показываем контейнер перед печатью
       globalPrintContainer.style.left = '0';
