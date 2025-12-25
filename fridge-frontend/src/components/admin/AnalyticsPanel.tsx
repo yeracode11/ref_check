@@ -266,7 +266,7 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics' }: AnalyticsP
                     <td className="py-2 px-3 text-slate-500 max-w-[200px] truncate">{f.address || '—'}</td>
                     <td className="py-2 px-3 text-right text-slate-500">
                       {f.lastVisit 
-                        ? new Date(f.lastVisit).toLocaleDateString('ru-RU')
+                        ? new Date(f.lastVisit).toLocaleDateString('ru-RU', { timeZone: 'Asia/Almaty' })
                         : <span className="text-red-500 font-medium">Никогда</span>
                       }
                     </td>

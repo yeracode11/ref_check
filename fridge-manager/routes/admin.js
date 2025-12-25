@@ -268,7 +268,7 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
         'Адрес': f.address || '',
         'Описание': f.description || '',
         'Статус': status,
-        'Последний визит': lastVisit ? new Date(lastVisit).toLocaleString('ru-RU') : '',
+        'Последний визит': lastVisit ? new Date(lastVisit).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' }) : '',
         'Активен': f.active ? 'Да' : 'Нет',
         'Координаты': f.location && f.location.coordinates 
           ? `${f.location.coordinates[1]}, ${f.location.coordinates[0]}` 

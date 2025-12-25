@@ -44,8 +44,8 @@ type Checkin = {
 function formatDate(dateString: string) {
   const date = new Date(dateString);
   return {
-    date: date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-    time: date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+    date: date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Almaty' }),
+    time: date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Almaty' }),
   };
 }
 
