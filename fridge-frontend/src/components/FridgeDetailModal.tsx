@@ -577,8 +577,9 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     }
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+                  title="Редактировать название, адрес и описание холодильника"
                 >
-                  ✏️ Редактировать
+                  ✏️ Редактировать холодильник
                 </button>
                 <button
                   onClick={() => {
@@ -596,6 +597,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     }
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
+                  title="Редактировать данные клиента (название ИП/организации, ИНН, договор и т.д.)"
                 >
                   👤 Данные клиента
                 </button>
@@ -707,9 +709,10 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
           <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4">
             <div className="bg-white rounded-lg p-6 max-w-md w-full">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Редактировать холодильник</h3>
+              <p className="text-sm text-slate-500 mb-4">Измените название, адрес или описание холодильника</p>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Название</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Название холодильника</label>
                   <input
                     type="text"
                     value={editForm.name}
