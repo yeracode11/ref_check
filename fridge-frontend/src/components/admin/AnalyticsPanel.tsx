@@ -38,7 +38,6 @@ type AnalyticsData = {
       warehouse: number;
       installed: number;
       returned: number;
-      moved?: number;
     };
   };
 };
@@ -100,10 +99,9 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics' }: AnalyticsP
   }
 
   const statusData = [
-    { name: 'На складе', value: data.summary.fridgesByStatus.warehouse || 0, color: '#9e9e9e' }, // Серый вместо синего
-    { name: 'Установлен', value: data.summary.fridgesByStatus.installed || 0, color: '#4caf50' }, // Зеленый
-    { name: 'Возврат', value: data.summary.fridgesByStatus.returned || 0, color: '#ff9800' }, // Оранжевый
-    { name: 'Перемещен', value: data.summary.fridgesByStatus.moved || 0, color: '#f44336' }, // Красный
+    { name: 'На складе', value: data.summary.fridgesByStatus.warehouse, color: '#2196F3' },
+    { name: 'Установлен', value: data.summary.fridgesByStatus.installed, color: '#4caf50' },
+    { name: 'Возврат', value: data.summary.fridgesByStatus.returned, color: '#f44336' },
   ].filter(s => s.value > 0);
 
   return (

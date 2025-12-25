@@ -131,15 +131,151 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
         img.onload = () => {
           // Добавляем отступы
           const padding = 40;
+          const textPadding = 20;
+          
+          // Вычисляем высоту текста
+          let textHeight = 0;
+          if (code || title) {
+            const lineHeight = 24;
+            const titleLineHeight = 22;
+            if (code) textHeight += lineHeight;
+            if (title) {
+              // Разбиваем название на строки (максимум 3 строки)
+              // Используем временный контекст для измерения
+              const tempCtx = ctx || canvas.getContext('2d');
+              if (tempCtx) {
+                tempCtx.font = 'bold 18px Arial';
+                const maxWidth = size - 20; // Оставляем небольшой отступ
+                const maxLines = 3;
+                const words = title.split(' ');
+                let lines: string[] = [];
+                let currentLine = '';
+                
+                for (const word of words) {
+                  const testLine = currentLine ? `${currentLine} ${word}` : word;
+                  const metrics = tempCtx.measureText(testLine);
+                  if (metrics.width > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = word;
+                    if (lines.length >= maxLines) {
+                      // Обрезаем последнее слово, если нужно
+                      let truncated = word;
+                      while (tempCtx.measureText(truncated + '...').width > maxWidth && truncated.length > 1) {
+                        truncated = truncated.slice(0, -1);
+                      }
+                      currentLine = truncated + '...';
+                      break;
+                    }
+                  } else {
+                    currentLine = testLine;
+                  }
+                }
+                if (currentLine && lines.length < maxLines) {
+                  // Проверяем, не слишком ли длинная последняя строка
+                  if (tempCtx.measureText(currentLine).width > maxWidth) {
+                    let truncated = currentLine;
+                    while (tempCtx.measureText(truncated + '...').width > maxWidth && truncated.length > 1) {
+                      truncated = truncated.slice(0, -1);
+                    }
+                    lines.push(truncated + '...');
+                  } else {
+                    lines.push(currentLine);
+                  }
+                }
+                textHeight += Math.min(lines.length, maxLines) * titleLineHeight;
+              }
+            }
+            textHeight += textPadding; // Отступ между кодом и названием
+          }
+          
           canvas.width = size + padding * 2;
-          canvas.height = size + padding * 2;
+          canvas.height = size + padding * 2 + textHeight;
 
           if (ctx) {
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Рисуем только QR-код, без текста
+            
+            // Рисуем QR-код
             ctx.drawImage(img, padding, padding, size, size);
+            
+            // Рисуем текст под QR-кодом
+            if (code || title) {
+              ctx.fillStyle = '#000000'; // Черный цвет
+              ctx.font = 'bold 20px Arial'; // Жирный шрифт
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'top';
+              
+              let y = padding + size + textPadding;
+              
+              // Рисуем код
+              if (code) {
+                ctx.font = 'bold 24px Arial';
+                ctx.fillText(`#${code}`, canvas.width / 2, y);
+                y += 28;
+              }
+              
+              // Рисуем название с переносами
+              if (title) {
+                ctx.font = 'bold 18px Arial';
+                const maxWidth = size - 20; // Оставляем небольшой отступ по бокам
+                const maxLines = 3; // Максимум 3 строки
+                const lineHeight = 22;
+                
+                // Функция для разбиения текста на строки
+                const wrapText = (text: string, maxWidth: number): string[] => {
+                  const words = text.split(' ');
+                  const lines: string[] = [];
+                  let currentLine = '';
+                  
+                  for (const word of words) {
+                    const testLine = currentLine ? `${currentLine} ${word}` : word;
+                    const metrics = ctx.measureText(testLine);
+                    
+                    if (metrics.width > maxWidth && currentLine) {
+                      // Если текущая строка слишком длинная, сохраняем её и начинаем новую
+                      lines.push(currentLine);
+                      currentLine = word;
+                      
+                      // Если достигли максимума строк, обрезаем последнее слово
+                      if (lines.length >= maxLines) {
+                        // Обрезаем текущее слово, если оно слишком длинное
+                        let truncated = word;
+                        while (ctx.measureText(truncated + '...').width > maxWidth && truncated.length > 1) {
+                          truncated = truncated.slice(0, -1);
+                        }
+                        currentLine = truncated + '...';
+                        break;
+                      }
+                    } else {
+                      currentLine = testLine;
+                    }
+                  }
+                  
+                  // Добавляем последнюю строку, если есть место
+                  if (currentLine && lines.length < maxLines) {
+                    // Проверяем, не слишком ли длинная последняя строка
+                    if (ctx.measureText(currentLine).width > maxWidth) {
+                      let truncated = currentLine;
+                      while (ctx.measureText(truncated + '...').width > maxWidth && truncated.length > 1) {
+                        truncated = truncated.slice(0, -1);
+                      }
+                      lines.push(truncated + '...');
+                    } else {
+                      lines.push(currentLine);
+                    }
+                  }
+                  
+                  return lines;
+                };
+                
+                const lines = wrapText(title, maxWidth);
+                
+                for (const line of lines) {
+                  ctx.fillText(line, canvas.width / 2, y);
+                  y += lineHeight;
+                }
+              }
+            }
           }
           URL.revokeObjectURL(url);
           resolve(canvas);
