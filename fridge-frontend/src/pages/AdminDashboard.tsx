@@ -775,17 +775,24 @@ export default function AdminDashboard() {
             <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
               {recentCheckins.map((c) => {
                 const dt = formatDate(c.visitedAt);
+                // Находим холодильник по коду для получения его _id
+                const fridge = allFridges.find(f => f.code === c.fridgeId);
                 return (
                   <div
                     key={c.id}
-                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex flex-col gap-1 bg-white hover:border-red-300 transition-colors"
+                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex flex-col gap-1 bg-white hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+                    onClick={() => {
+                      if (fridge) {
+                        setSelectedFridgeDetailId(fridge._id);
+                      }
+                    }}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-slate-900">
-                        #{c.id} — {dt.date}
+                        Отметка #{c.id}
                       </span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500">{dt.time}</span>
+                        <span className="text-xs text-slate-500">{dt.date} в {dt.time}</span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -801,12 +808,17 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                      <span>Менеджер: {c.managerId}</span>
-                      <span>Холодильник: {c.fridgeId}</span>
+                      <span>👤 Менеджер: <span className="font-medium">{c.managerId}</span></span>
+                      <span>🧊 Холодильник: <span className="font-medium text-blue-600">#{c.fridgeId}</span></span>
                     </div>
                     {c.address && (
                       <div className="text-xs text-slate-500 truncate">
                         <span className="text-slate-400">📍</span> {c.address}
+                      </div>
+                    )}
+                    {fridge && (
+                      <div className="text-xs text-blue-600 mt-1">
+                        ℹ️ Нажмите для просмотра деталей холодильника
                       </div>
                     )}
                   </div>
