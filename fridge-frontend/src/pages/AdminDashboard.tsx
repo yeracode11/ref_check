@@ -775,7 +775,7 @@ export default function AdminDashboard() {
             <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
               {recentCheckins.map((c) => {
                 const dt = formatDate(c.visitedAt);
-                // Находим холодильник по коду для получения его _id
+                // Находим холодильник по коду для получения его id
                 const fridge = allFridges.find(f => f.code === c.fridgeId);
                 return (
                   <div
@@ -783,7 +783,7 @@ export default function AdminDashboard() {
                     className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex flex-col gap-1 bg-white hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
                     onClick={() => {
                       if (fridge) {
-                        setSelectedFridgeDetailId(fridge._id);
+                        setSelectedFridgeId(fridge.id);
                       }
                     }}
                   >
