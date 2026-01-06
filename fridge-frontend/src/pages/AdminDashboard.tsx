@@ -577,13 +577,13 @@ export default function AdminDashboard() {
     : fridges;
 
   // Статистика по статусам
-  // Зеленые: свежие отметки (today/week), исключая перемещенные
+  // Зеленые: свежие отметки (today/week)
   const greenFridges = filteredAllFridges.filter((f) => 
-    (f.status === 'today' || f.status === 'week') && f.status !== 'location_changed'
+    f.status === 'today' || f.status === 'week'
   ).length;
-  // Желтые: старые отметки (old), исключая перемещенные
+  // Желтые: старые отметки (old)
   const yellowFridges = filteredAllFridges.filter((f) => 
-    f.status === 'old' && f.status !== 'location_changed'
+    f.status === 'old'
   ).length;
   // Красные: перемещенные
   const redFridges = filteredAllFridges.filter((f) => f.status === 'location_changed').length;
