@@ -576,12 +576,21 @@ export default function AdminDashboard() {
       })
     : fridges;
 
-  // Статистика по warehouseStatus (для информации, но не для цвета маркера)
-  const warehouseFridges = filteredAllFridges.filter((f) => f.warehouseStatus === 'warehouse' || f.warehouseStatus === 'returned').length;
-  const todayFridges = filteredAllFridges.filter((f) => f.status === 'today').length;
-  const weekFridges = filteredAllFridges.filter((f) => f.status === 'week').length;
-  const oldFridges = filteredAllFridges.filter((f) => f.status === 'old').length;
+  // Статистика по статусам
+  // Зеленые: свежие отметки (today/week), исключая перемещенные
+  const greenFridges = filteredAllFridges.filter((f) => 
+    (f.status === 'today' || f.status === 'week') && f.status !== 'location_changed'
+  ).length;
+  // Желтые: старые отметки (old), исключая перемещенные
+  const yellowFridges = filteredAllFridges.filter((f) => 
+    f.status === 'old' && f.status !== 'location_changed'
+  ).length;
+  // Красные: перемещенные
+  const redFridges = filteredAllFridges.filter((f) => f.status === 'location_changed').length;
+  // Серые: нет отметок
   const neverFridges = filteredAllFridges.filter((f) => f.status === 'never').length;
+  // На складе: для информации
+  const warehouseFridges = filteredAllFridges.filter((f) => f.warehouseStatus === 'warehouse' || f.warehouseStatus === 'returned').length;
   const totalCheckins = checkins.length;
   const uniqueManagers = new Set(checkins.map((c) => c.managerId)).size;
 
@@ -707,19 +716,19 @@ export default function AdminDashboard() {
           <p className="text-2xl font-bold text-slate-900 mt-1">{allFridges.length}</p>
           <div className="text-xs text-slate-500 mt-2 flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-blue-500" /> На складе: {warehouseFridges}
+              <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Свежие отметки: {greenFridges}
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Сегодня: {todayFridges}
+              <span className="inline-block w-2 h-2 rounded-full bg-yellow-400" /> Старые отметки: {yellowFridges}
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-yellow-400" /> Неделя: {weekFridges}
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Давно: {oldFridges}
+              <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Перемещенные: {redFridges}
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-slate-400" /> Нет отметок: {neverFridges}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-500" /> На складе: {warehouseFridges}
             </span>
           </div>
         </Card>
@@ -854,8 +863,9 @@ export default function AdminDashboard() {
                   statusLabel = 'Неделя';
                   statusColor = 'bg-green-100 text-green-700';
                 } else if (f.status === 'old') {
+                  // Старые отметки (больше недели) - желтый
                   statusLabel = 'Давно';
-                  statusColor = 'bg-green-100 text-green-700';
+                  statusColor = 'bg-yellow-100 text-yellow-700';
                 } else {
                   // Нет посещений - показываем warehouseStatus
                   if (f.warehouseStatus === 'moved') {

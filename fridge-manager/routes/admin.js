@@ -150,11 +150,9 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
         if (warehouseStatus === 'moved') {
           // Холодильник был перемещен ранее (даже если нет новых отметок)
           status = 'location_changed'; // Красный
-        } else if (warehouseStatus === 'installed') {
-          // Холодильник установлен, но нет отметок - показываем как "старая" отметка
-          status = 'old'; // Зеленый (будет отображаться зеленым)
         } else {
-          // На складе или возврат - серый
+          // На складе, возврат или установлен без отметок - серый
+          // Желтый цвет только для старых отметок (> недели), а не для отсутствия отметок
           status = 'never';
         }
       } else if (totalCheckins === 1) {

@@ -22,7 +22,8 @@ type Props = {
 
 // Иконки для разных статусов
 // location_changed (местоположение изменилось) = красный
-// Если есть чек-ин (посещение) и местоположение не изменилось = зеленый
+// today/week (свежие отметки в пределах недели) = зеленый
+// old (старые отметки, больше недели) = желтый
 // never (нет посещений) = серый
 function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed', hasCheckin: boolean): L.DivIcon {
   let color = '#999999'; // серый по умолчанию (нет посещений)
@@ -30,9 +31,12 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' 
   // Если местоположение изменилось - красный
   if (status === 'location_changed') {
     color = '#dc3545'; // красный
-  } else if (hasCheckin || status !== 'never') {
-    // Если есть посещение и местоположение не изменилось - зеленый
+  } else if (status === 'today' || status === 'week') {
+    // Свежие отметки в пределах недели - зеленый
     color = '#28a745'; // зелёный
+  } else if (status === 'old') {
+    // Старые отметки (больше недели) - желтый
+    color = '#ffc107'; // жёлтый
   }
 
   return L.divIcon({
@@ -44,13 +48,14 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' 
 }
 
 // Функция для определения цвета кластера по статусам
-// Приоритет: location_changed (красный) > посещения (зеленый) > нет посещений (серый)
+// Приоритет: location_changed (красный) > свежие отметки (зеленый) > старые отметки (желтый) > нет посещений (серый)
 function getClusterColor(statuses: string[]): string {
   // Если есть хотя бы один маркер с измененным местоположением - красный
   if (statuses.some(s => s === 'location_changed')) return '#dc3545'; // красный
-  // Если есть хотя бы один маркер с посещением (не 'never') - зеленый
-  const hasAnyCheckin = statuses.some(s => s !== 'never');
-  if (hasAnyCheckin) return '#28a745'; // зелёный
+  // Если есть хотя бы один маркер со свежими отметками (today/week) - зеленый
+  if (statuses.some(s => s === 'today' || s === 'week')) return '#28a745'; // зелёный
+  // Если есть хотя бы один маркер со старыми отметками (old) - желтый
+  if (statuses.some(s => s === 'old')) return '#ffc107'; // жёлтый
   return '#999999'; // серый (только если все маркеры без посещений)
 }
 
