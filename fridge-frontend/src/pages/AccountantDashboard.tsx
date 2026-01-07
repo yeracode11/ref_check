@@ -508,13 +508,13 @@ export default function AccountantDashboard() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'warehouse':
-        return <Badge className="bg-slate-200 text-slate-700">На складе</Badge>;
+        return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
       case 'installed':
         return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
       case 'returned':
-        return <Badge className="bg-yellow-100 text-yellow-700">Возврат</Badge>;
+        return <Badge className="bg-red-100 text-red-700">Возврат</Badge>;
       case 'moved':
-        return <Badge className="bg-red-100 text-red-700">Перемещен</Badge>;
+        return <Badge className="bg-gray-900 text-white">Перемещен</Badge>;
       default:
         return <Badge className="bg-slate-100 text-slate-700">{status}</Badge>;
     }

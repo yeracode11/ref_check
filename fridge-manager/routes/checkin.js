@@ -94,24 +94,26 @@ router.post('/', async (req, res) => {
           }
         } else if (totalCheckins >= 2) {
           // Вторая и последующие отметки - проверяем, изменилось ли местоположение
-          const firstLocation = allCheckins[0].location;
+          // НОВАЯ ЛОГИКА: сравниваем ПОСЛЕДНИЕ ДВЕ координаты, а не первую и последнюю
+          // Это позволяет показать зеленый, если после перемещения холодильник снова отмечен в стабильном месте
+          const secondLastLocation = allCheckins[allCheckins.length - 2].location;
           const lastLocation = allCheckins[allCheckins.length - 1].location;
           
-          if (firstLocation && lastLocation) {
-            const distance = calculateDistance(firstLocation, lastLocation);
+          if (secondLastLocation && lastLocation) {
+            const distance = calculateDistance(secondLastLocation, lastLocation);
             if (distance !== null && distance > 50) {
-              // Местоположение изменилось более чем на 50 метров - статус "moved"
+              // Последние 2 отметки далеко друг от друга - холодильник перемещается - статус "moved"
               newWarehouseStatus = 'moved';
             } else {
-              // Местоположение не изменилось или изменилось незначительно
+              // Последние 2 отметки близко - местоположение стабилизировалось
               if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
                 // Если еще не установлен, устанавливаем
                 newWarehouseStatus = 'installed';
               } else if (fridge.warehouseStatus === 'moved') {
-                // Если был перемещен, но теперь координаты совпадают - возвращаем к установленному
+                // Если был перемещен, но теперь координаты стабилизировались - возвращаем к установленному
                 newWarehouseStatus = 'installed';
               }
-              // Если уже установлен и координаты не изменились - оставляем "installed"
+              // Если уже установлен и координаты стабильны - оставляем "installed"
             }
           }
         }

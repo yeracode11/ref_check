@@ -581,14 +581,14 @@ export default function AdminDashboard() {
   const greenFridges = filteredAllFridges.filter((f) => 
     f.status === 'today' || f.status === 'week'
   ).length;
-  // Желтые: старые отметки (old)
-  const yellowFridges = filteredAllFridges.filter((f) => 
+  // Красные: старые отметки (old)
+  const redFridges = filteredAllFridges.filter((f) => 
     f.status === 'old'
   ).length;
-  // Красные: перемещенные
-  const redFridges = filteredAllFridges.filter((f) => f.status === 'location_changed').length;
-  // Серые: нет отметок
-  const neverFridges = filteredAllFridges.filter((f) => f.status === 'never').length;
+  // Черные: перемещенные
+  const blackFridges = filteredAllFridges.filter((f) => f.status === 'location_changed').length;
+  // Синие: нет отметок (на складе)
+  const blueFridges = filteredAllFridges.filter((f) => f.status === 'never').length;
   // На складе: для информации
   const warehouseFridges = filteredAllFridges.filter((f) => f.warehouseStatus === 'warehouse' || f.warehouseStatus === 'returned').length;
   const totalCheckins = checkins.length;
@@ -719,16 +719,13 @@ export default function AdminDashboard() {
               <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Свежие отметки: {greenFridges}
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-yellow-400" /> Старые отметки: {yellowFridges}
+              <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Старые отметки: {redFridges}
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Перемещенные: {redFridges}
+              <span className="inline-block w-2 h-2 rounded-full bg-gray-900" /> Перемещенные: {blackFridges}
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-slate-400" /> Нет отметок: {neverFridges}
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-blue-500" /> На складе: {warehouseFridges}
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-600" /> На складе: {blueFridges}
             </span>
           </div>
         </Card>
@@ -865,9 +862,9 @@ export default function AdminDashboard() {
                 
                 // Определяем статус и цвет на основе статуса карты и warehouseStatus
                 if (f.status === 'location_changed') {
-                  // Местоположение изменилось - красный
+                  // Местоположение изменилось - черный
                   statusLabel = 'Перемещен';
-                  statusColor = 'bg-red-100 text-red-700';
+                  statusColor = 'bg-gray-900 text-white';
                 } else if (f.status === 'today') {
                   statusLabel = 'Сегодня';
                   statusColor = 'bg-green-100 text-green-700';
@@ -875,9 +872,9 @@ export default function AdminDashboard() {
                   statusLabel = 'Неделя';
                   statusColor = 'bg-green-100 text-green-700';
                 } else if (f.status === 'old') {
-                  // Старые отметки (больше недели) - желтый
+                  // Старые отметки (больше недели) - красный
                   statusLabel = 'Давно';
-                  statusColor = 'bg-yellow-100 text-yellow-700';
+                  statusColor = 'bg-red-100 text-red-700';
                 } else {
                   // Нет посещений - показываем warehouseStatus
                   if (f.warehouseStatus === 'moved') {
@@ -894,7 +891,7 @@ export default function AdminDashboard() {
                     statusColor = 'bg-slate-200 text-slate-700'; // Серый для склада
                   } else {
                     statusLabel = 'Нет отметок';
-                    statusColor = 'bg-slate-200 text-slate-700';
+                    statusColor = 'bg-blue-100 text-blue-700';
                   }
                 }
 

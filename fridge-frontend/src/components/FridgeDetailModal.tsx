@@ -84,8 +84,8 @@ function getStatusColor(status: string) {
   switch (status) {
     case 'warehouse': return 'bg-blue-100 text-blue-700';
     case 'installed': return 'bg-green-100 text-green-700';
-    case 'returned': return 'bg-blue-100 text-blue-700';
-    case 'moved': return 'bg-orange-100 text-orange-700';
+    case 'returned': return 'bg-red-100 text-red-700';
+    case 'moved': return 'bg-gray-900 text-white';
     default: return 'bg-slate-100 text-slate-700';
   }
 }
