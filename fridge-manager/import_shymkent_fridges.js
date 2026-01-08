@@ -7,21 +7,70 @@ const City = require('./models/City');
 const Counter = require('./models/Counter');
 const path = require('path');
 
+// Функция для очистки адреса (убираем лишние детали)
+function cleanAddress(address) {
+  let cleaned = address
+    // Убираем "Республика Казахстан"
+    .replace(/Республика Казахстан,?\s*/gi, '')
+    // Убираем области
+    .replace(/ЮКО,?\s*/gi, '')
+    .replace(/Южно-Казахстанская область,?\s*/gi, '')
+    // Убираем "г.Шымкент" (добавим отдельно)
+    .replace(/г\.?\s*Шымкент,?\s*/gi, '')
+    .replace(/Шымкент,?\s*/gi, '')
+    // Убираем детали домов
+    .replace(/,?\s*дом\s*№?\s*[\w\/-]+/gi, '')
+    .replace(/,?\s*корпус\s*\d+/gi, '')
+    .replace(/,?\s*к\.\s*\d+/gi, '')
+    // Убираем магазины и ИП
+    .replace(/,?\s*маг\.?[^,]*/gi, '')
+    .replace(/,?\s*магазин[^,]*/gi, '')
+    .replace(/,?\s*супермаркет[^,]*/gi, '')
+    // Убираем б/н
+    .replace(/\s*б\/н\s*/gi, ' ')
+    // Убираем лишние пробелы и запятые
+    .replace(/\s+/g, ' ')
+    .replace(/,\s*,/g, ',')
+    .replace(/^\s*,\s*/, '')
+    .replace(/\s*,\s*$/, '')
+    .trim();
+  
+  return cleaned;
+}
+
 // Функция для геокодирования адреса через Nominatim (OpenStreetMap)
-// Бесплатный сервис, не требует API ключа!
+// Пробуем несколько вариантов адреса для лучших результатов
 async function geocodeAddress(address) {
-  return new Promise((resolve, reject) => {
-    // Добавляем "Казахстан, Шымкент" для более точных результатов
-    const fullAddress = `${address}, Шымкент, Казахстан`;
+  const addressVariants = [
+    // Вариант 1: Очищенный адрес + Шымкент
+    `${cleanAddress(address)}, Шымкент, Казахстан`,
+    // Вариант 2: Только улица + Шымкент
+    `${cleanAddress(address)}, Shymkent, Kazakhstan`,
+    // Вариант 3: Оригинальный адрес
+    `${address}, Казахстан`
+  ];
+
+  for (const variant of addressVariants) {
+    const result = await tryGeocode(variant);
+    if (result) {
+      return result;
+    }
+    // Небольшая задержка между попытками
+    await delay(100);
+  }
+
+  return null;
+}
+
+// Внутренняя функция для одной попытки геокодирования
+async function tryGeocode(fullAddress) {
+  return new Promise((resolve) => {
     const encodedAddress = encodeURIComponent(fullAddress);
-    
-    // Nominatim API (OpenStreetMap)
-    // Бесплатный, но требует User-Agent
     const url = `https://nominatim.openstreetmap.org/search?q=${encodedAddress}&format=json&limit=1&countrycodes=kz`;
 
     const options = {
       headers: {
-        'User-Agent': 'RefCheckFridgeManager/1.0' // Обязательно для Nominatim
+        'User-Agent': 'RefCheckFridgeManager/1.0'
       }
     };
 
@@ -46,19 +95,16 @@ async function geocodeAddress(address) {
             if (lat >= 42.0 && lat <= 43.0 && lng >= 69.0 && lng <= 70.5) {
               resolve([lng, lat]);
             } else {
-              console.warn(`⚠ Координаты вне Шымкента: [${lat}, ${lng}] для "${address}"`);
               resolve(null);
             }
           } else {
             resolve(null);
           }
         } catch (err) {
-          console.error(`Ошибка парсинга геокодирования: ${err.message}`);
           resolve(null);
         }
       });
-    }).on('error', (err) => {
-      console.error(`Ошибка геокодирования: ${err.message}`);
+    }).on('error', () => {
       resolve(null);
     });
   });
