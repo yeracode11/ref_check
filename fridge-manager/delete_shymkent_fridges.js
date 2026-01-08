@@ -2,7 +2,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const Fridge = require('./models/Fridge');
 const City = require('./models/City');
-const CheckIn = require('./models/CheckIn');
+const CheckIn = require('./models/Checkin');
 
 async function deleteShymkentFridges() {
   try {
