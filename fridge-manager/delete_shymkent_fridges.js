@@ -2,6 +2,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const Fridge = require('./models/Fridge');
 const City = require('./models/City');
+const CheckIn = require('./models/CheckIn');
 
 async function deleteShymkentFridges() {
   try {
@@ -68,7 +69,6 @@ async function deleteShymkentFridges() {
     const fridgeIds = fridges.map(f => f._id);
 
     // Удаляем отметки (check-ins)
-    const CheckIn = mongoose.model('CheckIn');
     const checkinsResult = await CheckIn.deleteMany({ fridgeId: { $in: fridgeIds } });
     console.log(`✓ Удалено отметок: ${checkinsResult.deletedCount}`);
 
