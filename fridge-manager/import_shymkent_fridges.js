@@ -38,16 +38,69 @@ function cleanAddress(address) {
   return cleaned;
 }
 
-// Функция для геокодирования адреса через Nominatim (OpenStreetMap)
-// Пробуем несколько вариантов адреса для лучших результатов
+// Функция для геокодирования через Yandex API
+async function geocodeWithYandex(address) {
+  return new Promise((resolve) => {
+    const apiKey = process.env.YANDEX_GEOCODER_API_KEY || '';
+    
+    if (!apiKey) {
+      resolve(null);
+      return;
+    }
+
+    const fullAddress = `${address}, Шымкент, Казахстан`;
+    const encodedAddress = encodeURIComponent(fullAddress);
+    const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${encodedAddress}&format=json&results=1`;
+
+    https.get(url, (res) => {
+      let data = '';
+      
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const geoObject = json.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+          
+          if (geoObject) {
+            const pos = geoObject.Point.pos.split(' ');
+            const lng = parseFloat(pos[0]);
+            const lat = parseFloat(pos[1]);
+            
+            // Проверяем, что координаты в пределах Шымкента/Туркестанской области
+            if (lat >= 42.0 && lat <= 43.5 && lng >= 68.5 && lng <= 70.5) {
+              resolve([lng, lat]);
+            } else {
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        } catch (err) {
+          resolve(null);
+        }
+      });
+    }).on('error', () => {
+      resolve(null);
+    });
+  });
+}
+
+// Функция для геокодирования адреса
+// Приоритет: Yandex → Nominatim (OpenStreetMap) → случайные координаты
 async function geocodeAddress(address) {
+  // Пытаемся Yandex (лучше знает адреса Казахстана)
+  const yandexResult = await geocodeWithYandex(address);
+  if (yandexResult) {
+    return yandexResult;
+  }
+
+  // Fallback: пробуем Nominatim с очищенными адресами
   const addressVariants = [
-    // Вариант 1: Очищенный адрес + Шымкент
     `${cleanAddress(address)}, Шымкент, Казахстан`,
-    // Вариант 2: Только улица + Шымкент
     `${cleanAddress(address)}, Shymkent, Kazakhstan`,
-    // Вариант 3: Оригинальный адрес
-    `${address}, Казахстан`
   ];
 
   for (const variant of addressVariants) {
@@ -55,7 +108,6 @@ async function geocodeAddress(address) {
     if (result) {
       return result;
     }
-    // Небольшая задержка между попытками
     await delay(100);
   }
 
@@ -284,9 +336,19 @@ async function importShymkentFridges(excelFilePath) {
     let geocoded = 0;
     let geocodeFailed = 0;
 
-    // Используем Nominatim (OpenStreetMap) для геокодирования - бесплатно!
-    console.log('✓ Используется Nominatim (OpenStreetMap) для геокодирования адресов');
-    console.log('  Бесплатный сервис, API ключ не требуется!');
+    // Проверяем наличие Yandex API ключа
+    const hasYandexKey = !!process.env.YANDEX_GEOCODER_API_KEY;
+    
+    if (hasYandexKey) {
+      console.log('✓ Используется Yandex Geocoder API для геокодирования адресов');
+      console.log('  Fallback: Nominatim (OpenStreetMap)');
+    } else {
+      console.log('⚠ YANDEX_GEOCODER_API_KEY не найден в .env');
+      console.log('  Используется только Nominatim (OpenStreetMap)');
+      console.log('  💡 Добавьте API ключ для лучшей точности геокодирования');
+      console.log('  Получите ключ: https://developer.tech.yandex.ru/');
+    }
+    
     const useGeocoding = true;
 
     // Функция для генерации случайных координат в пределах Шымкента (fallback)
@@ -329,16 +391,18 @@ async function importShymkentFridges(excelFilePath) {
             coordinates = await geocodeAddress(address);
             if (coordinates) {
               geocoded++;
-              console.log(`✓ Строка ${i + 1}: Геокодирован "${address}" -> [${coordinates[1].toFixed(4)}, ${coordinates[0].toFixed(4)}]`);
+              const shortAddr = address.length > 50 ? address.substring(0, 50) + '...' : address;
+              console.log(`✓ Строка ${i + 1}: Геокодирован "${shortAddr}" -> [${coordinates[1].toFixed(4)}, ${coordinates[0].toFixed(4)}]`);
             } else {
               geocodeFailed++;
-              console.warn(`⚠ Строка ${i + 1}: Не удалось геокодировать "${address}"`);
+              console.warn(`⚠ Строка ${i + 1}: Не удалось геокодировать`);
             }
-            // Задержка 1 сек между запросами к API (требование Nominatim: max 1 req/sec)
-            await delay(1000);
+            // Задержка между запросами (Yandex: до 5 req/sec, Nominatim: 1 req/sec)
+            // Используем 300мс как безопасное значение
+            await delay(hasYandexKey ? 300 : 1000);
           } catch (err) {
             geocodeFailed++;
-            console.warn(`⚠ Строка ${i + 1}: Ошибка геокодирования "${address}": ${err.message}`);
+            console.warn(`⚠ Строка ${i + 1}: Ошибка геокодирования: ${err.message}`);
           }
         }
 
@@ -383,11 +447,16 @@ async function importShymkentFridges(excelFilePath) {
     console.log(`📊 Всего строк: ${data.length}`);
     
     if (useGeocoding) {
-      console.log('\n=== Геокодирование (Nominatim/OpenStreetMap) ===');
+      console.log('\n=== Геокодирование ===');
       console.log(`✓ Успешно геокодировано: ${geocoded}`);
       console.log(`⚠ Не удалось геокодировать: ${geocodeFailed}`);
       if ((geocoded + geocodeFailed) > 0) {
         console.log(`📍 Точность: ${((geocoded / (geocoded + geocodeFailed)) * 100).toFixed(1)}%`);
+      }
+      if (hasYandexKey) {
+        console.log(`🗺️  Метод: Yandex Geocoder API + Nominatim (fallback)`);
+      } else {
+        console.log(`🗺️  Метод: Nominatim (OpenStreetMap)`);
       }
     }
 
@@ -396,12 +465,18 @@ async function importShymkentFridges(excelFilePath) {
     console.log('  ✓ Названия холодильников = названия клиентов из Excel');
     console.log('  ✓ Адреса сохранены из колонки "Фактический адрес контрагента"');
     if (useGeocoding) {
-      console.log('  ✓ GPS координаты получены через Nominatim (OpenStreetMap) - бесплатно!');
+      if (hasYandexKey) {
+        console.log('  ✓ GPS координаты через Yandex Geocoder API (отличная точность!)');
+      } else {
+        console.log('  ✓ GPS координаты через Nominatim (OpenStreetMap)');
+      }
       if (geocodeFailed > 0) {
         console.log(`  ⚠ ${geocodeFailed} адресов не геокодированы (используются случайные координаты)`);
+        console.log(`  💡 Координаты обновятся при первой отметке мерчендайзера`);
       }
     }
     console.log('  ✓ Все холодильники имеют статус "На складе" (warehouse)');
+    console.log('  🗺️  Карта на фронтенде: Leaflet + OpenStreetMap (без изменений)');
 
     await mongoose.connection.close();
     console.log('✓ Соединение с MongoDB закрыто');
