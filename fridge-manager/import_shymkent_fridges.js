@@ -36,26 +36,85 @@ async function importShymkentFridges(excelFilePath) {
     const workbook = XLSX.readFile(excelFilePath);
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet);
+    
+    // Читаем как массив массивов, чтобы найти строку с заголовками
+    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    
+    console.log(`✓ Прочитано строк (сырых): ${rawData.length}`);
 
-    console.log(`✓ Прочитано строк: ${data.length}`);
-
-    if (data.length === 0) {
+    if (rawData.length === 0) {
       console.log('⚠ Файл пустой или не содержит данных');
       await mongoose.connection.close();
       return;
     }
 
-    // 3. Показываем первую строку для проверки колонок
-    console.log('\n=== Пример первой строки ===');
-    console.log(data[0]);
+    // Ищем строку с заголовками (где есть "Контрагент")
+    let headerRowIndex = -1;
+    let headers = [];
+    
+    for (let i = 0; i < Math.min(10, rawData.length); i++) {
+      const row = rawData[i];
+      const rowStr = row.join('|').toLowerCase();
+      if (rowStr.includes('контрагент') || rowStr.includes('оборудование')) {
+        headerRowIndex = i;
+        headers = row.map(h => String(h).trim());
+        break;
+      }
+    }
+
+    if (headerRowIndex === -1) {
+      console.log('❌ Не найдена строка с заголовками колонок!');
+      console.log('Первые 5 строк файла:');
+      rawData.slice(0, 5).forEach((row, i) => {
+        console.log(`  Строка ${i + 1}:`, row.slice(0, 5));
+      });
+      await mongoose.connection.close();
+      return;
+    }
+
+    console.log(`✓ Найдены заголовки в строке ${headerRowIndex + 1}`);
+    console.log('Заголовки:', headers.filter(h => h));
+
+    // Преобразуем данные начиная со следующей строки после заголовков
+    const dataRows = rawData.slice(headerRowIndex + 1);
+    const data = dataRows.map(row => {
+      const obj = {};
+      headers.forEach((header, idx) => {
+        if (header) {
+          obj[header] = row[idx] || '';
+        }
+      });
+      return obj;
+    }).filter(row => {
+      // Пропускаем полностью пустые строки
+      return Object.values(row).some(val => String(val).trim());
+    });
+
+    console.log(`✓ Обработано строк данных: ${data.length}`);
+
+    if (data.length === 0) {
+      console.log('⚠ Нет данных после заголовков');
+      await mongoose.connection.close();
+      return;
+    }
+
+    // 3. Показываем первую строку для проверки
+    console.log('\n=== Пример первой строки данных ===');
+    console.log(JSON.stringify(data[0], null, 2));
     console.log('\n=== Доступные колонки ===');
     console.log(Object.keys(data[0]));
 
     // 4. Определяем названия колонок (могут быть пробелы/вариации)
     const getColumnName = (row, possibleNames) => {
+      const keys = Object.keys(row);
       for (const name of possibleNames) {
-        if (row.hasOwnProperty(name)) return name;
+        // Точное совпадение
+        if (keys.includes(name)) return name;
+        // Поиск с игнорированием регистра и пробелов
+        const found = keys.find(k => 
+          k.toLowerCase().trim() === name.toLowerCase().trim()
+        );
+        if (found) return found;
       }
       return null;
     };
@@ -64,7 +123,7 @@ async function importShymkentFridges(excelFilePath) {
     const contractorCol = getColumnName(firstRow, ['Контрагент', 'контрагент', 'Контрагенты']);
     const addressCol = getColumnName(firstRow, ['Фактический адрес контрагента', 'Адрес', 'адрес', 'Фактический адрес']);
     const contractCol = getColumnName(firstRow, ['Договор', 'договор', 'Номер договора']);
-    const codeCol = getColumnName(firstRow, ['Оборудование Номер ХО', 'Номер ХО', 'Код', 'код', 'Номер']);
+    const codeCol = getColumnName(firstRow, ['Номер', 'номер', 'Оборудование Номер ХО', 'Номер ХО', 'Код', 'код']);
 
     console.log('\n=== Определенные колонки ===');
     console.log(`Контрагент: ${contractorCol}`);
@@ -74,7 +133,9 @@ async function importShymkentFridges(excelFilePath) {
 
     if (!contractorCol || !addressCol || !codeCol) {
       console.log('\n❌ Не все обязательные колонки найдены!');
-      console.log('Обязательные: Контрагент, Фактический адрес контрагента, Оборудование Номер ХО');
+      console.log('Обязательные: Контрагент, Фактический адрес контрагента, Номер');
+      console.log('\nДоступные колонки в файле:');
+      Object.keys(firstRow).forEach((k, i) => console.log(`  ${i + 1}. "${k}"`));
       await mongoose.connection.close();
       return;
     }
