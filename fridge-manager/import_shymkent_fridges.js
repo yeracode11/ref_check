@@ -49,13 +49,28 @@ async function importShymkentFridges(excelFilePath) {
     }
 
     // Ищем строку с заголовками (где есть "Контрагент")
+    // Это должна быть строка с короткими значениями (не длинный текст),
+    // которая содержит "Контрагент" и другие колонки
     let headerRowIndex = -1;
     let headers = [];
     
-    for (let i = 0; i < Math.min(10, rawData.length); i++) {
+    for (let i = 0; i < Math.min(15, rawData.length); i++) {
       const row = rawData[i];
-      const rowStr = row.join('|').toLowerCase();
-      if (rowStr.includes('контрагент') || rowStr.includes('оборудование')) {
+      
+      // Проверяем, что это короткие значения (не описание)
+      const hasShortValues = row.some(cell => {
+        const str = String(cell).trim();
+        return str.length > 0 && str.length < 100 && !str.includes('\n');
+      });
+      
+      if (!hasShortValues) continue;
+      
+      // Ищем строку с ключевыми заголовками
+      const hasContractor = row.some(cell => String(cell).trim().toLowerCase() === 'контрагент');
+      const hasAddress = row.some(cell => String(cell).trim().toLowerCase().includes('адрес'));
+      const hasNumber = row.some(cell => String(cell).trim().toLowerCase() === 'номер');
+      
+      if (hasContractor && (hasAddress || hasNumber)) {
         headerRowIndex = i;
         headers = row.map(h => String(h).trim());
         break;
