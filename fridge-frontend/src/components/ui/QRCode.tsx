@@ -136,15 +136,15 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
           // Вычисляем высоту текста
           let textHeight = 0;
           if (code || title) {
-            const lineHeight = 24;
-            const titleLineHeight = 22;
-            if (code) textHeight += lineHeight;
+            const codeLineHeight = 24; // Высота строки для кода
+            const titleLineHeight = 24; // Высота строки для названия
+            
             if (title) {
               // Разбиваем название на строки (максимум 3 строки)
               // Используем временный контекст для измерения
               const tempCtx = ctx || canvas.getContext('2d');
               if (tempCtx) {
-                tempCtx.font = 'bold 18px Arial';
+                tempCtx.font = 'bold 20px Arial';
                 const maxWidth = size - 20; // Оставляем небольшой отступ
                 const maxLines = 3;
                 const words = title.split(' ');
@@ -185,7 +185,12 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
                 textHeight += Math.min(lines.length, maxLines) * titleLineHeight;
               }
             }
-            textHeight += textPadding; // Отступ между кодом и названием
+            
+            if (code) {
+              textHeight += codeLineHeight + 8; // Высота кода + отступ
+            }
+            
+            textHeight += textPadding; // Отступ между QR и текстом
           }
           
           canvas.width = size + padding * 2;
@@ -207,19 +212,12 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
               
               let y = padding + size + textPadding;
               
-              // Рисуем код
-              if (code) {
-                ctx.font = 'bold 24px Arial';
-                ctx.fillText(`#${code}`, canvas.width / 2, y);
-                y += 28;
-              }
-              
-              // Рисуем название с переносами
+              // Рисуем название с переносами (СВЕРХУ, БОЛЬШИМ ШРИФТОМ)
               if (title) {
-                ctx.font = 'bold 18px Arial';
+                ctx.font = 'bold 20px Arial';
                 const maxWidth = size - 20; // Оставляем небольшой отступ по бокам
                 const maxLines = 3; // Максимум 3 строки
-                const lineHeight = 22;
+                const lineHeight = 24;
                 
                 // Функция для разбиения текста на строки
                 const wrapText = (text: string, maxWidth: number): string[] => {
@@ -274,6 +272,14 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
                   ctx.fillText(line, canvas.width / 2, y);
                   y += lineHeight;
                 }
+              }
+              
+              // Рисуем код СНИЗУ (меньшим шрифтом)
+              if (code) {
+                y += 8; // Небольшой отступ между названием и кодом
+                ctx.font = '16px Arial'; // Обычный шрифт, меньший размер
+                ctx.fillStyle = '#666666'; // Серый цвет
+                ctx.fillText(`Код: ${code}`, canvas.width / 2, y);
               }
             }
           }
