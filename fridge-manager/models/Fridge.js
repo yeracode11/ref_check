@@ -36,7 +36,8 @@ const ClientInfoSchema = new mongoose.Schema(
 
 const FridgeSchema = new mongoose.Schema(
   {
-    code: { type: String, required: true, unique: true, index: true },
+    code: { type: String, required: true, unique: true, index: true }, // Длинный уникальный код (из Excel)
+    displayCode: { type: String, unique: true, sparse: true, index: true }, // Короткий код для отображения (SH-001)
     name: { type: String, required: true },
     cityId: { type: mongoose.Schema.Types.ObjectId, ref: 'City', index: true },
     location: { type: GeoPointSchema, index: '2dsphere', required: true },

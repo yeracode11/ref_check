@@ -4,7 +4,7 @@ const XLSX = require('xlsx');
 const https = require('https');
 const Fridge = require('./models/Fridge');
 const City = require('./models/City');
-const Counter = require('./models/Counter');
+const { Counter, getNextSequence } = require('./models/Counter');
 const path = require('path');
 
 // Функция для очистки адреса (убираем лишние детали)
@@ -411,9 +411,14 @@ async function importShymkentFridges(excelFilePath) {
           coordinates = getRandomShymkentCoordinates();
         }
 
+        // Генерируем короткий код для отображения (SH-001, SH-002, ...)
+        const seqNumber = await getNextSequence('shymkent_fridge');
+        const displayCode = `SH-${String(seqNumber).padStart(4, '0')}`;
+
         // Создаем холодильник
         const fridge = await Fridge.create({
           code: fridgeCode,
+          displayCode: displayCode, // Короткий код для отображения
           name: contractorName, // Название = название клиента
           cityId: shymkentCity._id,
           location: {
@@ -431,7 +436,7 @@ async function importShymkentFridges(excelFilePath) {
           }
         });
 
-        console.log(`✓ Строка ${i + 1}: Создан "${fridge.code}" - ${contractorName}`);
+        console.log(`✓ Строка ${i + 1}: Создан "${fridge.displayCode}" (${fridge.name})`);
         created++;
 
       } catch (error) {

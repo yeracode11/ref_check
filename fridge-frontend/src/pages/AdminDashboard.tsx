@@ -1146,7 +1146,7 @@ export default function AdminDashboard() {
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(selectedQRFridge.code)}`}
                 title={selectedQRFridge.name}
-                code={selectedQRFridge.code}
+                code={selectedQRFridge.displayCode || selectedQRFridge.code}
                 size={200}
               />
             </div>

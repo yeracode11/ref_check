@@ -987,7 +987,7 @@ export default function AccountantDashboard() {
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(selectedFridge.code)}`}
                 title={selectedFridge.name}
-                code={selectedFridge.code}
+                code={selectedFridge.displayCode || selectedFridge.code}
                 size={200}
               />
             </div>
