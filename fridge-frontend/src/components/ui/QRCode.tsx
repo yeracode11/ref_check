@@ -196,17 +196,17 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           } else {
             // Старый формат для остальных городов (Тараз): код и название снизу в canvas
             // Увеличиваем размер QR кода для Тараза (для термопринтера 70x30)
-            const tarazQRSize = Math.floor(size * 0.82); // 82% от исходного размера (было 75%)
+            const tarazQRSize = Math.floor(size * 0.88); // 88% от исходного размера (было 82%)
             
             if (code) {
               // Высота для кода - увеличиваем размер шрифта
-              ctx.font = 'bold 20px Arial'; // Увеличено с 18px до 20px
-              bottomTextHeight += 28 + topPadding; // Увеличено с 25 до 28
+              ctx.font = 'bold 22px Arial'; // Увеличено с 20px до 22px
+              bottomTextHeight += 30 + topPadding; // Увеличено с 28 до 30
             }
             
             if (title) {
               // Вычисляем высоту для title (может быть в несколько строк) - увеличиваем размер шрифта
-              ctx.font = 'bold 18px Arial'; // Увеличено с 16px до 18px
+              ctx.font = 'bold 20px Arial'; // Увеличено с 18px до 20px
               const maxWidth = tarazQRSize;
               const words = title.split(' ');
               let lines: string[] = [];
@@ -229,7 +229,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
                 lines.push(currentLine);
               }
               
-              bottomTextHeight += Math.min(lines.length, 2) * 22 + bottomPadding; // Увеличено с 20 до 22
+              bottomTextHeight += Math.min(lines.length, 2) * 24 + bottomPadding; // Увеличено с 22 до 24
             }
           }
           
@@ -240,7 +240,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             canvas.height = shymkentQRSize + padding * 2 + topTextHeight + bottomTextHeight;
           } else {
             // Для Тараза - QR код (увеличен) + текст снизу
-            const tarazQRSize = Math.floor(size * 0.82); // Увеличено с 75% до 82%
+            const tarazQRSize = Math.floor(size * 0.88); // Увеличено с 82% до 88%
             canvas.width = tarazQRSize + padding * 2;
             canvas.height = tarazQRSize + padding * 2 + bottomTextHeight;
           }
@@ -315,7 +315,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             } else {
               // Старый формат для остальных городов (Тараз и др.)
               // Увеличиваем размер QR кода для термопринтера 70x30
-              const tarazQRSize = Math.floor(size * 0.82); // Увеличено с 75% до 82%
+              const tarazQRSize = Math.floor(size * 0.88); // Увеличено с 82% до 88%
               const qrX = (canvas.width - tarazQRSize) / 2;
               
               // Рисуем QR-код (увеличен)
@@ -324,16 +324,16 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               
               // Рисуем код СНИЗУ QR кода - увеличиваем размер шрифта
               if (code) {
-                finalCtx.font = 'bold 20px Arial'; // Увеличено с 18px до 20px
+                finalCtx.font = 'bold 22px Arial'; // Увеличено с 20px до 22px
                 finalCtx.fillStyle = '#000000';
                 const displayCode = code.startsWith('#') ? code : `#${code}`;
                 finalCtx.fillText(displayCode, canvas.width / 2, currentY);
-                currentY += 28; // Увеличено с 25 до 28
+                currentY += 30; // Увеличено с 28 до 30
               }
               
               // Рисуем название СНИЗУ QR кода (с переносом строки) - увеличиваем размер шрифта
               if (title) {
-                finalCtx.font = 'bold 18px Arial'; // Увеличено с 16px до 18px
+                finalCtx.font = 'bold 20px Arial'; // Увеличено с 18px до 20px
                 finalCtx.fillStyle = '#000000';
                 
                 // Разбиваем title на строки если не помещается
@@ -361,7 +361,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
                 
                 // Рисуем строки
                 lines.forEach((line, idx) => {
-                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 22)); // Увеличено с 20 до 22
+                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 24)); // Увеличено с 22 до 24
                 });
               }
             }
@@ -487,8 +487,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
 
   const isShymkent = cityName === 'Шымкент';
 
-  // Уменьшаем размер QR кода: для Шымкента 85%, для Тараза 82% (увеличено для термопринтера)
-  const displaySize = isShymkent ? Math.floor(size * 0.85) : Math.floor(size * 0.82);
+  // Уменьшаем размер QR кода: для Шымкента 85%, для Тараза 88% (увеличено для термопринтера)
+  const displaySize = isShymkent ? Math.floor(size * 0.85) : Math.floor(size * 0.88);
 
   return (
     <div className={`flex flex-col items-center gap-3 ${className}`}>
