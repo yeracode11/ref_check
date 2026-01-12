@@ -376,10 +376,10 @@ async function importShymkentFridges(excelFilePath) {
           continue;
         }
 
-        // Проверяем, существует ли уже холодильник с таким кодом
-        const existing = await Fridge.findOne({ code: fridgeCode });
+        // Проверяем, существует ли уже холодильник с таким номером
+        const existing = await Fridge.findOne({ number: fridgeCode });
         if (existing) {
-          console.log(`⚠ Строка ${i + 1}: Холодильник с кодом "${fridgeCode}" уже существует`);
+          console.log(`⚠ Строка ${i + 1}: Холодильник с номером "${fridgeCode}" уже существует`);
           skipped++;
           continue;
         }
@@ -411,14 +411,14 @@ async function importShymkentFridges(excelFilePath) {
           coordinates = getRandomShymkentCoordinates();
         }
 
-        // Генерируем короткий код для отображения (#1, #2, #3, ...)
+        // Генерируем короткий код (#1, #2, #3, ...)
         const seqNumber = await getNextSequence('fridge');
-        const displayCode = String(seqNumber);
+        const shortCode = String(seqNumber);
 
         // Создаем холодильник
         const fridge = await Fridge.create({
-          code: fridgeCode,
-          displayCode: displayCode, // Короткий код для отображения
+          code: shortCode, // Короткий код - основной
+          number: fridgeCode, // Длинный номер из Excel
           name: contractorName, // Название = название клиента
           cityId: shymkentCity._id,
           location: {
@@ -436,7 +436,7 @@ async function importShymkentFridges(excelFilePath) {
           }
         });
 
-        console.log(`✓ Строка ${i + 1}: Создан "${fridge.displayCode}" (${fridge.name})`);
+        console.log(`✓ Строка ${i + 1}: Создан #${fridge.code} (${fridge.name})`);
         created++;
 
       } catch (error) {
