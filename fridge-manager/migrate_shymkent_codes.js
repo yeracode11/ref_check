@@ -23,11 +23,13 @@ async function migrateShymkentCodes() {
 
     console.log(`✓ Найден город: ${shymkentCity.name} (ID: ${shymkentCity._id})\n`);
 
-    // Находим все холодильники Шымкента с длинным кодом
-    const fridges = await Fridge.find({
-      cityId: shymkentCity._id,
-      $where: 'this.code && this.code.length > 10' // Длинный код (больше 10 символов)
+    // Находим все холодильники Шымкента
+    const allFridges = await Fridge.find({
+      cityId: shymkentCity._id
     }).sort({ createdAt: 1 }); // Сортируем по дате создания
+
+    // Фильтруем только холодильники с длинным кодом (больше 10 символов)
+    const fridges = allFridges.filter(f => f.code && f.code.length > 10);
 
     console.log(`Найдено холодильников с длинным кодом: ${fridges.length}\n`);
 
