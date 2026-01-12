@@ -64,25 +64,17 @@ async function migrateShymkentCodes() {
 
     console.log('=== Миграция кодов холодильников ===\n');
     
-    // Находим максимальный существующий короткий код
-    const existingFridgesWithShortCode = await Fridge.find({
-      code: { $regex: /^\d+$/ } // Только цифры
-    });
+    // Получаем текущее значение счетчика
+    const Counter = mongoose.model('Counter');
+    const counter = await Counter.findById('fridge');
+    let startNumber = counter ? counter.seq : 0;
     
-    let maxCode = 0;
-    for (const f of existingFridgesWithShortCode) {
-      const codeNum = parseInt(f.code);
-      if (!isNaN(codeNum) && codeNum > maxCode) {
-        maxCode = codeNum;
-      }
-    }
-    
-    console.log(`Максимальный существующий код: #${maxCode}`);
-    console.log(`Шымкентские холодильники начнутся с: #${maxCode + 1}\n`);
+    console.log(`Текущее значение счетчика: ${startNumber}`);
+    console.log(`Шымкентские холодильники начнутся с: #${startNumber + 1}\n`);
     
     let migrated = 0;
     let errors = 0;
-    let currentNumber = maxCode;
+    let currentNumber = startNumber;
 
     for (const fridge of fridges) {
       try {
@@ -113,7 +105,6 @@ async function migrateShymkentCodes() {
 
     // Обновляем счетчик чтобы новые холодильники продолжали нумерацию
     if (migrated > 0) {
-      const Counter = mongoose.model('Counter');
       await Counter.findByIdAndUpdate(
         'fridge',
         { seq: currentNumber },
@@ -127,7 +118,7 @@ async function migrateShymkentCodes() {
     console.log(`❌ Ошибок: ${errors}`);
     console.log(`📊 Всего холодильников: ${fridges.length}`);
     if (migrated > 0) {
-      console.log(`📍 Диапазон кодов: #${maxCode + 1} - #${currentNumber}`);
+      console.log(`📍 Диапазон кодов: #${startNumber + 1} - #${currentNumber}`);
     }
 
     console.log('\n✅ Миграция завершена!');
