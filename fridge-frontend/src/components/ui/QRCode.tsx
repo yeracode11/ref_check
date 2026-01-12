@@ -279,7 +279,9 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
                 y += 8; // Небольшой отступ между названием и кодом
                 ctx.font = '16px Arial'; // Обычный шрифт, меньший размер
                 ctx.fillStyle = '#666666'; // Серый цвет
-                ctx.fillText(`Код: ${code}`, canvas.width / 2, y);
+                // Добавляем # если его нет
+                const displayCode = code.startsWith('#') ? code : `#${code}`;
+                ctx.fillText(displayCode, canvas.width / 2, y);
               }
             }
           }

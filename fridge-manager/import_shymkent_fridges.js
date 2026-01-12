@@ -411,9 +411,9 @@ async function importShymkentFridges(excelFilePath) {
           coordinates = getRandomShymkentCoordinates();
         }
 
-        // Генерируем короткий код для отображения (SH-001, SH-002, ...)
-        const seqNumber = await getNextSequence('shymkent_fridge');
-        const displayCode = `SH-${String(seqNumber).padStart(4, '0')}`;
+        // Генерируем короткий код для отображения (#1, #2, #3, ...)
+        const seqNumber = await getNextSequence('fridge');
+        const displayCode = String(seqNumber);
 
         // Создаем холодильник
         const fridge = await Fridge.create({
