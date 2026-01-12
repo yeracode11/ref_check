@@ -60,35 +60,44 @@ async function migrateCodeFields() {
           continue;
         }
 
-        const updates = {};
+        const updateDoc = {};
+        
+        // Поля для установки
+        const setFields = {};
 
         // Если есть старый длинный code, переименовываем его в number
         if (hasOldStructure && fridge.code && fridge.code.length > 10) {
-          updates.number = fridge.code;
+          setFields.number = fridge.code;
         }
 
         // Если есть displayCode, переименовываем его в code
         if (hasDisplayCode) {
-          updates.code = fridge.displayCode;
-          // Удаляем старое поле displayCode
-          updates.$unset = { displayCode: "" };
+          setFields.code = fridge.displayCode;
         }
 
-        if (Object.keys(updates).length === 0) {
+        if (Object.keys(setFields).length === 0) {
           console.log(`⚠ Пропущен ${fridge._id}: нечего мигрировать`);
           skipped++;
           continue;
         }
 
+        // Формируем update document с атомарными операторами
+        updateDoc.$set = setFields;
+
+        // Удаляем старое поле displayCode если оно было
+        if (hasDisplayCode) {
+          updateDoc.$unset = { displayCode: "" };
+        }
+
         // Выполняем обновление
         const result = await fridgesCollection.updateOne(
           { _id: fridge._id },
-          updates
+          updateDoc
         );
 
         if (result.modifiedCount > 0) {
-          const newCode = updates.code || fridge.code;
-          const newNumber = updates.number || fridge.number;
+          const newCode = setFields.code || fridge.code;
+          const newNumber = setFields.number || fridge.number;
           console.log(`✓ Мигрирован: code=#${newCode}, number=${newNumber ? newNumber.substring(0, 15) + '...' : 'нет'}`);
           migrated++;
         } else {
