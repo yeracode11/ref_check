@@ -988,6 +988,7 @@ export default function AccountantDashboard() {
                 value={`${window.location.origin}/checkin/${encodeURIComponent(selectedFridge.code)}`}
                 title={selectedFridge.name}
                 code={selectedFridge.code}
+                number={selectedFridge.number}
                 size={200}
               />
             </div>

@@ -1147,6 +1147,7 @@ export default function AdminDashboard() {
                 value={`${window.location.origin}/checkin/${encodeURIComponent(selectedQRFridge.code)}`}
                 title={selectedQRFridge.name}
                 code={selectedQRFridge.code}
+                number={selectedQRFridge.number}
                 size={200}
               />
             </div>

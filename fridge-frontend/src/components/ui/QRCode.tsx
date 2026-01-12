@@ -6,6 +6,7 @@ type QRCodeProps = {
   value: string;
   title?: string;
   code?: string;
+  number?: string; // Длинный номер из Excel
   size?: number;
   className?: string;
 };
@@ -14,7 +15,7 @@ type QRCodeProps = {
 let globalPrintContainer: HTMLDivElement | null = null;
 let printStyleAdded = false;
 
-export function QRCode({ value, title, code, size = 120, className = '' }: QRCodeProps) {
+export function QRCode({ value, title, code, number, size = 120, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -133,40 +134,80 @@ export function QRCode({ value, title, code, size = 120, className = '' }: QRCod
           const padding = 40;
           const textPadding = 20;
           
-          // Вычисляем высоту текста (только для кода)
-          let textHeight = 0;
+          // Вычисляем высоту текста (код сверху + длинный номер снизу)
+          let topTextHeight = 0;
+          let bottomTextHeight = 0;
+          const topPadding = 10;
+          const bottomPadding = 10;
+          
+          // Код сверху
           if (code) {
-            const codeLineHeight = 36; // Высота строки для кода (увеличено для термопринтера)
-            textHeight = codeLineHeight + textPadding;
+            topTextHeight = 36 + topPadding; // Высота строки для кода + отступ
+          }
+          
+          // Длинный номер снизу (может быть в 2 строки)
+          if (number) {
+            // Предполагаем максимум 2 строки по 15px каждая
+            bottomTextHeight = 36 + bottomPadding; // 2 строки * 18px
           }
           
           canvas.width = size + padding * 2;
-          canvas.height = size + padding * 2 + textHeight;
+          canvas.height = size + padding * 2 + topTextHeight + bottomTextHeight;
 
           if (ctx) {
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Рисуем QR-код
-            ctx.drawImage(img, padding, padding, size, size);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
             
-            // Рисуем текст под QR-кодом
-            if (code || title) {
-              ctx.fillStyle = '#000000'; // Черный цвет
-              ctx.font = 'bold 20px Arial'; // Жирный шрифт
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'top';
+            let currentY = padding;
+            
+            // Рисуем короткий код СВЕРХУ QR кода
+            if (code) {
+              ctx.font = 'bold 28px Arial';
+              ctx.fillStyle = '#000000';
+              const displayCode = code.startsWith('#') ? code : `#${code}`;
+              ctx.fillText(displayCode, canvas.width / 2, currentY);
+              currentY += topTextHeight;
+            }
+            
+            // Рисуем QR-код
+            ctx.drawImage(img, padding, currentY, size, size);
+            currentY += size + bottomPadding;
+            
+            // Рисуем длинный номер СНИЗУ QR кода (с переносом строки)
+            if (number) {
+              ctx.font = 'bold 14px Arial';
+              ctx.fillStyle = '#000000';
               
-              let y = padding + size + textPadding;
+              // Разбиваем длинный номер на части если не помещается
+              const maxWidth = size;
+              const chars = number.split('');
+              let lines: string[] = [];
+              let currentLine = '';
               
-              // Рисуем код холодильника СНИЗУ (без названия ИП)
-              if (code) {
-                ctx.font = 'bold 28px Arial'; // Увеличенный размер для термопринтера
-                ctx.fillStyle = '#000000'; // Черный цвет
-                // Добавляем # если его нет
-                const displayCode = code.startsWith('#') ? code : `#${code}`;
-                ctx.fillText(displayCode, canvas.width / 2, y);
+              for (const char of chars) {
+                const testLine = currentLine + char;
+                const metrics = ctx.measureText(testLine);
+                
+                if (metrics.width > maxWidth && currentLine) {
+                  lines.push(currentLine);
+                  currentLine = char;
+                  if (lines.length >= 2) break; // Максимум 2 строки
+                } else {
+                  currentLine = testLine;
+                }
               }
+              
+              if (currentLine && lines.length < 2) {
+                lines.push(currentLine);
+              }
+              
+              // Рисуем строки
+              lines.forEach((line, idx) => {
+                ctx.fillText(line, canvas.width / 2, currentY + (idx * 18));
+              });
             }
           }
           URL.revokeObjectURL(url);

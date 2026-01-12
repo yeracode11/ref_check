@@ -654,6 +654,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 value={`${window.location.origin}/checkin/${encodeURIComponent(fridge.code)}`}
                 title={fridge.name}
                 code={fridge.code}
+                number={fridge.number}
                 size={250}
               />
               <p className="text-sm text-slate-500 mt-4 text-center max-w-md">
