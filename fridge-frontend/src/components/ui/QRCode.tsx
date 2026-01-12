@@ -190,39 +190,19 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               bottomTextHeight = Math.min(lines.length, 2) * 16 + bottomPadding;
             }
           } else {
-            // Старый формат для остальных городов: только title снизу
-            if (title) {
-              // Вычисляем высоту для title (может быть в несколько строк)
-              ctx.font = 'bold 20px Arial';
-              const maxWidth = size;
-              const words = title.split(' ');
-              let lines: string[] = [];
-              let currentLine = '';
-              
-              for (const word of words) {
-                const testLine = currentLine ? `${currentLine} ${word}` : word;
-                const metrics = ctx.measureText(testLine);
-                
-                if (metrics.width > maxWidth && currentLine) {
-                  lines.push(currentLine);
-                  currentLine = word;
-                  if (lines.length >= 3) break; // Максимум 3 строки
-                } else {
-                  currentLine = testLine;
-                }
-              }
-              
-              if (currentLine && lines.length < 3) {
-                lines.push(currentLine);
-              }
-              
-              bottomTextHeight = Math.min(lines.length, 3) * 24 + bottomPadding;
-            }
+            // Старый формат для остальных городов: только QR код в canvas, текст статический HTML
+            // Не добавляем высоту для текста, так как он будет статическим HTML
           }
           
           // Теперь устанавливаем финальные размеры canvas
-          canvas.width = size + padding * 2;
-          canvas.height = size + padding * 2 + topTextHeight + bottomTextHeight;
+          if (isShymkent) {
+            canvas.width = size + padding * 2;
+            canvas.height = size + padding * 2 + topTextHeight + bottomTextHeight;
+          } else {
+            // Для остальных городов - только QR код, без текста в canvas
+            canvas.width = size + padding * 2;
+            canvas.height = size + padding * 2;
+          }
 
           // Пересоздаем контекст после изменения размеров canvas
           const finalCtx = canvas.getContext('2d');
@@ -290,43 +270,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               }
             } else {
               // Старый формат для остальных городов (Тараз и др.)
-              // Рисуем QR-код
+              // Рисуем только QR-код, текст будет статическим HTML ниже
               finalCtx.drawImage(img, padding, currentY, size, size);
-              currentY += size + bottomPadding;
-              
-              // Рисуем название торговой точки СНИЗУ QR кода
-              if (title) {
-                finalCtx.font = 'bold 20px Arial';
-                finalCtx.fillStyle = '#000000';
-                
-                // Разбиваем title на строки если не помещается
-                const maxWidth = size;
-                const words = title.split(' ');
-                let lines: string[] = [];
-                let currentLine = '';
-                
-                for (const word of words) {
-                  const testLine = currentLine ? `${currentLine} ${word}` : word;
-                  const metrics = finalCtx.measureText(testLine);
-                  
-                  if (metrics.width > maxWidth && currentLine) {
-                    lines.push(currentLine);
-                    currentLine = word;
-                    if (lines.length >= 3) break; // Максимум 3 строки
-                  } else {
-                    currentLine = testLine;
-                  }
-                }
-                
-                if (currentLine && lines.length < 3) {
-                  lines.push(currentLine);
-                }
-                
-                // Рисуем строки
-                lines.forEach((line, idx) => {
-                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 24));
-                });
-              }
             }
           URL.revokeObjectURL(url);
           resolve(canvas);
@@ -407,7 +352,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
       // Очищаем контейнер перед добавлением нового содержимого
       globalPrintContainer.innerHTML = '';
 
-      // Создаем изображение для печати (текст уже включен в canvas)
+      // Создаем изображение для печати
       const printImg = document.createElement('img');
       printImg.className = 'qr-print-image';
       printImg.src = dataUrl;
@@ -415,6 +360,33 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
       printImg.style.maxWidth = '80%';
       printImg.style.height = 'auto';
       globalPrintContainer.appendChild(printImg);
+
+      // Для не-Шымкента добавляем статический текст ниже QR кода
+      const isShymkent = cityName === 'Шымкент';
+      if (!isShymkent) {
+        const textContainer = document.createElement('div');
+        textContainer.className = 'qr-print-text';
+        textContainer.style.textAlign = 'center';
+        textContainer.style.marginTop = '20px';
+        textContainer.style.fontSize = '20px';
+        textContainer.style.fontWeight = 'bold';
+        textContainer.style.color = '#000000';
+        
+        if (code) {
+          const codeLine = document.createElement('div');
+          codeLine.textContent = code.startsWith('#') ? code : `#${code}`;
+          codeLine.style.marginBottom = '8px';
+          textContainer.appendChild(codeLine);
+        }
+        
+        if (title) {
+          const titleLine = document.createElement('div');
+          titleLine.textContent = title;
+          textContainer.appendChild(titleLine);
+        }
+        
+        globalPrintContainer.appendChild(textContainer);
+      }
 
       // Показываем контейнер перед печатью
       globalPrintContainer.style.left = '0';
@@ -448,9 +420,11 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
     }
   }
 
+  const isShymkent = cityName === 'Шымкент';
+
   return (
     <div className={`flex flex-col items-center gap-3 ${className}`}>
-      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm min-h-[200px] flex items-center justify-center">
+      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm min-h-[200px] flex flex-col items-center justify-center">
         {isVisible ? (
           <QRCodeSVG
             id={`qr-svg-${code || 'default'}`}
@@ -461,6 +435,21 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           />
         ) : (
           <div className="text-slate-400 text-sm">Загрузка QR-кода...</div>
+        )}
+        {/* Статический текст для не-Шымкента (Тараз и др.) */}
+        {!isShymkent && isVisible && (
+          <div className="mt-4 text-center">
+            {code && (
+              <div className="text-lg font-bold text-slate-900 mb-1">
+                {code.startsWith('#') ? code : `#${code}`}
+              </div>
+            )}
+            {title && (
+              <div className="text-base font-semibold text-slate-700">
+                {title}
+              </div>
+            )}
+          </div>
         )}
       </div>
       <div className="flex flex-col sm:flex-row gap-2">
