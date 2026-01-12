@@ -14,7 +14,7 @@ type QRCodeProps = {
 let globalPrintContainer: HTMLDivElement | null = null;
 let printStyleAdded = false;
 
-export function QRCode({ value, title, code, size = 150, className = '' }: QRCodeProps) {
+export function QRCode({ value, title, code, size = 120, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -133,64 +133,11 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
           const padding = 40;
           const textPadding = 20;
           
-          // Вычисляем высоту текста
+          // Вычисляем высоту текста (только для кода)
           let textHeight = 0;
-          if (code || title) {
-            const codeLineHeight = 24; // Высота строки для кода
-            const titleLineHeight = 24; // Высота строки для названия
-            
-            if (title) {
-              // Разбиваем название на строки (максимум 3 строки)
-              // Используем временный контекст для измерения
-              const tempCtx = ctx || canvas.getContext('2d');
-              if (tempCtx) {
-                tempCtx.font = 'bold 20px Arial';
-                const maxWidth = size - 20; // Оставляем небольшой отступ
-                const maxLines = 3;
-                const words = title.split(' ');
-                let lines: string[] = [];
-                let currentLine = '';
-                
-                for (const word of words) {
-                  const testLine = currentLine ? `${currentLine} ${word}` : word;
-                  const metrics = tempCtx.measureText(testLine);
-                  if (metrics.width > maxWidth && currentLine) {
-                    lines.push(currentLine);
-                    currentLine = word;
-                    if (lines.length >= maxLines) {
-                      // Обрезаем последнее слово, если нужно
-                      let truncated = word;
-                      while (tempCtx.measureText(truncated + '...').width > maxWidth && truncated.length > 1) {
-                        truncated = truncated.slice(0, -1);
-                      }
-                      currentLine = truncated + '...';
-                      break;
-                    }
-                  } else {
-                    currentLine = testLine;
-                  }
-                }
-                if (currentLine && lines.length < maxLines) {
-                  // Проверяем, не слишком ли длинная последняя строка
-                  if (tempCtx.measureText(currentLine).width > maxWidth) {
-                    let truncated = currentLine;
-                    while (tempCtx.measureText(truncated + '...').width > maxWidth && truncated.length > 1) {
-                      truncated = truncated.slice(0, -1);
-                    }
-                    lines.push(truncated + '...');
-                  } else {
-                    lines.push(currentLine);
-                  }
-                }
-                textHeight += Math.min(lines.length, maxLines) * titleLineHeight;
-              }
-            }
-            
-            if (code) {
-              textHeight += codeLineHeight + 8; // Высота кода + отступ
-            }
-            
-            textHeight += textPadding; // Отступ между QR и текстом
+          if (code) {
+            const codeLineHeight = 36; // Высота строки для кода (увеличено для термопринтера)
+            textHeight = codeLineHeight + textPadding;
           }
           
           canvas.width = size + padding * 2;
@@ -212,73 +159,10 @@ export function QRCode({ value, title, code, size = 150, className = '' }: QRCod
               
               let y = padding + size + textPadding;
               
-              // Рисуем название с переносами (СВЕРХУ, БОЛЬШИМ ШРИФТОМ)
-              if (title) {
-                ctx.font = 'bold 20px Arial';
-                const maxWidth = size - 20; // Оставляем небольшой отступ по бокам
-                const maxLines = 3; // Максимум 3 строки
-                const lineHeight = 24;
-                
-                // Функция для разбиения текста на строки
-                const wrapText = (text: string, maxWidth: number): string[] => {
-                  const words = text.split(' ');
-                  const lines: string[] = [];
-                  let currentLine = '';
-                  
-                  for (const word of words) {
-                    const testLine = currentLine ? `${currentLine} ${word}` : word;
-                    const metrics = ctx.measureText(testLine);
-                    
-                    if (metrics.width > maxWidth && currentLine) {
-                      // Если текущая строка слишком длинная, сохраняем её и начинаем новую
-                      lines.push(currentLine);
-                      currentLine = word;
-                      
-                      // Если достигли максимума строк, обрезаем последнее слово
-                      if (lines.length >= maxLines) {
-                        // Обрезаем текущее слово, если оно слишком длинное
-                        let truncated = word;
-                        while (ctx.measureText(truncated + '...').width > maxWidth && truncated.length > 1) {
-                          truncated = truncated.slice(0, -1);
-                        }
-                        currentLine = truncated + '...';
-                        break;
-                      }
-                    } else {
-                      currentLine = testLine;
-                    }
-                  }
-                  
-                  // Добавляем последнюю строку, если есть место
-                  if (currentLine && lines.length < maxLines) {
-                    // Проверяем, не слишком ли длинная последняя строка
-                    if (ctx.measureText(currentLine).width > maxWidth) {
-                      let truncated = currentLine;
-                      while (ctx.measureText(truncated + '...').width > maxWidth && truncated.length > 1) {
-                        truncated = truncated.slice(0, -1);
-                      }
-                      lines.push(truncated + '...');
-                    } else {
-                      lines.push(currentLine);
-                    }
-                  }
-                  
-                  return lines;
-                };
-                
-                const lines = wrapText(title, maxWidth);
-                
-                for (const line of lines) {
-                  ctx.fillText(line, canvas.width / 2, y);
-                  y += lineHeight;
-                }
-              }
-              
-              // Рисуем код СНИЗУ (меньшим шрифтом)
+              // Рисуем код холодильника СНИЗУ (без названия ИП)
               if (code) {
-                y += 8; // Небольшой отступ между названием и кодом
-                ctx.font = '16px Arial'; // Обычный шрифт, меньший размер
-                ctx.fillStyle = '#666666'; // Серый цвет
+                ctx.font = 'bold 28px Arial'; // Увеличенный размер для термопринтера
+                ctx.fillStyle = '#000000'; // Черный цвет
                 // Добавляем # если его нет
                 const displayCode = code.startsWith('#') ? code : `#${code}`;
                 ctx.fillText(displayCode, canvas.width / 2, y);
