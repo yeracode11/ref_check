@@ -72,10 +72,10 @@ async function migrateShymkentCodes() {
     console.log(`Значение счетчика: ${counterValue}`);
     
     // Находим РЕАЛЬНЫЙ максимальный код среди коротких кодов (длина <= 10 символов)
-    const allFridges = await Fridge.find({}).select('code');
+    const existingFridges = await Fridge.find({}).select('code');
     let maxCode = 0;
     
-    for (const f of allFridges) {
+    for (const f of existingFridges) {
       // Только короткие коды (не длинные из Excel)
       if (f.code && f.code.length <= 10) {
         const codeNum = parseInt(f.code);
