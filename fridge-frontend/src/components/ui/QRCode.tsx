@@ -7,6 +7,7 @@ type QRCodeProps = {
   title?: string;
   code?: string;
   number?: string; // Длинный номер из Excel
+  cityName?: string; // Название города для определения формата
   size?: number;
   className?: string;
 };
@@ -15,7 +16,7 @@ type QRCodeProps = {
 let globalPrintContainer: HTMLDivElement | null = null;
 let printStyleAdded = false;
 
-export function QRCode({ value, title, code, number, size = 100, className = '' }: QRCodeProps) {
+export function QRCode({ value, title, code, number, cityName, size = 100, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -130,62 +131,45 @@ export function QRCode({ value, title, code, number, size = 100, className = '' 
         const url = URL.createObjectURL(svgBlob);
 
         img.onload = () => {
+          // Определяем формат: для Шымкента - новый формат, для остальных - старый
+          const isShymkent = cityName === 'Шымкент';
+          
           // Добавляем отступы
           const padding = 40;
           const textPadding = 20;
           
-          // Вычисляем высоту текста (код сверху + длинный номер снизу)
           let topTextHeight = 0;
           let bottomTextHeight = 0;
           const topPadding = 10;
           const bottomPadding = 10;
           
-          // Код сверху
-          if (code) {
-            topTextHeight = 30 + topPadding; // Высота строки для кода + отступ
-          }
-          
-          // Длинный номер снизу (может быть в 2 строки)
-          if (number) {
-            bottomTextHeight = 32 + bottomPadding; // 2 строки * 16px
-          }
-          
+          // Сначала устанавливаем минимальные размеры canvas для вычисления высоты текста
           canvas.width = size + padding * 2;
-          canvas.height = size + padding * 2 + topTextHeight + bottomTextHeight;
-
-          if (ctx) {
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            
-            let currentY = padding;
-            
-            // Рисуем короткий код СВЕРХУ QR кода
+          canvas.height = size + padding * 2;
+          
+          if (!ctx) {
+            URL.revokeObjectURL(url);
+            resolve(null);
+            return;
+          }
+          
+          // Временно настраиваем контекст для измерения текста
+          ctx.font = 'bold 20px Arial';
+          ctx.textAlign = 'center';
+          
+          if (isShymkent) {
+            // Новый формат для Шымкента: код сверху + номер снизу
             if (code) {
-              ctx.font = 'bold 24px Arial';
-              ctx.fillStyle = '#000000';
-              const displayCode = code.startsWith('#') ? code : `#${code}`;
-              ctx.fillText(displayCode, canvas.width / 2, currentY);
-              currentY += topTextHeight;
+              topTextHeight = 30 + topPadding;
             }
-            
-            // Рисуем QR-код
-            ctx.drawImage(img, padding, currentY, size, size);
-            currentY += size + bottomPadding;
-            
-            // Рисуем длинный номер СНИЗУ QR кода (с переносом строки)
             if (number) {
-              ctx.font = 'bold 12px Arial';
-              ctx.fillStyle = '#000000';
-              
-              // Разбиваем длинный номер на части если не помещается
+              // Вычисляем высоту для длинного номера (максимум 2 строки)
               const maxWidth = size;
               const chars = number.split('');
               let lines: string[] = [];
               let currentLine = '';
               
+              ctx.font = 'bold 12px Arial';
               for (const char of chars) {
                 const testLine = currentLine + char;
                 const metrics = ctx.measureText(testLine);
@@ -193,7 +177,7 @@ export function QRCode({ value, title, code, number, size = 100, className = '' 
                 if (metrics.width > maxWidth && currentLine) {
                   lines.push(currentLine);
                   currentLine = char;
-                  if (lines.length >= 2) break; // Максимум 2 строки
+                  if (lines.length >= 2) break;
                 } else {
                   currentLine = testLine;
                 }
@@ -203,12 +187,147 @@ export function QRCode({ value, title, code, number, size = 100, className = '' 
                 lines.push(currentLine);
               }
               
-              // Рисуем строки
-              lines.forEach((line, idx) => {
-                ctx.fillText(line, canvas.width / 2, currentY + (idx * 16));
-              });
+              bottomTextHeight = Math.min(lines.length, 2) * 16 + bottomPadding;
+            }
+          } else {
+            // Старый формат для остальных городов: только title снизу
+            if (title) {
+              // Вычисляем высоту для title (может быть в несколько строк)
+              ctx.font = 'bold 20px Arial';
+              const maxWidth = size;
+              const words = title.split(' ');
+              let lines: string[] = [];
+              let currentLine = '';
+              
+              for (const word of words) {
+                const testLine = currentLine ? `${currentLine} ${word}` : word;
+                const metrics = ctx.measureText(testLine);
+                
+                if (metrics.width > maxWidth && currentLine) {
+                  lines.push(currentLine);
+                  currentLine = word;
+                  if (lines.length >= 3) break; // Максимум 3 строки
+                } else {
+                  currentLine = testLine;
+                }
+              }
+              
+              if (currentLine && lines.length < 3) {
+                lines.push(currentLine);
+              }
+              
+              bottomTextHeight = Math.min(lines.length, 3) * 24 + bottomPadding;
             }
           }
+          
+          // Теперь устанавливаем финальные размеры canvas
+          canvas.width = size + padding * 2;
+          canvas.height = size + padding * 2 + topTextHeight + bottomTextHeight;
+
+          // Пересоздаем контекст после изменения размеров canvas
+          const finalCtx = canvas.getContext('2d');
+          if (!finalCtx) {
+            URL.revokeObjectURL(url);
+            resolve(null);
+            return;
+          }
+          
+          finalCtx.fillStyle = 'white';
+          finalCtx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          finalCtx.textAlign = 'center';
+          finalCtx.textBaseline = 'top';
+            
+            let currentY = padding;
+            
+            if (isShymkent) {
+              // Новый формат для Шымкента
+              // Рисуем короткий код СВЕРХУ QR кода
+              if (code) {
+                finalCtx.font = 'bold 24px Arial';
+                finalCtx.fillStyle = '#000000';
+                const displayCode = code.startsWith('#') ? code : `#${code}`;
+                finalCtx.fillText(displayCode, canvas.width / 2, currentY);
+                currentY += topTextHeight;
+              }
+              
+              // Рисуем QR-код
+              finalCtx.drawImage(img, padding, currentY, size, size);
+              currentY += size + bottomPadding;
+              
+              // Рисуем длинный номер СНИЗУ QR кода (с переносом строки)
+              if (number) {
+                finalCtx.font = 'bold 12px Arial';
+                finalCtx.fillStyle = '#000000';
+                
+                // Разбиваем длинный номер на части если не помещается
+                const maxWidth = size;
+                const chars = number.split('');
+                let lines: string[] = [];
+                let currentLine = '';
+                
+                for (const char of chars) {
+                  const testLine = currentLine + char;
+                  const metrics = finalCtx.measureText(testLine);
+                  
+                  if (metrics.width > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = char;
+                    if (lines.length >= 2) break; // Максимум 2 строки
+                  } else {
+                    currentLine = testLine;
+                  }
+                }
+                
+                if (currentLine && lines.length < 2) {
+                  lines.push(currentLine);
+                }
+                
+                // Рисуем строки
+                lines.forEach((line, idx) => {
+                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 16));
+                });
+              }
+            } else {
+              // Старый формат для остальных городов (Тараз и др.)
+              // Рисуем QR-код
+              finalCtx.drawImage(img, padding, currentY, size, size);
+              currentY += size + bottomPadding;
+              
+              // Рисуем название торговой точки СНИЗУ QR кода
+              if (title) {
+                finalCtx.font = 'bold 20px Arial';
+                finalCtx.fillStyle = '#000000';
+                
+                // Разбиваем title на строки если не помещается
+                const maxWidth = size;
+                const words = title.split(' ');
+                let lines: string[] = [];
+                let currentLine = '';
+                
+                for (const word of words) {
+                  const testLine = currentLine ? `${currentLine} ${word}` : word;
+                  const metrics = finalCtx.measureText(testLine);
+                  
+                  if (metrics.width > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = word;
+                    if (lines.length >= 3) break; // Максимум 3 строки
+                  } else {
+                    currentLine = testLine;
+                  }
+                }
+                
+                if (currentLine && lines.length < 3) {
+                  lines.push(currentLine);
+                }
+                
+                // Рисуем строки
+                lines.forEach((line, idx) => {
+                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 24));
+                });
+              }
+            }
           URL.revokeObjectURL(url);
           resolve(canvas);
         };

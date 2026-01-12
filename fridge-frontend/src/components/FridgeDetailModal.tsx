@@ -656,6 +656,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 title={fridge.name}
                 code={fridge.code}
                 number={fridge.number}
+                cityName={fridge.cityId?.name}
                 size={250}
               />
               <p className="text-sm text-slate-500 mt-4 text-center max-w-md">

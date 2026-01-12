@@ -1149,6 +1149,7 @@ export default function AdminDashboard() {
                 title={selectedQRFridge.name}
                 code={selectedQRFridge.code}
                 number={selectedQRFridge.number}
+                cityName={selectedQRFridge.city?.name}
                 size={200}
               />
             </div>
