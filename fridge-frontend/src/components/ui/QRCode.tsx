@@ -15,7 +15,7 @@ type QRCodeProps = {
 let globalPrintContainer: HTMLDivElement | null = null;
 let printStyleAdded = false;
 
-export function QRCode({ value, title, code, number, size = 120, className = '' }: QRCodeProps) {
+export function QRCode({ value, title, code, number, size = 100, className = '' }: QRCodeProps) {
   const [downloading, setDownloading] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -142,13 +142,12 @@ export function QRCode({ value, title, code, number, size = 120, className = '' 
           
           // Код сверху
           if (code) {
-            topTextHeight = 36 + topPadding; // Высота строки для кода + отступ
+            topTextHeight = 30 + topPadding; // Высота строки для кода + отступ
           }
           
           // Длинный номер снизу (может быть в 2 строки)
           if (number) {
-            // Предполагаем максимум 2 строки по 15px каждая
-            bottomTextHeight = 36 + bottomPadding; // 2 строки * 18px
+            bottomTextHeight = 32 + bottomPadding; // 2 строки * 16px
           }
           
           canvas.width = size + padding * 2;
@@ -165,7 +164,7 @@ export function QRCode({ value, title, code, number, size = 120, className = '' 
             
             // Рисуем короткий код СВЕРХУ QR кода
             if (code) {
-              ctx.font = 'bold 28px Arial';
+              ctx.font = 'bold 24px Arial';
               ctx.fillStyle = '#000000';
               const displayCode = code.startsWith('#') ? code : `#${code}`;
               ctx.fillText(displayCode, canvas.width / 2, currentY);
@@ -178,7 +177,7 @@ export function QRCode({ value, title, code, number, size = 120, className = '' 
             
             // Рисуем длинный номер СНИЗУ QR кода (с переносом строки)
             if (number) {
-              ctx.font = 'bold 14px Arial';
+              ctx.font = 'bold 12px Arial';
               ctx.fillStyle = '#000000';
               
               // Разбиваем длинный номер на части если не помещается
@@ -206,7 +205,7 @@ export function QRCode({ value, title, code, number, size = 120, className = '' 
               
               // Рисуем строки
               lines.forEach((line, idx) => {
-                ctx.fillText(line, canvas.width / 2, currentY + (idx * 18));
+                ctx.fillText(line, canvas.width / 2, currentY + (idx * 16));
               });
             }
           }
