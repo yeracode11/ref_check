@@ -37,6 +37,7 @@ type CheckinItem = {
 type FridgeDetail = {
   _id: string;
   code: string;
+  number?: string; // Длинный номер из Excel
   name: string;
   address?: string;
   description?: string;

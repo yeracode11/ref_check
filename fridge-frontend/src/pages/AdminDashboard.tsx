@@ -22,6 +22,7 @@ type ClientInfo = {
 type AdminFridge = {
   id: string;
   code: string;
+  number?: string; // Длинный номер из Excel
   name: string;
   address?: string;
   city?: { _id?: string; name: string; code: string } | null;
