@@ -64,17 +64,34 @@ async function migrateShymkentCodes() {
 
     console.log('=== Миграция кодов холодильников ===\n');
     
+    // Находим максимальный существующий короткий код
+    const existingFridgesWithShortCode = await Fridge.find({
+      code: { $regex: /^\d+$/ } // Только цифры
+    });
+    
+    let maxCode = 0;
+    for (const f of existingFridgesWithShortCode) {
+      const codeNum = parseInt(f.code);
+      if (!isNaN(codeNum) && codeNum > maxCode) {
+        maxCode = codeNum;
+      }
+    }
+    
+    console.log(`Максимальный существующий код: #${maxCode}`);
+    console.log(`Шымкентские холодильники начнутся с: #${maxCode + 1}\n`);
+    
     let migrated = 0;
     let errors = 0;
+    let currentNumber = maxCode;
 
     for (const fridge of fridges) {
       try {
         // Сохраняем старый длинный код
         const oldCode = fridge.code;
 
-        // Генерируем новый короткий код
-        const seqNumber = await getNextSequence('fridge');
-        const shortCode = String(seqNumber);
+        // Генерируем новый короткий код (продолжаем нумерацию)
+        currentNumber++;
+        const shortCode = String(currentNumber);
 
         // Обновляем холодильник
         fridge.code = shortCode; // Короткий код
@@ -94,14 +111,28 @@ async function migrateShymkentCodes() {
       }
     }
 
-    console.log('\n=== Результаты миграции ===');
+    // Обновляем счетчик чтобы новые холодильники продолжали нумерацию
+    if (migrated > 0) {
+      const Counter = mongoose.model('Counter');
+      await Counter.findByIdAndUpdate(
+        'fridge',
+        { seq: currentNumber },
+        { upsert: true }
+      );
+      console.log(`✓ Обновлен счетчик: следующий холодильник будет #${currentNumber + 1}\n`);
+    }
+
+    console.log('=== Результаты миграции ===');
     console.log(`✓ Мигрировано: ${migrated}`);
     console.log(`❌ Ошибок: ${errors}`);
     console.log(`📊 Всего холодильников: ${fridges.length}`);
+    if (migrated > 0) {
+      console.log(`📍 Диапазон кодов: #${maxCode + 1} - #${currentNumber}`);
+    }
 
     console.log('\n✅ Миграция завершена!');
     console.log('📋 Что изменилось:');
-    console.log('  • code теперь содержит короткий номер (#1, #2, #3...)');
+    console.log('  • code теперь содержит короткий номер (продолжение общей нумерации)');
     console.log('  • number содержит длинный номер из Excel');
     console.log('  • Все отметки мерчендайзеров сохранены');
     console.log('  • QR коды будут показывать короткий номер\n');
