@@ -226,8 +226,10 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 // GET /api/admin/export-fridges
 // Экспорт всех холодильников в Excel
 // Доступно админам (все города) и бухгалтерам (только их город)
+// Параметры: ?geocode=false - отключить геокодирование (быстрее для больших объемов)
 router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
+    const enableGeocoding = req.query.geocode !== 'false'; // По умолчанию включено, но можно отключить
     // Агрегируем последние отметки по каждому холодильнику
     const lastCheckins = await Checkin.aggregate([
       { $sort: { fridgeId: 1, visitedAt: -1 } },
@@ -346,12 +348,16 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
         else status = 'Давно';
       }
 
-      // Конвертируем координаты в адрес
+      // Конвертируем координаты в адрес (только если включено геокодирование)
       let geocodedAddress = '';
-      if (f.location && f.location.coordinates && f.location.coordinates[0] !== 0 && f.location.coordinates[1] !== 0) {
+      if (enableGeocoding && f.location && f.location.coordinates && f.location.coordinates[0] !== 0 && f.location.coordinates[1] !== 0) {
         const [lng, lat] = f.location.coordinates;
         const addr = await reverseGeocode(lat, lng);
         geocodedAddress = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      } else if (f.location && f.location.coordinates && f.location.coordinates[0] !== 0 && f.location.coordinates[1] !== 0) {
+        // Если геокодирование отключено, просто показываем координаты
+        const [lng, lat] = f.location.coordinates;
+        geocodedAddress = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
       }
 
       excelData.push({

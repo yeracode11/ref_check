@@ -117,8 +117,11 @@ export default function AccountantDashboard() {
   const handleExportExcel = async () => {
     try {
       setExporting(true);
-      const response = await api.get('/api/admin/export-fridges', {
+      // Для больших объемов отключаем геокодирование (быстрее)
+      // Можно добавить опцию для пользователя, но пока отключаем для скорости
+      const response = await api.get('/api/admin/export-fridges?geocode=false', {
         responseType: 'blob',
+        timeout: 300000, // 5 минут
       });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
