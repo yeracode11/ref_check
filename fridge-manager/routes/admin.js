@@ -1230,9 +1230,18 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
     ]);
 
     // 3. Топ непосещаемых холодильников (только из города)
+    // Для Шымкента нужно учитывать и code, и number
+    const fridgeIds = [];
+    cityFridges.forEach((f) => {
+      fridgeIds.push(f.code);
+      if (f.number) {
+        fridgeIds.push(f.number);
+      }
+    });
+    
     const lastCheckins = await Checkin.aggregate([
       {
-        $match: { fridgeId: { $in: fridgeCodes } },
+        $match: { fridgeId: { $in: fridgeIds } },
       },
       { $sort: { visitedAt: -1 } },
       {
@@ -1246,15 +1255,19 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
     const lastVisitMap = new Map();
     lastCheckins.forEach((c) => lastVisitMap.set(c._id, c.lastVisit));
 
-    const fridgesWithLastVisit = cityFridges.map((f) => ({
-      code: f.code,
-      name: f.name,
-      address: f.address,
-      lastVisit: lastVisitMap.get(f.code) || null,
-      daysSinceVisit: lastVisitMap.get(f.code)
-        ? Math.floor((Date.now() - new Date(lastVisitMap.get(f.code)).getTime()) / (1000 * 60 * 60 * 24))
-        : null,
-    }));
+    const fridgesWithLastVisit = cityFridges.map((f) => {
+      // Для Шымкента ищем и по code, и по number
+      const lastVisit = lastVisitMap.get(f.code) || (f.number ? lastVisitMap.get(f.number) : null) || null;
+      return {
+        code: f.code,
+        name: f.name,
+        address: f.address,
+        lastVisit: lastVisit,
+        daysSinceVisit: lastVisit
+          ? Math.floor((Date.now() - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24))
+          : null,
+      };
+    });
 
     const topUnvisited = fridgesWithLastVisit
       .sort((a, b) => {
