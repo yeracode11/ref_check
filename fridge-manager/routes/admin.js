@@ -256,6 +256,7 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
 
     // Получаем холодильники и сортируем: для Шымкента по number, для остальных по code
     const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code');
+    console.log(`[Export] Found ${fridges.length} fridges to export`);
     
     // Сортируем: для Шымкента по number, для остальных по code
     fridges.sort((a, b) => {
@@ -334,8 +335,16 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
 
     // Подготавливаем данные для Excel с конвертацией координат в адреса
     const excelData = [];
+    const totalFridges = fridges.length;
+    console.log(`[Export] Processing ${totalFridges} fridges...`);
+    
     for (let i = 0; i < fridges.length; i++) {
       const f = fridges[i];
+      
+      // Логируем прогресс каждые 100 холодильников
+      if (i % 100 === 0 && i > 0) {
+        console.log(`[Export] Progress: ${i}/${totalFridges} (${Math.round(i / totalFridges * 100)}%)`);
+      }
       // Для Шымкента check-ins могут быть привязаны к number, для остальных - к code
       // Ищем последнюю отметку и по code, и по number
       const lastVisit = lastByFridgeId.get(f.code) || (f.number ? lastByFridgeId.get(f.number) : null) || null;
@@ -385,11 +394,13 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
         'Активен': f.active ? 'Да' : 'Нет',
       });
       
-      // Небольшая задержка между запросами для больших отчетов
-      if (i < fridges.length - 1 && i % 10 === 0) {
+      // Небольшая задержка между запросами для больших отчетов (только если включено геокодирование)
+      if (enableGeocoding && i < fridges.length - 1 && i % 10 === 0) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
+    
+    console.log(`[Export] Processed ${excelData.length} rows, generating Excel file...`);
 
     // Создаем рабочую книгу Excel
     const worksheet = XLSX.utils.json_to_sheet(excelData);
