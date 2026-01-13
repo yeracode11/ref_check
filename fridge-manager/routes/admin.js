@@ -1166,8 +1166,15 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
     const cityFridges = await Fridge.find({ 
       cityId: req.user.cityId,
       active: true 
-    }).select('code name address warehouseStatus');
-    const fridgeCodes = cityFridges.map(f => f.code);
+    }).select('code number name address warehouseStatus');
+    // Для Шымкента нужно учитывать и code, и number
+    const fridgeCodes = [];
+    cityFridges.forEach((f) => {
+      fridgeCodes.push(f.code);
+      if (f.number) {
+        fridgeCodes.push(f.number);
+      }
+    });
 
     if (fridgeCodes.length === 0) {
       return res.json({
