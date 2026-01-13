@@ -311,7 +311,9 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
     const excelData = [];
     for (let i = 0; i < fridges.length; i++) {
       const f = fridges[i];
-      const lastVisit = lastByFridgeId.get(f.code) || null;
+      // Для Шымкента check-ins могут быть привязаны к number, для остальных - к code
+      // Ищем последнюю отметку и по code, и по number
+      const lastVisit = lastByFridgeId.get(f.code) || (f.number ? lastByFridgeId.get(f.number) : null) || null;
       
       let status = 'Нет отметок';
       if (lastVisit) {
@@ -331,6 +333,7 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
 
       excelData.push({
         'Код': f.code || '',
+        'Номер': f.number || '', // Добавляем колонку с длинным номером для Шымкента
         'Название': f.name || '',
         'Город': f.cityId?.name || '',
         'Адрес': f.address || '',
@@ -367,6 +370,7 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
     // Настраиваем ширину колонок
     const columnWidths = [
       { wch: 10 }, // Код
+      { wch: 30 }, // Номер (длинный номер для Шымкента)
       { wch: 30 }, // Название
       { wch: 15 }, // Город
       { wch: 40 }, // Адрес
