@@ -518,6 +518,30 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     const spvIdx = findColumnIndex(['спв']);
     const addressIdx = findColumnIndex(['адрес']);
     const tpIdx = findColumnIndex(['тп']);
+    
+    // Для Шымкента ищем колонку с номером холодильника из Excel
+    // Ищем колонку, которая содержит "номер" или "код", но не "договор"
+    let fridgeNumberIdx = -1;
+    for (let i = 0; i < headers.length; i++) {
+      const header = String(headers[i] || '').toLowerCase();
+      if ((header.includes('номер') || header.includes('код')) && 
+          !header.includes('договор') && 
+          !header.includes('дог') &&
+          (header.includes('хо') || header.includes('холодильник') || header.includes('хол'))) {
+        fridgeNumberIdx = i;
+        break;
+      }
+    }
+    // Если не нашли специфичную колонку, ищем просто "номер" или "код" (но не договор)
+    if (fridgeNumberIdx === -1) {
+      for (let i = 0; i < headers.length; i++) {
+        const header = String(headers[i] || '').toLowerCase();
+        if ((header === 'номер' || header === 'код') && i !== contractNumIdx) {
+          fridgeNumberIdx = i;
+          break;
+        }
+      }
+    }
 
     console.log('[Import] Column indices:', {
       contractorIdx,
@@ -649,7 +673,17 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         code = String(codeCounter);
       }
 
-      records.push({
+      // Для Шымкента сохраняем длинный номер из Excel в поле number
+      const isShymkent = city.name === 'Шымкент';
+      let fridgeNumber = null;
+      if (isShymkent && fridgeNumberIdx >= 0) {
+        const numberValue = String(row[fridgeNumberIdx] || '').trim();
+        if (numberValue && numberValue !== 'null' && numberValue !== 'undefined') {
+          fridgeNumber = numberValue;
+        }
+      }
+
+      const record = {
         code,
         name: name.substring(0, 200),
         cityId: city._id,
@@ -660,7 +694,14 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
           coordinates: [0.0, 0.0], // Временные координаты
         },
         active: true,
-      });
+      };
+
+      // Добавляем number только если он есть (для Шымкента)
+      if (fridgeNumber) {
+        record.number = fridgeNumber;
+      }
+
+      records.push(record);
 
       codeCounter++;
     }
