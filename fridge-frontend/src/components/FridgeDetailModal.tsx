@@ -316,7 +316,9 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             </div>
             <div>
               <h2 className="font-semibold text-slate-900">{fridge.name}</h2>
-              <p className="text-sm text-slate-500 font-mono">#{fridge.code}</p>
+              <p className="text-sm text-slate-500 font-mono">
+                {fridge.cityId?.name === 'Шымкент' && fridge.number ? fridge.number : `#${fridge.code}`}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -380,8 +382,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Информация</h3>
               <dl className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Код:</dt>
-                  <dd className="font-mono text-slate-900">{fridge.code}</dd>
+                  <dt className="text-slate-500">
+                    {fridge.cityId?.name === 'Шымкент' && fridge.number ? 'Номер:' : 'Код:'}
+                  </dt>
+                  <dd className="font-mono text-slate-900">
+                    {fridge.cityId?.name === 'Шымкент' && fridge.number ? fridge.number : fridge.code}
+                  </dd>
                 </div>
                 {fridge.cityId && (
                   <div className="flex justify-between">
@@ -674,7 +680,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <div className="bg-white rounded-lg p-6 max-w-sm mx-4 relative z-[1201]" style={{ zIndex: 1201 }}>
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить холодильник?</h3>
               <p className="text-slate-600 text-sm mb-4">
-                Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> (#{fridge.code})?
+                Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> ({fridge.cityId?.name === 'Шымкент' && fridge.number ? fridge.number : `#${fridge.code}`})?
                 Все связанные отметки также будут удалены. Это действие нельзя отменить.
               </p>
               <div className="flex gap-3">

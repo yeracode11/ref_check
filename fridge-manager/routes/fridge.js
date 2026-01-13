@@ -38,6 +38,7 @@ router.get('/', authenticateToken, async (req, res) => {
         filter.$or.push(
           { name: searchRegex },
           { code: searchRegex },
+          { number: searchRegex }, // Добавляем поиск по длинному номеру
           { address: searchRegex },
           { description: searchRegex }
         );
@@ -45,6 +46,7 @@ router.get('/', authenticateToken, async (req, res) => {
         filter.$or = [
           { name: searchRegex },
           { code: searchRegex },
+          { number: searchRegex }, // Добавляем поиск по длинному номеру
           { address: searchRegex },
           { description: searchRegex },
         ];
