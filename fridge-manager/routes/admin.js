@@ -979,8 +979,12 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
       }
     }
 
-    // Получаем чек-ины по коду холодильника
-    const checkins = await Checkin.find({ fridgeId: fridge.code })
+    // Получаем чек-ины по коду/номеру холодильника (для Шымкента может быть number)
+    const fridgeIds = [fridge.code];
+    if (fridge.number) {
+      fridgeIds.push(fridge.number);
+    }
+    const checkins = await Checkin.find({ fridgeId: { $in: fridgeIds } })
       .sort({ visitedAt: -1 })
       .limit(parseInt(limit, 10));
 
@@ -1728,7 +1732,12 @@ router.delete('/fridges/:id', authenticateToken, requireAdmin, async (req, res) 
     }
 
     // Также удаляем связанные чек-ины
-    const deletedCheckins = await Checkin.deleteMany({ fridgeId: fridge.code });
+      // Удаляем все check-ins для этого холодильника (и по code, и по number)
+      const fridgeIds = [fridge.code];
+      if (fridge.number) {
+        fridgeIds.push(fridge.number);
+      }
+      const deletedCheckins = await Checkin.deleteMany({ fridgeId: { $in: fridgeIds } });
 
     await Fridge.findByIdAndDelete(req.params.id);
 

@@ -56,14 +56,26 @@ router.post('/', async (req, res) => {
     });
 
     // Обновляем местоположение, адрес и статус холодильника по последней отметке
-    // fridgeId в чек-ине должен совпадать с code в модели Fridge
+    // fridgeId в чек-ине может быть как code, так и number (для Шымкента)
     try {
-      const fridge = await Fridge.findOne({ code: fridgeId });
+      // Ищем холодильник и по code, и по number
+      const fridge = await Fridge.findOne({
+        $or: [
+          { code: fridgeId },
+          { number: fridgeId }
+        ]
+      });
       if (!fridge) {
-        console.warn(`[Checkins] Fridge with code ${fridgeId} not found`);
+        console.warn(`[Checkins] Fridge with code/number ${fridgeId} not found`);
       } else {
         // Получаем все отметки для этого холодильника
-        const allCheckins = await Checkin.find({ fridgeId }).sort({ visitedAt: 1 });
+        // Используем и code, и number для поиска (на случай, если часть отметок еще не мигрирована)
+        const allCheckins = await Checkin.find({
+          $or: [
+            { fridgeId: fridge.code },
+            { fridgeId: fridge.number }
+          ].filter(Boolean) // Убираем undefined, если number отсутствует
+        }).sort({ visitedAt: 1 });
         const totalCheckins = allCheckins.length;
         
         let newWarehouseStatus = fridge.warehouseStatus;
@@ -118,8 +130,14 @@ router.post('/', async (req, res) => {
           }
         }
         
+        // Обновляем холодильник (ищем и по code, и по number)
         await Fridge.findOneAndUpdate(
-          { code: fridgeId },
+          {
+            $or: [
+              { code: fridgeId },
+              { number: fridgeId }
+            ]
+          },
           {
             $set: {
               location,
