@@ -252,7 +252,30 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       fridgeFilter.cityId = req.user.cityId;
     }
 
-    const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').sort({ code: 1 });
+    // Получаем холодильники и сортируем: для Шымкента по number, для остальных по code
+    const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code');
+    
+    // Сортируем: для Шымкента по number, для остальных по code
+    fridges.sort((a, b) => {
+      const isShymkentA = a.cityId?.name === 'Шымкент';
+      const isShymkentB = b.cityId?.name === 'Шымкент';
+      
+      if (isShymkentA && isShymkentB) {
+        // Оба из Шымкента - сортируем по number
+        const numA = a.number || '';
+        const numB = b.number || '';
+        return numA.localeCompare(numB);
+      } else if (isShymkentA) {
+        return -1; // Шымкент в начале
+      } else if (isShymkentB) {
+        return 1; // Шымкент в начале
+      } else {
+        // Оба не из Шымкента - сортируем по code
+        const codeA = a.code || '';
+        const codeB = b.code || '';
+        return codeA.localeCompare(codeB);
+      }
+    });
 
     const now = Date.now();
 
