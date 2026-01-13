@@ -159,8 +159,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           
           if (isShymkent) {
             // Новый формат для Шымкента: только длинный номер снизу (без кода с #)
-            // Уменьшаем размер QR кода для Шымкента
-            const shymkentQRSize = Math.floor(size * 0.85); // 85% от исходного размера
+            // Увеличиваем размер QR кода для Шымкента
+            const shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера (увеличено с 85%)
             
             // Убираем код сверху, оставляем только номер снизу
             if (number) {
@@ -233,7 +233,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           
           // Теперь устанавливаем финальные размеры canvas
           if (isShymkent) {
-            const shymkentQRSize = Math.floor(size * 0.85);
+            const shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера
             canvas.width = shymkentQRSize + padding * 2;
             // Убрали topTextHeight, так как код сверху больше не отображается
             canvas.height = shymkentQRSize + padding * 2 + bottomTextHeight;
@@ -262,7 +262,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             
             if (isShymkent) {
               // Новый формат для Шымкента: только длинный номер снизу (без кода с #)
-              const shymkentQRSize = Math.floor(size * 0.85);
+              const shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера
               const qrX = (canvas.width - shymkentQRSize) / 2;
               
               // Рисуем QR-код (уменьшенный) - код сверху убран
@@ -481,8 +481,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
 
   const isShymkent = cityName === 'Шымкент';
 
-  // Уменьшаем размер QR кода: для Шымкента 85%, для Тараза 92% (увеличено для четкости при печати)
-  const displaySize = isShymkent ? Math.floor(size * 0.85) : Math.floor(size * 0.92);
+  // Размер QR кода: для Шымкента 92%, для Тараза 92% (увеличено для четкости при печати)
+  const displaySize = isShymkent ? Math.floor(size * 0.92) : Math.floor(size * 0.92);
 
   return (
     <div className={`flex flex-col items-center gap-3 ${className}`}>
