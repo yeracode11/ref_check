@@ -158,13 +158,11 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           ctx.textAlign = 'center';
           
           if (isShymkent) {
-            // Новый формат для Шымкента: код сверху + номер снизу
+            // Новый формат для Шымкента: только длинный номер снизу (без кода с #)
             // Уменьшаем размер QR кода для Шымкента
             const shymkentQRSize = Math.floor(size * 0.85); // 85% от исходного размера
             
-            if (code) {
-              topTextHeight = 30 + topPadding;
-            }
+            // Убираем код сверху, оставляем только номер снизу
             if (number) {
               // Вычисляем высоту для длинного номера (максимум 2 строки)
               // Увеличиваем размер шрифта номера
@@ -237,7 +235,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           if (isShymkent) {
             const shymkentQRSize = Math.floor(size * 0.85);
             canvas.width = shymkentQRSize + padding * 2;
-            canvas.height = shymkentQRSize + padding * 2 + topTextHeight + bottomTextHeight;
+            // Убрали topTextHeight, так как код сверху больше не отображается
+            canvas.height = shymkentQRSize + padding * 2 + bottomTextHeight;
           } else {
             // Для Тараза - QR код (увеличен) + текст снизу
             const tarazQRSize = Math.floor(size * 0.92); // Увеличено до 92% для четкости при печати
@@ -262,20 +261,11 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             let currentY = padding;
             
             if (isShymkent) {
-              // Новый формат для Шымкента
+              // Новый формат для Шымкента: только длинный номер снизу (без кода с #)
               const shymkentQRSize = Math.floor(size * 0.85);
               const qrX = (canvas.width - shymkentQRSize) / 2;
               
-              // Рисуем короткий код СВЕРХУ QR кода
-              if (code) {
-                finalCtx.font = 'bold 24px Arial';
-                finalCtx.fillStyle = '#000000';
-                const displayCode = code.startsWith('#') ? code : `#${code}`;
-                finalCtx.fillText(displayCode, canvas.width / 2, currentY);
-                currentY += topTextHeight;
-              }
-              
-              // Рисуем QR-код (уменьшенный)
+              // Рисуем QR-код (уменьшенный) - код сверху убран
               finalCtx.drawImage(img, qrX, currentY, shymkentQRSize, shymkentQRSize);
               currentY += shymkentQRSize + bottomPadding;
               
