@@ -652,7 +652,9 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             </div>
             <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto min-h-0">
               <QRCode
-                value={`${window.location.origin}/checkin/${encodeURIComponent(fridge.code)}`}
+                value={`${window.location.origin}/checkin/${encodeURIComponent(
+                  fridge.cityId?.name === 'Шымкент' && fridge.number ? fridge.number : fridge.code
+                )}`}
                 title={fridge.name}
                 code={fridge.code}
                 number={fridge.number}

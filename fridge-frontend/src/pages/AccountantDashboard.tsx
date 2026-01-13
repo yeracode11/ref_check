@@ -986,7 +986,11 @@ export default function AccountantDashboard() {
             </div>
             <div className="flex justify-center mb-4">
               <QRCode
-                value={`${window.location.origin}/checkin/${encodeURIComponent(selectedFridge.code)}`}
+                value={`${window.location.origin}/checkin/${encodeURIComponent(
+                  selectedFridge.cityId?.name === 'Шымкент' && selectedFridge.number 
+                    ? selectedFridge.number 
+                    : selectedFridge.code
+                )}`}
                 title={selectedFridge.name}
                 code={selectedFridge.code}
                 number={selectedFridge.number}
