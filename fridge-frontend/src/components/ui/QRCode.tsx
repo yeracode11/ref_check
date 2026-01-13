@@ -159,37 +159,66 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           
           if (isShymkent) {
             // Новый формат для Шымкента: только длинный номер снизу (без кода с #)
-            // Увеличиваем размер QR кода для Шымкента
-            const shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера (увеличено с 85%)
+            // Если номер не помещается, уменьшаем QR-код и размещаем номер внизу QR-кода
+            let shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера
+            let numberLines: string[] = [];
+            let numberInsideQR = false; // Флаг: номер внутри QR-кода или снаружи
             
-            // Убираем код сверху, оставляем только номер снизу
             if (number) {
-              // Вычисляем высоту для длинного номера (максимум 2 строки)
-              // Увеличиваем размер шрифта номера
+              // Уменьшаем размер шрифта номера
+              ctx.font = 'bold 12px Arial'; // Уменьшено с 14px до 12px
               const maxWidth = shymkentQRSize;
               const chars = number.split('');
-              let lines: string[] = [];
               let currentLine = '';
               
-              ctx.font = 'bold 14px Arial'; // Увеличено с 12px до 14px
+              // Разбиваем номер на строки
               for (const char of chars) {
                 const testLine = currentLine + char;
                 const metrics = ctx.measureText(testLine);
                 
                 if (metrics.width > maxWidth && currentLine) {
-                  lines.push(currentLine);
+                  numberLines.push(currentLine);
                   currentLine = char;
-                  if (lines.length >= 2) break;
+                  // Если больше 2 строк, уменьшаем QR-код и размещаем номер внутри
+                  if (numberLines.length >= 2) {
+                    // Уменьшаем QR-код, чтобы номер поместился внутри
+                    shymkentQRSize = Math.floor(size * 0.80); // 80% от исходного размера
+                    numberInsideQR = true;
+                    // Пересчитываем с новым размером
+                    ctx.font = 'bold 12px Arial';
+                    const newMaxWidth = shymkentQRSize;
+                    numberLines = [];
+                    currentLine = '';
+                    // Разбиваем заново с учетом нового размера
+                    for (const char2 of chars) {
+                      const testLine2 = currentLine + char2;
+                      const metrics2 = ctx.measureText(testLine2);
+                      if (metrics2.width > newMaxWidth && currentLine) {
+                        numberLines.push(currentLine);
+                        currentLine = char2;
+                        if (numberLines.length >= 3) break; // Максимум 3 строки внутри QR
+                      } else {
+                        currentLine = testLine2;
+                      }
+                    }
+                    break;
+                  }
                 } else {
                   currentLine = testLine;
                 }
               }
               
-              if (currentLine && lines.length < 2) {
-                lines.push(currentLine);
+              if (currentLine && numberLines.length < (numberInsideQR ? 3 : 2)) {
+                numberLines.push(currentLine);
               }
               
-              bottomTextHeight = Math.min(lines.length, 2) * 18 + bottomPadding; // Увеличено с 16 до 18
+              if (numberInsideQR) {
+                // Номер внутри QR-кода - не добавляем высоту снизу
+                bottomTextHeight = 0;
+              } else {
+                // Номер снаружи QR-кода
+                bottomTextHeight = Math.min(numberLines.length, 2) * 16 + bottomPadding; // 16px между строками
+              }
             }
           } else {
             // Старый формат для остальных городов (Тараз): код и название снизу в canvas
@@ -233,9 +262,61 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           
           // Теперь устанавливаем финальные размеры canvas
           if (isShymkent) {
-            const shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера
+            // Используем размер, вычисленный выше (может быть уменьшен, если номер не помещается)
+            // Пересчитываем для точности
+            let shymkentQRSize = Math.floor(size * 0.92);
+            let numberInsideQR = false;
+            if (number) {
+              ctx.font = 'bold 12px Arial';
+              const maxWidth = shymkentQRSize;
+              const chars = number.split('');
+              let testLines: string[] = [];
+              let currentLine = '';
+              for (const char of chars) {
+                const testLine = currentLine + char;
+                const metrics = ctx.measureText(testLine);
+                if (metrics.width > maxWidth && currentLine) {
+                  testLines.push(currentLine);
+                  currentLine = char;
+                  if (testLines.length >= 2) {
+                    // Номер не помещается - уменьшаем QR-код
+                    shymkentQRSize = Math.floor(size * 0.80);
+                    numberInsideQR = true;
+                    // Пересчитываем строки с новым размером
+                    ctx.font = 'bold 12px Arial';
+                    const newMaxWidth = shymkentQRSize;
+                    testLines = [];
+                    currentLine = '';
+                    for (const char2 of chars) {
+                      const testLine2 = currentLine + char2;
+                      const metrics2 = ctx.measureText(testLine2);
+                      if (metrics2.width > newMaxWidth && currentLine) {
+                        testLines.push(currentLine);
+                        currentLine = char2;
+                        if (testLines.length >= 3) break;
+                      } else {
+                        currentLine = testLine2;
+                      }
+                    }
+                    if (currentLine && testLines.length < 3) {
+                      testLines.push(currentLine);
+                    }
+                    break;
+                  }
+                } else {
+                  currentLine = testLine;
+                }
+              }
+              if (currentLine && testLines.length < 2 && !numberInsideQR) {
+                testLines.push(currentLine);
+              }
+              if (!numberInsideQR) {
+                bottomTextHeight = Math.min(testLines.length, 2) * 16 + bottomPadding;
+              } else {
+                bottomTextHeight = 0; // Номер внутри QR-кода
+              }
+            }
             canvas.width = shymkentQRSize + padding * 2;
-            // Убрали topTextHeight, так как код сверху больше не отображается
             canvas.height = shymkentQRSize + padding * 2 + bottomTextHeight;
           } else {
             // Для Тараза - QR код (увеличен) + текст снизу
@@ -262,22 +343,15 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             
             if (isShymkent) {
               // Новый формат для Шымкента: только длинный номер снизу (без кода с #)
-              const shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера
-              const qrX = (canvas.width - shymkentQRSize) / 2;
+              let shymkentQRSize = Math.floor(size * 0.92);
+              let numberLines: string[] = [];
+              let numberInsideQR = false;
               
-              // Рисуем QR-код (уменьшенный) - код сверху убран
-              finalCtx.drawImage(img, qrX, currentY, shymkentQRSize, shymkentQRSize);
-              currentY += shymkentQRSize + bottomPadding;
-              
-              // Рисуем длинный номер СНИЗУ QR кода (с переносом строки)
+              // Определяем, нужно ли уменьшать QR-код
               if (number) {
-                finalCtx.font = 'bold 14px Arial'; // Увеличено с 12px до 14px
-                finalCtx.fillStyle = '#000000';
-                
-                // Разбиваем длинный номер на части если не помещается
+                finalCtx.font = 'bold 12px Arial'; // Уменьшено до 12px
                 const maxWidth = shymkentQRSize;
                 const chars = number.split('');
-                let lines: string[] = [];
                 let currentLine = '';
                 
                 for (const char of chars) {
@@ -285,22 +359,70 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
                   const metrics = finalCtx.measureText(testLine);
                   
                   if (metrics.width > maxWidth && currentLine) {
-                    lines.push(currentLine);
+                    numberLines.push(currentLine);
                     currentLine = char;
-                    if (lines.length >= 2) break; // Максимум 2 строки
+                    if (numberLines.length >= 2) {
+                      // Уменьшаем QR-код и размещаем номер внутри
+                      shymkentQRSize = Math.floor(size * 0.80);
+                      numberInsideQR = true;
+                      // Пересчитываем с новым размером
+                      finalCtx.font = 'bold 12px Arial';
+                      const newMaxWidth = shymkentQRSize;
+                      numberLines = [];
+                      currentLine = '';
+                      for (const char2 of chars) {
+                        const testLine2 = currentLine + char2;
+                        const metrics2 = finalCtx.measureText(testLine2);
+                        if (metrics2.width > newMaxWidth && currentLine) {
+                          numberLines.push(currentLine);
+                          currentLine = char2;
+                          if (numberLines.length >= 3) break;
+                        } else {
+                          currentLine = testLine2;
+                        }
+                      }
+                      break;
+                    }
                   } else {
                     currentLine = testLine;
                   }
                 }
                 
-                if (currentLine && lines.length < 2) {
-                  lines.push(currentLine);
+                if (currentLine && numberLines.length < (numberInsideQR ? 3 : 2)) {
+                  numberLines.push(currentLine);
                 }
+              }
+              
+              const qrX = (canvas.width - shymkentQRSize) / 2;
+              
+              if (numberInsideQR) {
+                // Номер внутри QR-кода: рисуем QR-код, затем номер поверх внизу
+                finalCtx.drawImage(img, qrX, currentY, shymkentQRSize, shymkentQRSize);
                 
-                // Рисуем строки
-                lines.forEach((line, idx) => {
-                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 18)); // Увеличено с 16 до 18
+                // Рисуем белый фон для номера внизу QR-кода
+                const numberHeight = numberLines.length * 16;
+                finalCtx.fillStyle = 'white';
+                finalCtx.fillRect(qrX, currentY + shymkentQRSize - numberHeight - 4, shymkentQRSize, numberHeight + 4);
+                
+                // Рисуем номер поверх QR-кода
+                finalCtx.font = 'bold 12px Arial';
+                finalCtx.fillStyle = '#000000';
+                numberLines.forEach((line, idx) => {
+                  finalCtx.fillText(line, canvas.width / 2, currentY + shymkentQRSize - numberHeight + (idx * 16));
                 });
+              } else {
+                // Номер снаружи QR-кода: рисуем QR-код, затем номер снизу
+                finalCtx.drawImage(img, qrX, currentY, shymkentQRSize, shymkentQRSize);
+                currentY += shymkentQRSize + bottomPadding;
+                
+                // Рисуем номер снизу
+                if (number && numberLines.length > 0) {
+                  finalCtx.font = 'bold 12px Arial';
+                  finalCtx.fillStyle = '#000000';
+                  numberLines.forEach((line, idx) => {
+                    finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 16));
+                  });
+                }
               }
             } else {
               // Старый формат для остальных городов (Тараз и др.)
