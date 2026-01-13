@@ -21,18 +21,34 @@ router.get('/', authenticateToken, async (req, res) => {
       filter.cityId = cityId;
     }
     
-    if (code) filter.code = code;
+    // Поиск по коду: ищем и по короткому code, и по длинному number
+    if (code) {
+      filter.$or = filter.$or || [];
+      filter.$or.push({ code: code });
+      filter.$or.push({ number: code });
+    }
+    
     if (warehouseStatus) filter.warehouseStatus = warehouseStatus;
 
     // Поиск по нескольким полям (если передан search)
     if (search && search.trim()) {
       const searchRegex = new RegExp(search.trim(), 'i');
-      filter.$or = [
-        { name: searchRegex },
-        { code: searchRegex },
-        { address: searchRegex },
-        { description: searchRegex },
-      ];
+      // Если уже есть $or от code, добавляем к нему условия search
+      if (filter.$or) {
+        filter.$or.push(
+          { name: searchRegex },
+          { code: searchRegex },
+          { address: searchRegex },
+          { description: searchRegex }
+        );
+      } else {
+        filter.$or = [
+          { name: searchRegex },
+          { code: searchRegex },
+          { address: searchRegex },
+          { description: searchRegex },
+        ];
+      }
     }
 
     const nearLatNum = nearLat ? Number(nearLat) : undefined;

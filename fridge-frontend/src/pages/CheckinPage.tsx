@@ -44,7 +44,7 @@ export default function CheckinPage() {
     (async () => {
       try {
         // Пробуем найти холодильник по коду
-        // Сначала пробуем с текущим кодом
+        // Backend теперь ищет и по code, и по number автоматически
         let res = await api.get(`/api/fridges?code=${encodeURIComponent(code)}`);
         if (!alive) return;
         // API возвращает объект с полем data, которое содержит массив холодильников
