@@ -237,7 +237,11 @@ export default function CheckinPage() {
                 <span className="font-semibold">Холодильник:</span> {fridge.name}
               </div>
               <div className="text-xs text-slate-500">
-                Код: <span className="font-mono">{fridge.code}</span>
+                {fridge.cityId?.name === 'Шымкент' && fridge.number ? (
+                  <>Номер: <span className="font-mono">{fridge.number}</span></>
+                ) : (
+                  <>Код: <span className="font-mono">{fridge.code}</span></>
+                )}
               </div>
               {fridge.description && (
                 <div className="text-sm text-slate-600 bg-slate-50 p-2 rounded">

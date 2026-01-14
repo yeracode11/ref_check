@@ -875,7 +875,12 @@ export default function AccountantDashboard() {
             <h3 className="text-lg font-semibold text-slate-900 mb-4">
               {statusForm.warehouseStatus === 'installed' ? 'Установка холодильника' : 'Возврат на склад'}
             </h3>
-            <p className="text-sm text-slate-600 mb-4">Холодильник: {selectedFridge.name} (#{selectedFridge.code})</p>
+            <p className="text-sm text-slate-600 mb-4">
+              Холодильник: {selectedFridge.name}{' '}
+              {selectedFridge.cityId?.name === 'Шымкент' && selectedFridge.number 
+                ? `(${selectedFridge.number})` 
+                : `(#${selectedFridge.code})`}
+            </p>
             
             {statusForm.warehouseStatus === 'installed' && (
               <div className="space-y-4 mb-4 p-4 bg-slate-50 rounded-lg">
