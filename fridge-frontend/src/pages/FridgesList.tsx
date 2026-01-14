@@ -381,7 +381,11 @@ export default function FridgesList() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h3 className="font-semibold text-slate-900 text-lg mb-1">{f.name}</h3>
-                      <div className="text-sm text-slate-500 font-mono">#{f.code}</div>
+                      {f.cityId?.name === 'Шымкент' && f.number ? (
+                        <div className="text-sm text-slate-500 font-mono">{f.number}</div>
+                      ) : (
+                        <div className="text-sm text-slate-500 font-mono">#{f.code}</div>
+                      )}
                     </div>
                     <Badge variant={f.active ? 'success' : 'error'}>
                       {f.active ? 'Активен' : 'Неактивен'}

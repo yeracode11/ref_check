@@ -908,7 +908,11 @@ export default function AdminDashboard() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-900 truncate">{f.name}</p>
-                        <p className="text-xs text-slate-500 font-mono truncate">#{f.code}</p>
+                        {f.cityId?.name === 'Шымкент' && f.number ? (
+                          <p className="text-xs text-slate-500 font-mono truncate">{f.number}</p>
+                        ) : (
+                          <p className="text-xs text-slate-500 font-mono truncate">#{f.code}</p>
+                        )}
                       </div>
                       <span
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusColor}`}
@@ -1144,7 +1148,11 @@ export default function AdminDashboard() {
               <p className="text-sm text-slate-600 mb-1">
                 <span className="font-medium">Холодильник:</span> {selectedQRFridge.name}
               </p>
-              <p className="text-xs text-slate-500 font-mono">#{selectedQRFridge.code}</p>
+              {selectedQRFridge.city?.name === 'Шымкент' && selectedQRFridge.number ? (
+                <p className="text-xs text-slate-500 font-mono">{selectedQRFridge.number}</p>
+              ) : (
+                <p className="text-xs text-slate-500 font-mono">#{selectedQRFridge.code}</p>
+              )}
             </div>
             <div className="flex justify-center mb-4">
               <QRCode

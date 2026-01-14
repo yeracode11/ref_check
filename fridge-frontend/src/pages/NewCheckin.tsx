@@ -7,7 +7,9 @@ import { Card, Button } from '../components/ui/Card';
 type Fridge = {
   _id: string;
   code: string;
+  number?: string;
   name: string;
+  cityId?: { name: string };
 };
 
 export default function NewCheckin() {
@@ -119,7 +121,7 @@ export default function NewCheckin() {
                 <option value="">Выберите холодильник</option>
                 {fridges.map((f) => (
                   <option key={f._id} value={f.code}>
-                    {f.name} (#{f.code})
+                    {f.name} {f.cityId?.name === 'Шымкент' && f.number ? `(${f.number})` : `(#${f.code})`}
                   </option>
                 ))}
               </select>

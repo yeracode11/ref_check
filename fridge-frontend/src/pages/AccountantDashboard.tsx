@@ -652,7 +652,11 @@ export default function AccountantDashboard() {
                     {getStatusBadge(f.warehouseStatus)}
                   </div>
                   <div className="text-sm text-slate-600 space-y-1">
-                    <p><span className="text-slate-500">Код:</span> {f.code}</p>
+                    {f.cityId?.name === 'Шымкент' && f.number ? (
+                      <p><span className="text-slate-500">Номер:</span> {f.number}</p>
+                    ) : (
+                      <p><span className="text-slate-500">Код:</span> {f.code}</p>
+                    )}
                     {f.address && <p><span className="text-slate-500">Адрес:</span> {f.address}</p>}
                     {f.cityId && <p><span className="text-slate-500">Город:</span> {f.cityId.name}</p>}
                   </div>
@@ -985,7 +989,11 @@ export default function AccountantDashboard() {
               <p className="text-sm text-slate-600">
                 <span className="font-medium">Холодильник:</span> {selectedFridge.name}
               </p>
-              <p className="text-xs text-slate-500 font-mono">#{selectedFridge.code}</p>
+              {selectedFridge.cityId?.name === 'Шымкент' && selectedFridge.number ? (
+                <p className="text-xs text-slate-500 font-mono">{selectedFridge.number}</p>
+              ) : (
+                <p className="text-xs text-slate-500 font-mono">#{selectedFridge.code}</p>
+              )}
             </div>
             <div className="flex justify-center mb-4">
               <QRCode

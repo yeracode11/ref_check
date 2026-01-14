@@ -210,7 +210,11 @@ export default function CheckinPage() {
         {fridge && (
           <p className="text-slate-500 mt-1">
             Холодильник: <span className="font-medium">{fridge.name}</span>{' '}
-            <Badge variant="info">#{fridge.code}</Badge>
+            {fridge.cityId?.name === 'Шымкент' && fridge.number ? (
+              <Badge variant="info">{fridge.number}</Badge>
+            ) : (
+              <Badge variant="info">#{fridge.code}</Badge>
+            )}
           </p>
         )}
         {!fridge && code && (

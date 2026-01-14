@@ -19,8 +19,10 @@ type ManagerStat = {
 
 type UnvisitedFridge = {
   code: string;
+  number?: string;
   name: string;
   address?: string;
+  cityId?: { name: string };
   lastVisit: string | null;
   daysSinceVisit: number | null;
 };
@@ -262,7 +264,9 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics' }: AnalyticsP
                 {data.topUnvisited.map((f, idx) => (
                   <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-2 px-3 font-medium text-slate-900">{f.name}</td>
-                    <td className="py-2 px-3 text-slate-500 font-mono">#{f.code}</td>
+                    <td className="py-2 px-3 text-slate-500 font-mono">
+                      {f.cityId?.name === 'Шымкент' && f.number ? f.number : `#${f.code}`}
+                    </td>
                     <td className="py-2 px-3 text-slate-500 max-w-[200px] truncate">{f.address || '—'}</td>
                     <td className="py-2 px-3 text-right text-slate-500">
                       {f.lastVisit 
