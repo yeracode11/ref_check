@@ -479,8 +479,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
           {isAccountant && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
-                <span>📝</span>
-                Управление для бухгалтера
+                Управление возвратом
               </h3>
               <div className="space-y-3">
                 <div>
@@ -548,7 +547,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   disabled={savingAccountant}
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium text-sm"
                 >
-                  {savingAccountant ? 'Сохранение...' : '💾 Сохранить изменения'}
+                  {savingAccountant ? 'Сохранение...' : 'Сохранить изменения'}
                 </button>
               </div>
             </div>
