@@ -157,37 +157,35 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       
       if (!lastVisit) {
         // Нет посещений - проверяем warehouseStatus
-        // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для moved
-        // if (warehouseStatus === 'moved') {
-        //   status = 'location_changed'; // Черный
-        // } else {
-          // На складе, возврат или установлен без отметок - серый
-          // Желтый цвет только для старых отметок (> недели), а не для отсутствия отметок
+        // Если возвращен на склад - синий (приоритет)
+        if (warehouseStatus === 'returned') {
+          status = 'never'; // Синий цвет для возвращенных
+        } else {
+          // На складе или установлен без отметок - синий
           status = 'never';
-        // }
+        }
       } else if (totalCheckins === 1) {
         // Первая отметка - всегда зеленый
         status = visitStatus; // today, week, или old
       } else if (totalCheckins >= 2 && lastLocation && secondLastLocation) {
         // Вторая и последующие отметки - сравниваем ПОСЛЕДНИЕ ДВЕ координаты
-        const distance = calculateDistance(secondLastLocation, lastLocation);
-        // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
-        // Расстояние изменено на 50 метров, но черная метка отключена
-        // if (distance !== null && distance > 50) {
-        //   // Последние 2 отметки далеко друг от друга - холодильник перемещается - черный
-        //   status = 'location_changed';
-        // } else {
-          // Последние 2 отметки близко - местоположение стабилизировалось - зеленый
+        // Если возвращен на склад - синий (приоритет над временем последнего визита)
+        if (warehouseStatus === 'returned') {
+          status = 'never'; // Синий цвет для возвращенных
+        } else {
+          const distance = calculateDistance(secondLastLocation, lastLocation);
+          // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
+          // Последние 2 отметки близко - местоположение стабилизировалось - зеленый/красный
           status = visitStatus;
-        // }
+        }
       } else {
         // Fallback - если не удалось сравнить координаты, используем warehouseStatus или обычный статус
-        // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для moved
-        // if (warehouseStatus === 'moved') {
-        //   status = 'location_changed'; // Черный
-        // } else {
+        // Если возвращен на склад - синий (приоритет)
+        if (warehouseStatus === 'returned') {
+          status = 'never'; // Синий цвет для возвращенных
+        } else {
           status = visitStatus;
-        // }
+        }
       }
 
       // ВРЕМЕННО ОТКЛЮЧЕНО: гарантируем, что location_changed никогда не вернется

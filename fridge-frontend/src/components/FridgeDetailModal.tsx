@@ -200,6 +200,9 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   });
   const [saving, setSaving] = useState(false);
   const [savingClient, setSavingClient] = useState(false);
+  const [showAccountantForm, setShowAccountantForm] = useState(false);
+  const [accountantForm, setAccountantForm] = useState({ address: '', isReturned: false });
+  const [savingAccountant, setSavingAccountant] = useState(false);
 
   // Загрузка истории посещений
   const loadCheckins = async (fridgeCode?: string) => {
@@ -231,6 +234,16 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
       loadCheckins(fridge?.code);
     }
   }, [activeTab, fridge?.code, checkins.length]);
+
+  // Инициализация формы бухгалтера при загрузке холодильника
+  useEffect(() => {
+    if (fridge && isAccountant) {
+      setAccountantForm({
+        address: fridge.address || '',
+        isReturned: fridge.warehouseStatus === 'returned',
+      });
+    }
+  }, [fridge, isAccountant]);
 
   useEffect(() => {
     let alive = true;
@@ -395,12 +408,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     <dd className="text-slate-900">{fridge.cityId.name}</dd>
                   </div>
                 )}
-                {fridge.address && (
-                  <div className="flex justify-between">
-                    <dt className="text-slate-500">Адрес:</dt>
-                    <dd className="text-slate-900 text-right max-w-[60%]">{fridge.address}</dd>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Адрес:</dt>
+                  <dd className="text-slate-900 text-right max-w-[60%]">
+                    {fridge.address || <span className="text-slate-400 italic">Не указан</span>}
+                  </dd>
+                </div>
                 <div className="flex justify-between">
                   <dt className="text-slate-500">Создан:</dt>
                   <dd className="text-slate-900">{formatDate(fridge.createdAt)}</dd>
@@ -459,6 +472,85 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <div className="bg-slate-50 rounded-lg p-3">
               <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Описание</h3>
               <p className="text-sm text-slate-700">{fridge.description}</p>
+            </div>
+          )}
+
+          {/* Форма для бухгалтера: адрес и возврат */}
+          {isAccountant && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                <span>📝</span>
+                Управление для бухгалтера
+              </h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Адрес</label>
+                  <input
+                    type="text"
+                    value={accountantForm.address}
+                    onChange={(e) => setAccountantForm({ ...accountantForm, address: e.target.value })}
+                    placeholder={fridge.address || "Введите адрес"}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isReturned"
+                    checked={accountantForm.isReturned}
+                    onChange={(e) => setAccountantForm({ ...accountantForm, isReturned: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="isReturned" className="text-sm font-medium text-slate-700 cursor-pointer">
+                    Сделан возврат (холодильник возвращен на склад)
+                  </label>
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      setSavingAccountant(true);
+                      
+                      // Обновляем адрес, если он изменился
+                      if (accountantForm.address !== fridge.address) {
+                        await api.patch(`/api/admin/fridges/${fridge._id}`, {
+                          address: accountantForm.address.trim() || null,
+                        });
+                      }
+                      
+                      // Обновляем статус возврата
+                      const newStatus = accountantForm.isReturned ? 'returned' : 
+                                       (fridge.warehouseStatus === 'returned' ? 'installed' : fridge.warehouseStatus);
+                      
+                      if (newStatus !== fridge.warehouseStatus) {
+                        await api.patch(`/api/admin/fridges/${fridge._id}/status`, {
+                          warehouseStatus: newStatus,
+                          notes: accountantForm.isReturned 
+                            ? 'Холодильник возвращен на склад (отмечено бухгалтером)'
+                            : 'Статус возврата снят',
+                        });
+                      }
+                      
+                      // Перезагружаем данные
+                      const res = await api.get(`/api/admin/fridges/${fridge._id}`);
+                      setFridge(res.data);
+                      setAccountantForm({ 
+                        address: res.data.address || '', 
+                        isReturned: res.data.warehouseStatus === 'returned' 
+                      });
+                      onUpdated?.();
+                      alert('Данные сохранены');
+                    } catch (e: any) {
+                      alert('Ошибка: ' + (e?.response?.data?.error || e.message));
+                    } finally {
+                      setSavingAccountant(false);
+                    }
+                  }}
+                  disabled={savingAccountant}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium text-sm"
+                >
+                  {savingAccountant ? 'Сохранение...' : '💾 Сохранить изменения'}
+                </button>
+              </div>
             </div>
           )}
 
