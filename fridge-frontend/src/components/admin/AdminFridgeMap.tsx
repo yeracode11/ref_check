@@ -29,13 +29,13 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' 
   let color = '#2563eb'; // синий по умолчанию (нет посещений / на складе)
   
   // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
-  // if (status === 'location_changed') {
-  //   color = '#1f2937'; // черный
-  // } else 
-  if (status === 'today' || status === 'week') {
+  // Если пришел location_changed, обрабатываем как old (старые отметки)
+  const normalizedStatus = status === 'location_changed' ? 'old' : status;
+  
+  if (normalizedStatus === 'today' || normalizedStatus === 'week') {
     // Свежие отметки в пределах недели - зеленый
     color = '#28a745'; // зелёный
-  } else if (status === 'old') {
+  } else if (normalizedStatus === 'old') {
     // Старые отметки (больше недели) - красный
     color = '#dc3545'; // красный
   }
@@ -53,11 +53,13 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' 
 // Приоритет: старые отметки (красный) > свежие отметки (зеленый) > нет посещений (синий)
 function getClusterColor(statuses: string[]): string {
   // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
-  // if (statuses.some(s => s === 'location_changed')) return '#1f2937'; // черный
+  // Преобразуем location_changed в old
+  const normalizedStatuses = statuses.map(s => s === 'location_changed' ? 'old' : s);
+  
   // Если есть хотя бы один маркер со старыми отметками (old) - красный
-  if (statuses.some(s => s === 'old')) return '#dc3545'; // красный
+  if (normalizedStatuses.some(s => s === 'old')) return '#dc3545'; // красный
   // Если есть хотя бы один маркер со свежими отметками (today/week) - зеленый
-  if (statuses.some(s => s === 'today' || s === 'week')) return '#28a745'; // зелёный
+  if (normalizedStatuses.some(s => s === 'today' || s === 'week')) return '#28a745'; // зелёный
   return '#2563eb'; // синий (только если все маркеры без посещений / на складе)
 }
 

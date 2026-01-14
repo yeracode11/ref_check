@@ -190,6 +190,10 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
         // }
       }
 
+      // ВРЕМЕННО ОТКЛЮЧЕНО: гарантируем, что location_changed никогда не вернется
+      // Если по какой-то причине status все еще location_changed, преобразуем в visitStatus
+      const finalStatus = status === 'location_changed' ? (visitStatus || 'never') : status;
+
       return {
         id: f._id,
         code: f.code,
@@ -198,7 +202,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
         city: f.cityId || null,
         location: f.location,
         lastVisit,
-        status, // комбинированный статус для цвета
+        status: finalStatus, // комбинированный статус для цвета (гарантированно не location_changed)
         warehouseStatus, // статус склада
         visitStatus, // статус последнего визита
         clientInfo: f.clientInfo || null,
