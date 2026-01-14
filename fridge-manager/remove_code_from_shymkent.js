@@ -94,18 +94,19 @@ async function removeCodeFromShymkent() {
           continue;
         }
 
-        // Удаляем code (устанавливаем в пустую строку или служебное значение)
-        // Поскольку code - обязательное поле, установим его в служебное значение
-        // Используем формат "SHYMKENT_" + number для уникальности
-        const newCode = `SHYMKENT_${fridge.number}`;
+        // Удаляем короткий code, используем number как code
+        // Поскольку code - обязательное поле, используем number как code
+        // Это позволит сохранить уникальность и не показывать code в интерфейсе
+        const newCode = fridge.number;
         
         await Fridge.findByIdAndUpdate(fridge._id, {
           $set: { code: newCode }
         });
 
         console.log(`✓ [${i + 1}/${shortCodeFridges.length}] Обновлен: ${fridge.name}`);
-        console.log(`  Старый code: #${fridge.code} -> Новый code: ${newCode} (служебный)`);
+        console.log(`  Старый code: #${fridge.code} -> Удален (теперь code = number)`);
         console.log(`  number: ${fridge.number}`);
+        console.log(`  code теперь равен number (не показывается в интерфейсе)`);
         updatedShort++;
       } catch (error) {
         console.error(`❌ [${i + 1}/${shortCodeFridges.length}] Ошибка: ${error.message}`);
@@ -128,8 +129,8 @@ async function removeCodeFromShymkent() {
           ? fridge.number  // Если number уже есть, оставляем его
           : codeStr;       // Иначе копируем code в number
 
-        // Устанавливаем code в служебное значение
-        const newCode = `SHYMKENT_${newNumber}`;
+        // Устанавливаем code равным number (чтобы не показывать code в интерфейсе)
+        const newCode = newNumber;
 
         await Fridge.findByIdAndUpdate(fridge._id, {
           $set: { 
@@ -139,8 +140,9 @@ async function removeCodeFromShymkent() {
         });
 
         console.log(`✓ [${i + 1}/${longCodeFridges.length}] Обновлен: ${fridge.name}`);
-        console.log(`  Старый code: ${codeStr} -> Новый code: ${newCode} (служебный)`);
+        console.log(`  Старый code: ${codeStr} -> Удален (теперь code = number)`);
         console.log(`  number: ${newNumber}`);
+        console.log(`  code теперь равен number (не показывается в интерфейсе)`);
         if (fridge.number && fridge.number.trim() !== '') {
           console.log(`  ⚠ number уже был заполнен, оставлен прежним`);
         }
@@ -159,9 +161,9 @@ async function removeCodeFromShymkent() {
 
     if (updatedShort + updatedLong > 0) {
       console.log('\n✅ Обработка завершена!');
-      console.log('⚠ Поле code теперь содержит служебные значения (SHYMKENT_...)');
+      console.log('⚠ Поле code теперь равно number (для сохранения уникальности в базе)');
       console.log('⚠ В интерфейсе code уже не показывается для Шымкента');
-      console.log('⚠ Все номера теперь в поле number');
+      console.log('⚠ Все номера теперь в поле number, code используется только внутренне');
     }
 
     await mongoose.connection.close();
