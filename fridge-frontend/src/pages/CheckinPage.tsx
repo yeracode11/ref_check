@@ -7,9 +7,11 @@ import { Card, Button, Badge } from '../components/ui/Card';
 type Fridge = {
   _id: string;
   code: string;
+  number?: string; // Длинный номер из Excel
   name: string;
   address?: string;
   description?: string;
+  cityId?: { _id?: string; name: string; code: string } | null;
 };
 
 type RouteParams = {

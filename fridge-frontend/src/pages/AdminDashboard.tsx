@@ -911,7 +911,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-900 truncate">{f.name}</p>
-                        {f.cityId?.name === 'Шымкент' && f.number ? (
+                        {f.city?.name === 'Шымкент' && f.number ? (
                           <p className="text-xs text-slate-500 font-mono truncate">{f.number}</p>
                         ) : (
                           <p className="text-xs text-slate-500 font-mono truncate">#{f.code}</p>
