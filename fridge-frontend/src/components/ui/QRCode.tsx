@@ -164,8 +164,10 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             let numberLines: string[] = [];
             let numberInsideQR = false; // Флаг: номер внутри QR-кода или снаружи
             
-            // Для Шымкента используем number, если есть, иначе code как fallback
-            const displayNumber = number || code || '';
+            // Для Шымкента используем number, если он передан (даже если пустой), иначе code как fallback
+            // Проверяем явно: если number !== undefined и !== null, используем его (даже если пустая строка)
+            // Иначе используем code
+            const displayNumber = (number !== undefined && number !== null) ? number : (code || '');
             
             if (displayNumber) {
               // Размер шрифта номера
@@ -269,8 +271,10 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             // Пересчитываем для точности
             let shymkentQRSize = Math.floor(size * 0.92);
             let numberInsideQR = false;
-            // Для Шымкента используем number, если есть, иначе code как fallback
-            const displayNumber = number || code || '';
+            // Для Шымкента используем number, если он передан (даже если пустой), иначе code как fallback
+            // Проверяем явно: если number !== undefined и !== null, используем его (даже если пустая строка)
+            // Иначе используем code
+            const displayNumber = (number !== undefined && number !== null) ? number : (code || '');
             if (displayNumber) {
               ctx.font = 'bold 14px Arial';
               const maxWidth = shymkentQRSize;
@@ -352,8 +356,10 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               let numberLines: string[] = [];
               let numberInsideQR = false;
               
-              // Для Шымкента используем number, если есть, иначе code как fallback
-              const displayNumber = number || code || '';
+              // Для Шымкента используем number, если он передан (даже если пустой), иначе code как fallback
+              // Проверяем явно: если number !== undefined и !== null, используем его (даже если пустая строка)
+              // Иначе используем code
+              const displayNumber = (number !== undefined && number !== null) ? number : (code || '');
               
               // Определяем, нужно ли уменьшать QR-код
               if (displayNumber) {
