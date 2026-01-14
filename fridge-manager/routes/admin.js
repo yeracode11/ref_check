@@ -383,7 +383,9 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
         'Адрес': f.address || '',
         'Адрес по координатам': geocodedAddress,
         'Описание': f.description || '',
-        'Статус': status,
+        'Статус склада': warehouseStatusLabel,
+        'Возврат': isReturned ? 'Да' : 'Нет',
+        'Статус визита': status,
         'Последний визит': lastVisit ? (() => {
           // Конвертируем UTC время в UTC+5 (Казахстан)
           const date = new Date(lastVisit);
@@ -422,7 +424,9 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       { wch: 40 }, // Адрес
       { wch: 50 }, // Адрес по координатам
       { wch: 30 }, // Описание
-      { wch: 12 }, // Статус
+      { wch: 18 }, // Статус склада
+      { wch: 10 }, // Возврат
+      { wch: 12 }, // Статус визита
       { wch: 20 }, // Последний визит
       { wch: 10 }, // Активен
     ];
