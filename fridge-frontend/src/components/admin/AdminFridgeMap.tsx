@@ -21,17 +21,18 @@ type Props = {
 };
 
 // Иконки для разных статусов
-// location_changed (местоположение изменилось) = черный
+// ВРЕМЕННО ОТКЛЮЧЕНО: location_changed (местоположение изменилось) = черный
 // today/week (свежие отметки в пределах недели) = зеленый
 // old (старые отметки, больше недели) = красный
 // never (нет посещений) = синий (на складе)
 function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed', hasCheckin: boolean): L.DivIcon {
   let color = '#2563eb'; // синий по умолчанию (нет посещений / на складе)
   
-  // Если местоположение изменилось - черный
-  if (status === 'location_changed') {
-    color = '#1f2937'; // черный
-  } else if (status === 'today' || status === 'week') {
+  // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
+  // if (status === 'location_changed') {
+  //   color = '#1f2937'; // черный
+  // } else 
+  if (status === 'today' || status === 'week') {
     // Свежие отметки в пределах недели - зеленый
     color = '#28a745'; // зелёный
   } else if (status === 'old') {
@@ -48,10 +49,11 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' 
 }
 
 // Функция для определения цвета кластера по статусам
-// Приоритет: location_changed (черный) > старые отметки (красный) > свежие отметки (зеленый) > нет посещений (синий)
+// ВРЕМЕННО ОТКЛЮЧЕНО: location_changed (черный)
+// Приоритет: старые отметки (красный) > свежие отметки (зеленый) > нет посещений (синий)
 function getClusterColor(statuses: string[]): string {
-  // Если есть хотя бы один маркер с измененным местоположением - черный
-  if (statuses.some(s => s === 'location_changed')) return '#1f2937'; // черный
+  // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
+  // if (statuses.some(s => s === 'location_changed')) return '#1f2937'; // черный
   // Если есть хотя бы один маркер со старыми отметками (old) - красный
   if (statuses.some(s => s === 'old')) return '#dc3545'; // красный
   // Если есть хотя бы один маркер со свежими отметками (today/week) - зеленый
@@ -134,7 +136,8 @@ export function AdminFridgeMap({ fridges }: Props) {
       const warehouseLabel = f.warehouseStatus === 'warehouse' ? 'На складе' :
                             f.warehouseStatus === 'returned' ? 'Возврат на склад' :
                             'Установлен';
-      const visitLabel = f.status === 'location_changed' ? 'Местоположение изменилось' :
+      // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
+      const visitLabel = f.status === 'location_changed' ? 'Перемещен (временно отключено)' :
                          f.status === 'today' ? 'Сегодня' :
                          f.status === 'week' ? 'Неделя' :
                          f.status === 'old' ? 'Давно' :

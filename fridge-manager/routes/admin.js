@@ -151,39 +151,43 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       // - Если последние 2 координаты в пределах 50м - зеленый (местоположение стабилизировалось)
       // - Если последние 2 координаты далеко друг от друга (>50м) - красный (холодильник перемещается)
       // - Это позволяет показать зеленый, если после перемещения холодильник снова отмечен в стабильном месте
+      // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка (location_changed) отключена
       let status;
       const warehouseStatus = f.warehouseStatus || 'warehouse';
       
       if (!lastVisit) {
         // Нет посещений - проверяем warehouseStatus
-        if (warehouseStatus === 'moved') {
-          // Холодильник был перемещен ранее (даже если нет новых отметок)
-          status = 'location_changed'; // Красный
-        } else {
+        // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для moved
+        // if (warehouseStatus === 'moved') {
+        //   status = 'location_changed'; // Черный
+        // } else {
           // На складе, возврат или установлен без отметок - серый
           // Желтый цвет только для старых отметок (> недели), а не для отсутствия отметок
           status = 'never';
-        }
+        // }
       } else if (totalCheckins === 1) {
         // Первая отметка - всегда зеленый
         status = visitStatus; // today, week, или old
       } else if (totalCheckins >= 2 && lastLocation && secondLastLocation) {
         // Вторая и последующие отметки - сравниваем ПОСЛЕДНИЕ ДВЕ координаты
         const distance = calculateDistance(secondLastLocation, lastLocation);
-        if (distance !== null && distance > 50) {
-          // Последние 2 отметки далеко друг от друга - холодильник перемещается - красный
-          status = 'location_changed';
-        } else {
+        // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
+        // Расстояние изменено на 50 метров, но черная метка отключена
+        // if (distance !== null && distance > 50) {
+        //   // Последние 2 отметки далеко друг от друга - холодильник перемещается - черный
+        //   status = 'location_changed';
+        // } else {
           // Последние 2 отметки близко - местоположение стабилизировалось - зеленый
           status = visitStatus;
-        }
+        // }
       } else {
         // Fallback - если не удалось сравнить координаты, используем warehouseStatus или обычный статус
-        if (warehouseStatus === 'moved') {
-          status = 'location_changed'; // Красный
-        } else {
+        // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для moved
+        // if (warehouseStatus === 'moved') {
+        //   status = 'location_changed'; // Черный
+        // } else {
           status = visitStatus;
-        }
+        // }
       }
 
       return {

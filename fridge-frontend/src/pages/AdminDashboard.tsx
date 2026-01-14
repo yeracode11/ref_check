@@ -589,8 +589,8 @@ export default function AdminDashboard() {
   const redFridges = filteredAllFridges.filter((f) => 
     f.status === 'old'
   ).length;
-  // Черные: перемещенные
-  const blackFridges = filteredAllFridges.filter((f) => f.status === 'location_changed').length;
+  // ВРЕМЕННО ОТКЛЮЧЕНО: Черные: перемещенные
+  // const blackFridges = filteredAllFridges.filter((f) => f.status === 'location_changed').length;
   // Синие: нет отметок (на складе)
   const blueFridges = filteredAllFridges.filter((f) => f.status === 'never').length;
   // На складе: для информации
@@ -725,9 +725,10 @@ export default function AdminDashboard() {
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Старые отметки: {redFridges}
             </span>
-            <span className="inline-flex items-center gap-1">
+            {/* ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников */}
+            {/* <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-gray-900" /> Перемещенные: {blackFridges}
-            </span>
+            </span> */}
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-blue-600" /> На складе: {blueFridges}
             </span>
@@ -865,11 +866,13 @@ export default function AdminDashboard() {
                 let statusColor = 'bg-slate-200 text-slate-700';
                 
                 // Определяем статус и цвет на основе статуса карты и warehouseStatus
-                if (f.status === 'location_changed') {
-                  // Местоположение изменилось - черный
-                  statusLabel = 'Перемещен';
-                  statusColor = 'bg-gray-900 text-white';
-                } else if (f.status === 'today') {
+                // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
+                // if (f.status === 'location_changed') {
+                //   // Местоположение изменилось - черный
+                //   statusLabel = 'Перемещен';
+                //   statusColor = 'bg-gray-900 text-white';
+                // } else 
+                if (f.status === 'today') {
                   statusLabel = 'Сегодня';
                   statusColor = 'bg-green-100 text-green-700';
                 } else if (f.status === 'week') {
