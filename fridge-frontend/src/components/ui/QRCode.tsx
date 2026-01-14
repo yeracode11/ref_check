@@ -164,11 +164,14 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             let numberLines: string[] = [];
             let numberInsideQR = false; // Флаг: номер внутри QR-кода или снаружи
             
-            if (number) {
+            // Для Шымкента используем number, если есть, иначе code как fallback
+            const displayNumber = number || code || '';
+            
+            if (displayNumber) {
               // Размер шрифта номера
               ctx.font = 'bold 14px Arial'; // Увеличено до 14px
               const maxWidth = shymkentQRSize;
-              const chars = number.split('');
+              const chars = displayNumber.split('');
               let currentLine = '';
               
               // Разбиваем номер на строки
@@ -266,10 +269,12 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             // Пересчитываем для точности
             let shymkentQRSize = Math.floor(size * 0.92);
             let numberInsideQR = false;
-            if (number) {
+            // Для Шымкента используем number, если есть, иначе code как fallback
+            const displayNumber = number || code || '';
+            if (displayNumber) {
               ctx.font = 'bold 14px Arial';
               const maxWidth = shymkentQRSize;
-              const chars = number.split('');
+              const chars = displayNumber.split('');
               let testLines: string[] = [];
               let currentLine = '';
               for (const char of chars) {
@@ -347,11 +352,14 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               let numberLines: string[] = [];
               let numberInsideQR = false;
               
+              // Для Шымкента используем number, если есть, иначе code как fallback
+              const displayNumber = number || code || '';
+              
               // Определяем, нужно ли уменьшать QR-код
-              if (number) {
+              if (displayNumber) {
                 finalCtx.font = 'bold 14px Arial'; // Увеличено до 14px
                 const maxWidth = shymkentQRSize;
-                const chars = number.split('');
+                const chars = displayNumber.split('');
                 let currentLine = '';
                 
                 for (const char of chars) {
@@ -416,7 +424,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
                 currentY += shymkentQRSize + bottomPadding;
                 
                 // Рисуем номер снизу
-                if (number && numberLines.length > 0) {
+                if (displayNumber && numberLines.length > 0) {
                   finalCtx.font = 'bold 14px Arial';
                   finalCtx.fillStyle = '#000000';
                   numberLines.forEach((line, idx) => {
