@@ -158,9 +158,9 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           ctx.textAlign = 'center';
           
           if (isShymkent) {
-            // Новый формат для Шымкента: только длинный номер снизу (без кода с #)
+            // Новый формат для Шымкента и Кызылорды: только длинный номер снизу (без кода с #)
             // Если номер не помещается, уменьшаем QR-код и размещаем номер внизу QR-кода
-            let shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера
+            let shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера (для Шымкента и Кызылорды)
             let numberLines: string[] = [];
             let numberInsideQR = false; // Флаг: номер внутри QR-кода или снаружи
             
@@ -325,8 +325,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             let currentY = padding;
             
             if (isShymkent) {
-              // Новый формат для Шымкента: только длинный номер снизу (без кода с #)
-              let shymkentQRSize = Math.floor(size * 0.92);
+              // Новый формат для Шымкента и Кызылорды: только длинный номер снизу (без кода с #)
+              let shymkentQRSize = Math.floor(size * 0.92); // 92% от исходного размера (для Шымкента и Кызылорды)
               let numberLines: string[] = [];
               let numberInsideQR = false;
               
