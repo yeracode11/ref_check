@@ -605,6 +605,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       spvIdx,
       addressIdx,
       tpIdx,
+      fridgeNumberIdx, // Добавляем индекс колонки с номером холодильника
       headers: headers.slice(0, 10) // Первые 10 заголовков для отладки
     });
 
@@ -630,6 +631,13 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         return res.status(400).json({ error: 'Указанный город не найден' });
       }
       console.log('[Import] Using requested city:', city.name, city.code);
+      console.log('[Import] City name check for number field:', {
+        cityName: city.name,
+        cityNameLower: (city.name || '').toLowerCase(),
+        isNumberCity: (city.name || '').toLowerCase().includes('шымкент') || 
+                     (city.name || '').toLowerCase().includes('кызылорда') || 
+                     (city.name || '').toLowerCase().includes('қызылорда')
+      });
       
       // Для бухгалтера проверяем, что он может импортировать только в свой город
       if (req.user.role === 'accountant' && req.user.cityId) {
@@ -644,6 +652,13 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         return res.status(400).json({ error: 'Город бухгалтера не найден' });
       }
       console.log('[Import] Using accountant city:', city.name, city.code);
+      console.log('[Import] City name check for number field:', {
+        cityName: city.name,
+        cityNameLower: (city.name || '').toLowerCase(),
+        isNumberCity: (city.name || '').toLowerCase().includes('шымкент') || 
+                     (city.name || '').toLowerCase().includes('кызылорда') || 
+                     (city.name || '').toLowerCase().includes('қызылорда')
+      });
     } else {
       // Для админа cityId обязателен
       return res.status(400).json({ error: 'Не указан город для импорта. Пожалуйста, выберите город.' });
@@ -729,13 +744,27 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
 
       // Для Шымкента и Кызылорды сохраняем длинный номер из Excel в поле number
-      const isNumberCity = city.name === 'Шымкент' || city.name === 'Кызылорда';
+      // Проверяем название города более гибко (с учетом разных вариантов написания)
+      const cityNameLower = (city.name || '').toLowerCase();
+      const isNumberCity = cityNameLower.includes('шымкент') || 
+                          cityNameLower.includes('кызылорда') || 
+                          cityNameLower.includes('қызылорда') ||
+                          cityNameLower === 'kyzylorda';
+      
       let fridgeNumber = null;
       if (isNumberCity && fridgeNumberIdx >= 0) {
         const numberValue = String(row[fridgeNumberIdx] || '').trim();
         if (numberValue && numberValue !== 'null' && numberValue !== 'undefined') {
           fridgeNumber = numberValue;
+          // Логируем первые несколько для отладки
+          if (records.length < 5) {
+            console.log(`[Import] Row ${i}: Found number for ${city.name}: "${fridgeNumber}"`);
+          }
+        } else if (records.length < 5) {
+          console.log(`[Import] Row ${i}: Number column found but value is empty for ${city.name}`);
         }
+      } else if (isNumberCity && fridgeNumberIdx === -1 && records.length < 5) {
+        console.log(`[Import] Row ${i}: City ${city.name} requires number but column not found`);
       }
 
       const record = {
