@@ -540,19 +540,25 @@ export default function AccountantDashboard() {
           <p className="text-slate-500 mt-1">Создание, редактирование и генерация QR-кодов</p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              setImportFile(null);
-              setImportResult(null);
-              document.getElementById('import-file-input')?.click();
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm"
-          >
+          <label className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 cursor-pointer transition-colors font-medium shadow-sm">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
             <span>Импорт из Excel</span>
-          </button>
+            <input
+              id="import-file-input"
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setImportFile(file);
+                setImportResult(null);
+                // Модальное окно откроется автоматически, так как importFile !== null
+              }}
+              className="hidden"
+              disabled={importing}
+            />
+          </label>
           <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
