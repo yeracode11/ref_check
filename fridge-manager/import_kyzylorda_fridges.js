@@ -191,13 +191,29 @@ async function importKyzylordaFridges(excelFilePath) {
 
       processed++;
 
-      // Получаем номер холодильника
+      // Получаем номер холодильника из Excel
       let fridgeNumber = null;
       if (fridgeNumberIdx >= 0) {
         const numberValue = String(row[fridgeNumberIdx] || '').trim();
         if (numberValue && numberValue !== 'null' && numberValue !== 'undefined') {
           fridgeNumber = numberValue;
         }
+      }
+
+      // Для Кызылорды, как для Шымкента: используем номер из Excel как code
+      // Если номера нет, генерируем последовательный код
+      let code;
+      if (fridgeNumber) {
+        // Используем номер из Excel как code (как для Шымкента)
+        code = fridgeNumber;
+      } else {
+        // Если номера нет, генерируем последовательный код
+        code = String(codeCounter);
+        while (await Fridge.findOne({ code })) {
+          codeCounter++;
+          code = String(codeCounter);
+        }
+        codeCounter++;
       }
 
       // Получаем адрес (может быть пустым)
@@ -219,15 +235,8 @@ async function importKyzylordaFridges(excelFilePath) {
       }
       const description = descriptionParts.length > 0 ? descriptionParts.join('; ') : null;
 
-      // Генерируем уникальный код
-      let code = String(codeCounter);
-      while (await Fridge.findOne({ code })) {
-        codeCounter++;
-        code = String(codeCounter);
-      }
-
       const record = {
-        code,
+        code, // Для Кызылорды code = номер из Excel (как для Шымкента)
         name: contractor.substring(0, 200),
         cityId: kyzylordaCity._id,
         address: address || null,
@@ -240,7 +249,7 @@ async function importKyzylordaFridges(excelFilePath) {
         warehouseStatus: 'warehouse',
       };
 
-      // Добавляем number только если он есть
+      // Добавляем number (равен code, если есть номер из Excel)
       if (fridgeNumber) {
         record.number = fridgeNumber;
       }
