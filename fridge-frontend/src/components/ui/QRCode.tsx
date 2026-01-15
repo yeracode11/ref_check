@@ -236,33 +236,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               bottomTextHeight += 32 + topPadding; // Увеличено для лучшего отображения
             }
             
-            if (title) {
-              // Вычисляем высоту для title (может быть в несколько строк) - увеличиваем размер шрифта
-              ctx.font = 'bold 22px Arial'; // Увеличено до 22px для четкости
-              const maxWidth = tarazQRSize;
-              const words = title.split(' ');
-              let lines: string[] = [];
-              let currentLine = '';
-              
-              for (const word of words) {
-                const testLine = currentLine ? `${currentLine} ${word}` : word;
-                const metrics = ctx.measureText(testLine);
-                
-                if (metrics.width > maxWidth && currentLine) {
-                  lines.push(currentLine);
-                  currentLine = word;
-                  if (lines.length >= 2) break; // Максимум 2 строки
-                } else {
-                  currentLine = testLine;
-                }
-              }
-              
-              if (currentLine && lines.length < 2) {
-                lines.push(currentLine);
-              }
-              
-              bottomTextHeight += Math.min(lines.length, 2) * 26 + bottomPadding; // Увеличено для четкости
-            }
+            // Название убрано - не отображаем title
           }
           
           // Теперь устанавливаем финальные размеры canvas
