@@ -720,7 +720,9 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       const descriptionParts = [];
       if (contractNumIdx >= 0) {
         const contractNum = String(row[contractNumIdx] || '').trim();
-        if (contractNum) descriptionParts.push(`Договор: ${contractNum}`);
+        if (contractNum && contractNum !== 'Без договора') {
+          descriptionParts.push(`Договор: ${contractNum}`);
+        }
       }
       if (quantityIdx >= 0) {
         const quantity = String(row[quantityIdx] || '').trim();
@@ -733,6 +735,14 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       if (tpIdx >= 0) {
         const tp = String(row[tpIdx] || '').trim();
         if (tp) descriptionParts.push(`ТП: ${tp}`);
+      }
+      // Для Кызылорды может быть колонка "Оборудование" - добавляем её в описание
+      const equipmentIdx = findColumnIndex(['оборудование', 'equipment']);
+      if (equipmentIdx >= 0) {
+        const equipment = String(row[equipmentIdx] || '').trim();
+        if (equipment) {
+          descriptionParts.push(`Оборудование: ${equipment}`);
+        }
       }
       const description = descriptionParts.length > 0 ? descriptionParts.join('; ') : null;
 
