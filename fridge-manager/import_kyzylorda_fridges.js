@@ -267,12 +267,22 @@ async function importKyzylordaFridges(excelFilePath) {
     // 7. Импортируем в базу данных
     console.log('=== Импорт в базу данных ===\n');
     
-    // Загружаем существующие коды и номера для проверки дубликатов
-    const existingFridges = await Fridge.find({ cityId: kyzylordaCity._id }, { code: 1, number: 1 }).lean();
+    // Загружаем существующие холодильники для проверки дубликатов
+    const existingFridges = await Fridge.find({ cityId: kyzylordaCity._id }, { code: 1, number: 1, name: 1 }).lean();
     const existingCodes = new Set(existingFridges.map(f => f.code));
-    const existingNumbers = new Set(existingFridges.map(f => f.number).filter(n => n && n.trim() !== ''));
+    
+    // Создаем Set для проверки дубликатов по комбинации (number + name)
+    // Ключ: "number|name" или просто "name" если number нет
+    const existingCombinations = new Set();
+    existingFridges.forEach(f => {
+      const key = f.number && f.number.trim() !== '' 
+        ? `${f.number}|${f.name}` 
+        : f.name;
+      existingCombinations.add(key);
+    });
 
     const recordsToInsert = [];
+    const seenInBatch = new Set(); // Для проверки дубликатов внутри текущего импорта
     let duplicates = 0;
 
     for (const record of records) {
@@ -282,17 +292,27 @@ async function importKyzylordaFridges(excelFilePath) {
         continue;
       }
 
-      // Проверяем дубликаты по number (если есть)
-      if (record.number && existingNumbers.has(record.number)) {
+      // Проверяем дубликаты по комбинации (number + name)
+      const combinationKey = record.number && record.number.trim() !== ''
+        ? `${record.number}|${record.name}`
+        : record.name;
+      
+      // Проверяем в существующих данных
+      if (existingCombinations.has(combinationKey)) {
+        duplicates++;
+        continue;
+      }
+
+      // Проверяем дубликаты внутри текущего батча (если в Excel есть дубликаты)
+      if (seenInBatch.has(combinationKey)) {
         duplicates++;
         continue;
       }
 
       recordsToInsert.push(record);
       existingCodes.add(record.code);
-      if (record.number) {
-        existingNumbers.add(record.number);
-      }
+      existingCombinations.add(combinationKey);
+      seenInBatch.add(combinationKey);
     }
 
     console.log(`  Новых записей: ${recordsToInsert.length}`);
