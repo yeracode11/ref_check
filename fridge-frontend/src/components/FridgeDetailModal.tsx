@@ -752,7 +752,6 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
                   (fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : fridge.code
                 )}`}
-                title={fridge.name}
                 code={fridge.code}
                 number={fridge.number}
                 cityName={fridge.cityId?.name}

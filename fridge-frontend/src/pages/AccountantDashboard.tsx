@@ -1032,7 +1032,6 @@ export default function AccountantDashboard() {
                     ? selectedFridge.number 
                     : selectedFridge.code
                 )}`}
-                title={selectedFridge.name}
                 code={selectedFridge.code}
                 number={selectedFridge.number}
                 cityName={selectedFridge.cityId?.name}

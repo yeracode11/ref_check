@@ -1164,7 +1164,6 @@ export default function AdminDashboard() {
                     ? selectedQRFridge.number 
                     : selectedQRFridge.code
                 )}`}
-                title={selectedQRFridge.name}
                 code={selectedQRFridge.code}
                 number={selectedQRFridge.number}
                 cityName={selectedQRFridge.city?.name}
