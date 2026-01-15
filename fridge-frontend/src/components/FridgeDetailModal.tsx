@@ -738,7 +738,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
         {showQR && (
           <div className="absolute inset-0 bg-white rounded-xl flex flex-col z-[1002]" style={{ zIndex: 1002 }}>
             <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
-              <h3 className="font-semibold text-slate-900">QR-код: {fridge.name}</h3>
+              <h3 className="font-semibold text-slate-900">QR-код</h3>
               <button
                 onClick={() => setShowQR(false)}
                 className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
@@ -748,6 +748,11 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               </button>
             </div>
             <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto min-h-0">
+              {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? (
+                <p className="text-xs text-slate-500 font-mono mb-2">{fridge.number}</p>
+              ) : (
+                <p className="text-xs text-slate-500 font-mono mb-2">#{fridge.code}</p>
+              )}
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
                   (fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : fridge.code

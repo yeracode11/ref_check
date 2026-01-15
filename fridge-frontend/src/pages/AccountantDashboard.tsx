@@ -1016,13 +1016,10 @@ export default function AccountantDashboard() {
               <button onClick={() => setShowQRModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl">×</button>
             </div>
             <div className="mb-4">
-              <p className="text-sm text-slate-600">
-                <span className="font-medium">Холодильник:</span> {selectedFridge.name}
-              </p>
               {(selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Кызылорда') && selectedFridge.number ? (
-                <p className="text-xs text-slate-500 font-mono">{selectedFridge.number}</p>
+                <p className="text-xs text-slate-500 font-mono text-center">{selectedFridge.number}</p>
               ) : (
-                <p className="text-xs text-slate-500 font-mono">#{selectedFridge.code}</p>
+                <p className="text-xs text-slate-500 font-mono text-center">#{selectedFridge.code}</p>
               )}
             </div>
             <div className="flex justify-center mb-4">

@@ -1148,13 +1148,10 @@ export default function AdminDashboard() {
               </button>
             </div>
             <div className="mb-4">
-              <p className="text-sm text-slate-600 mb-1">
-                <span className="font-medium">Холодильник:</span> {selectedQRFridge.name}
-              </p>
               {(selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда') && selectedQRFridge.number ? (
-                <p className="text-xs text-slate-500 font-mono">{selectedQRFridge.number}</p>
+                <p className="text-xs text-slate-500 font-mono text-center">{selectedQRFridge.number}</p>
               ) : (
-                <p className="text-xs text-slate-500 font-mono">#{selectedQRFridge.code}</p>
+                <p className="text-xs text-slate-500 font-mono text-center">#{selectedQRFridge.code}</p>
               )}
             </div>
             <div className="flex justify-center mb-4">
