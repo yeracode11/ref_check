@@ -746,13 +746,6 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
       const description = descriptionParts.length > 0 ? descriptionParts.join('; ') : null;
 
-      // Генерируем уникальный код
-      let code = String(codeCounter);
-      while (await Fridge.findOne({ code })) {
-        codeCounter++;
-        code = String(codeCounter);
-      }
-
       // Для Шымкента и Кызылорды сохраняем длинный номер из Excel в поле number
       // Проверяем название города более гибко (с учетом разных вариантов написания)
       const cityNameLower = (city.name || '').toLowerCase();
@@ -777,8 +770,24 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         console.log(`[Import] Row ${i}: City ${city.name} requires number but column not found`);
       }
 
+      // Для Шымкента и Кызылорды: используем номер из Excel как code (как для Шымкента)
+      // Если номера нет, генерируем последовательный код
+      let code;
+      if (isNumberCity && fridgeNumber) {
+        // Используем номер из Excel как code (как для Шымкента)
+        code = fridgeNumber;
+      } else {
+        // Генерируем уникальный код
+        code = String(codeCounter);
+        while (await Fridge.findOne({ code })) {
+          codeCounter++;
+          code = String(codeCounter);
+        }
+        codeCounter++;
+      }
+
       const record = {
-        code,
+        code, // Для Шымкента и Кызылорды code = номер из Excel
         name: name.substring(0, 200),
         cityId: city._id,
         address: null, // Адрес будет обновляться через чек-ины
@@ -790,7 +799,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         active: true,
       };
 
-      // Добавляем number только если он есть (для Шымкента)
+      // Добавляем number (равен code, если есть номер из Excel)
       if (fridgeNumber) {
         record.number = fridgeNumber;
       }
