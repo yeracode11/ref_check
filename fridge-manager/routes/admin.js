@@ -260,26 +260,26 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       fridgeFilter.cityId = req.user.cityId;
     }
 
-    // Получаем холодильники и сортируем: для Шымкента по number, для остальных по code
+    // Получаем холодильники и сортируем: для Шымкента и Кызылорды по number, для остальных по code
     const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code');
     console.log(`[Export] Found ${fridges.length} fridges to export`);
     
-    // Сортируем: для Шымкента по number, для остальных по code
+    // Сортируем: для Шымкента и Кызылорды по number, для остальных по code
     fridges.sort((a, b) => {
-      const isShymkentA = a.cityId?.name === 'Шымкент';
-      const isShymkentB = b.cityId?.name === 'Шымкент';
+      const isNumberCityA = a.cityId?.name === 'Шымкент' || a.cityId?.name === 'Кызылорда';
+      const isNumberCityB = b.cityId?.name === 'Шымкент' || b.cityId?.name === 'Кызылорда';
       
-      if (isShymkentA && isShymkentB) {
-        // Оба из Шымкента - сортируем по number
+      if (isNumberCityA && isNumberCityB) {
+        // Оба из Шымкента или Кызылорды - сортируем по number
         const numA = a.number || '';
         const numB = b.number || '';
         return numA.localeCompare(numB);
-      } else if (isShymkentA) {
-        return -1; // Шымкент в начале
-      } else if (isShymkentB) {
-        return 1; // Шымкент в начале
+      } else if (isNumberCityA) {
+        return -1; // Шымкент/Кызылорда в начале
+      } else if (isNumberCityB) {
+        return 1; // Шымкент/Кызылорда в начале
       } else {
-        // Оба не из Шымкента - сортируем по code
+        // Оба не из Шымкента/Кызылорды - сортируем по code
         const codeA = a.code || '';
         const codeB = b.code || '';
         return codeA.localeCompare(codeB);
@@ -351,7 +351,7 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       if (i % 100 === 0 && i > 0) {
         console.log(`[Export] Progress: ${i}/${totalFridges} (${Math.round(i / totalFridges * 100)}%)`);
       }
-      // Для Шымкента check-ins могут быть привязаны к number, для остальных - к code
+      // Для Шымкента и Кызылорды check-ins могут быть привязаны к number, для остальных - к code
       // Ищем последнюю отметку и по code, и по number
       const lastVisit = lastByFridgeId.get(f.code) || (f.number ? lastByFridgeId.get(f.number) : null) || null;
       

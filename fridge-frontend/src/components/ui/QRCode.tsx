@@ -131,8 +131,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
         const url = URL.createObjectURL(svgBlob);
 
         img.onload = () => {
-          // Определяем формат: для Шымкента - новый формат, для остальных - старый
-          const isShymkent = cityName === 'Шымкент';
+          // Определяем формат: для Шымкента и Кызылорды - новый формат, для остальных - старый
+          const isShymkent = cityName === 'Шымкент' || cityName === 'Кызылорда';
           
           // Добавляем отступы
           const padding = 40;
@@ -615,7 +615,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
     }
   }
 
-  const isShymkent = cityName === 'Шымкент';
+  const isShymkent = cityName === 'Шымкент' || cityName === 'Кызылорда';
 
   // Размер QR кода: для Шымкента 92%, для Тараза 92% (увеличено для четкости при печати)
   const displaySize = isShymkent ? Math.floor(size * 0.92) : Math.floor(size * 0.92);

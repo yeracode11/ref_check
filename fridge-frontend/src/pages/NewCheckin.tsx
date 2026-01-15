@@ -121,7 +121,7 @@ export default function NewCheckin() {
                 <option value="">Выберите холодильник</option>
                 {fridges.map((f) => (
                   <option key={f._id} value={f.code}>
-                    {f.name} {f.cityId?.name === 'Шымкент' && f.number ? `(${f.number})` : `(#${f.code})`}
+                    {f.name} {(f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда') && f.number ? `(${f.number})` : `(#${f.code})`}
                   </option>
                 ))}
               </select>

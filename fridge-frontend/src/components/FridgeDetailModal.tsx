@@ -330,7 +330,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <div>
               <h2 className="font-semibold text-slate-900">{fridge.name}</h2>
               <p className="text-sm text-slate-500 font-mono">
-                {fridge.cityId?.name === 'Шымкент' && fridge.number ? fridge.number : `#${fridge.code}`}
+                {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : `#${fridge.code}`}
               </p>
             </div>
           </div>
@@ -396,10 +396,10 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <dl className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-slate-500">
-                    {fridge.cityId?.name === 'Шымкент' && fridge.number ? 'Номер:' : 'Код:'}
+                    {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? 'Номер:' : 'Код:'}
                   </dt>
                   <dd className="font-mono text-slate-900">
-                    {fridge.cityId?.name === 'Шымкент' && fridge.number ? fridge.number : fridge.code}
+                    {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : fridge.code}
                   </dd>
                 </div>
                 {fridge.cityId && (
@@ -750,7 +750,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto min-h-0">
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
-                  fridge.cityId?.name === 'Шымкент' && fridge.number ? fridge.number : fridge.code
+                  (fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : fridge.code
                 )}`}
                 title={fridge.name}
                 code={fridge.code}
@@ -771,7 +771,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <div className="bg-white rounded-lg p-6 max-w-sm mx-4 relative z-[1201]" style={{ zIndex: 1201 }}>
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить холодильник?</h3>
               <p className="text-slate-600 text-sm mb-4">
-                Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> ({fridge.cityId?.name === 'Шымкент' && fridge.number ? fridge.number : `#${fridge.code}`})?
+                Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> ({(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : `#${fridge.code}`})?
                 Все связанные отметки также будут удалены. Это действие нельзя отменить.
               </p>
               <div className="flex gap-3">

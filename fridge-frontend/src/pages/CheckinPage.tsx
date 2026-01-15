@@ -212,7 +212,7 @@ export default function CheckinPage() {
         {fridge && (
           <p className="text-slate-500 mt-1">
             Холодильник: <span className="font-medium">{fridge.name}</span>{' '}
-            {fridge.cityId?.name === 'Шымкент' && fridge.number ? (
+            {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? (
               <Badge variant="info">{fridge.number}</Badge>
             ) : (
               <Badge variant="info">#{fridge.code}</Badge>
@@ -239,7 +239,7 @@ export default function CheckinPage() {
                 <span className="font-semibold">Холодильник:</span> {fridge.name}
               </div>
               <div className="text-xs text-slate-500">
-                {fridge.cityId?.name === 'Шымкент' && fridge.number ? (
+                {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? (
                   <>Номер: <span className="font-mono">{fridge.number}</span></>
                 ) : (
                   <>Код: <span className="font-mono">{fridge.code}</span></>
