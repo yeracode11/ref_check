@@ -540,41 +540,44 @@ export default function AccountantDashboard() {
           <p className="text-slate-500 mt-1">Создание, редактирование и генерация QR-кодов</p>
         </div>
         <div className="flex items-center gap-3">
-          <label 
-            htmlFor="import-file-input"
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 cursor-pointer transition-colors font-medium shadow-sm"
-            onClick={(e) => {
-              console.log('Import button label clicked');
+          <button
+            onClick={() => {
+              console.log('Import button clicked');
+              const input = document.getElementById('import-file-input');
+              if (input) {
+                console.log('Input found, clicking...');
+                input.click();
+              } else {
+                console.error('Input not found!');
+              }
             }}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
             <span>Импорт из Excel</span>
-            <input
-              id="import-file-input"
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={(e) => {
-                console.log('File input onChange triggered', e.target.files);
-                const file = e.target.files?.[0] || null;
-                console.log('Selected file:', file);
-                if (file) {
-                  setImportFile(file);
-                  setImportResult(null);
-                  console.log('File set, modal should open');
-                } else {
-                  console.log('No file selected');
-                }
-              }}
-              onClick={(e) => {
-                console.log('File input clicked');
-                e.stopPropagation();
-              }}
-              className="hidden"
-              disabled={importing}
-            />
-          </label>
+          </button>
+          <input
+            id="import-file-input"
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => {
+              console.log('File input onChange triggered', e.target.files);
+              const file = e.target.files?.[0] || null;
+              console.log('Selected file:', file);
+              if (file) {
+                console.log('Setting importFile to:', file.name);
+                setImportFile(file);
+                setImportResult(null);
+                console.log('File set, modal should open. importFile state:', file);
+              } else {
+                console.log('No file selected');
+              }
+            }}
+            className="hidden"
+            disabled={importing}
+          />
           <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
