@@ -573,7 +573,8 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     const addressIdx = findColumnIndex(['адрес']);
     const tpIdx = findColumnIndex(['тп']);
     
-    // Для Шымкента ищем колонку с номером холодильника из Excel
+    // Для городов, где используем длинный номер (Шымкент, Кызылорда),
+    // ищем колонку с номером холодильника из Excel.
     // Ищем колонку, которая содержит "номер" или "код", но не "договор"
     let fridgeNumberIdx = -1;
     for (let i = 0; i < headers.length; i++) {
@@ -727,10 +728,10 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         code = String(codeCounter);
       }
 
-      // Для Шымкента сохраняем длинный номер из Excel в поле number
-      const isShymkent = city.name === 'Шымкент';
+      // Для Шымкента и Кызылорды сохраняем длинный номер из Excel в поле number
+      const isNumberCity = city.name === 'Шымкент' || city.name === 'Кызылорда';
       let fridgeNumber = null;
-      if (isShymkent && fridgeNumberIdx >= 0) {
+      if (isNumberCity && fridgeNumberIdx >= 0) {
         const numberValue = String(row[fridgeNumberIdx] || '').trim();
         if (numberValue && numberValue !== 'null' && numberValue !== 'undefined') {
           fridgeNumber = numberValue;
