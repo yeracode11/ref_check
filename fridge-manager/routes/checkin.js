@@ -49,14 +49,6 @@ router.post('/', async (req, res) => {
       visitedAt: req.body.visitedAt ? new Date(req.body.visitedAt) : undefined,
     });
     
-    // Логирование для отладки (можно убрать после проверки)
-    console.log('[Checkins] Created checkin:', { 
-      id: checkin.id, 
-      managerId: checkin.managerId, 
-      fridgeId: checkin.fridgeId,
-      reqUser: req.user ? { id: req.user.id, username: req.user.username, role: req.user.role } : null
-    });
-
     // Обновляем местоположение, адрес и статус холодильника по последней отметке
     // fridgeId в чек-ине может быть как code, так и number (для Шымкента)
     try {

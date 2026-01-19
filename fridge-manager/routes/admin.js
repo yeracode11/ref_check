@@ -15,13 +15,6 @@ const upload = multer({
     fileSize: 100 * 1024 * 1024, // 100MB максимум
   },
   fileFilter: (req, file, cb) => {
-    console.log('[Multer] File filter called:', {
-      fieldname: file.fieldname,
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      encoding: file.encoding
-    });
-    
     // Проверяем тип файла
     const allowedMimes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
@@ -30,10 +23,8 @@ const upload = multer({
     ];
     
     if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls)$/i)) {
-      console.log('[Multer] File accepted');
       cb(null, true);
     } else {
-      console.log('[Multer] File rejected, mimetype:', file.mimetype);
       cb(new Error('Неподдерживаемый тип файла. Разрешены только .xlsx и .xls файлы.'));
     }
   },

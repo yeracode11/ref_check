@@ -542,13 +542,9 @@ export default function AccountantDashboard() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => {
-              console.log('Import button clicked');
               const input = document.getElementById('import-file-input');
               if (input) {
-                console.log('Input found, clicking...');
                 input.click();
-              } else {
-                console.error('Input not found!');
               }
             }}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm"
@@ -563,16 +559,10 @@ export default function AccountantDashboard() {
             type="file"
             accept=".xlsx,.xls"
             onChange={(e) => {
-              console.log('File input onChange triggered', e.target.files);
               const file = e.target.files?.[0] || null;
-              console.log('Selected file:', file);
               if (file) {
-                console.log('Setting importFile to:', file.name);
                 setImportFile(file);
                 setImportResult(null);
-                console.log('File set, modal should open. importFile state:', file);
-              } else {
-                console.log('No file selected');
               }
             }}
             className="hidden"

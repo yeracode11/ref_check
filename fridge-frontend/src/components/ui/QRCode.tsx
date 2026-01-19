@@ -21,16 +21,14 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
   const [printing, setPrinting] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
 
-  // Ленивая загрузка QR-кода - показываем только после того, как компонент отрендерился
+  // Ленивая, но максимально быстрая загрузка QR-кода:
+  // рендерим SVG в следующий кадр после появления модального окна,
+  // без лишних таймаутов, чтобы попап открывался мгновенно.
   useEffect(() => {
-    // Используем requestAnimationFrame для отложенной загрузки
-    const timer = requestAnimationFrame(() => {
-      // Дополнительная небольшая задержка для обеспечения плавности
-      setTimeout(() => {
-        setIsVisible(true);
-      }, 50);
+    const frameId = requestAnimationFrame(() => {
+      setIsVisible(true);
     });
-    return () => cancelAnimationFrame(timer);
+    return () => cancelAnimationFrame(frameId);
   }, []);
 
   // Добавляем стили для печати (только один раз)

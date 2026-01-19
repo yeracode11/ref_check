@@ -113,31 +113,20 @@ export default function AdminDashboard() {
   }, [user]);
 
   // Загрузка всех холодильников для карты и статистики
+  // ВАЖНО: грузим это в фоне, не блокируя первый рендер и список
   useEffect(() => {
     if (!user || user.role !== 'admin') {
-      setLoading(false);
       return;
     }
 
     let alive = true;
     (async () => {
       try {
-        setLoading(true);
         const [fridgeStatusRes, checkinsRes] = await Promise.all([
           api.get('/api/admin/fridge-status?all=true'), // Все для карты
           api.get('/api/checkins'),
         ]);
         if (!alive) return;
-        // Логируем для отладки
-        console.log('[AdminDashboard] Загружено холодильников:', fridgeStatusRes.data.length);
-        const withCoords = fridgeStatusRes.data.filter((f: AdminFridge) => 
-          f.location && f.location.coordinates && 
-          Array.isArray(f.location.coordinates) && 
-          f.location.coordinates.length === 2 &&
-          f.location.coordinates[0] !== 0 && 
-          f.location.coordinates[1] !== 0
-        );
-        console.log('[AdminDashboard] Холодильников с координатами:', withCoords.length);
         setAllFridges(fridgeStatusRes.data);
         setCheckins(checkinsRes.data);
         setError(null);
@@ -145,7 +134,8 @@ export default function AdminDashboard() {
         if (!alive) return;
         setError(e?.message || 'Ошибка загрузки данных');
       } finally {
-        if (alive) setLoading(false);
+        // Ничего не делаем с основным состоянием загрузки,
+        // чтобы не блокировать первый рендер списка
       }
     })();
 
@@ -284,28 +274,15 @@ export default function AdminDashboard() {
       setUploadProgress(0);
       setProcessingProgress('Загрузка файла...');
 
-      // Проверяем, что файл существует
+      // Дополнительная проверка на наличие файла
       if (!importFile) {
         alert('Файл не выбран');
         return;
       }
 
-      console.log('Подготовка файла к отправке:', {
-        name: importFile.name,
-        size: importFile.size,
-        type: importFile.type,
-        lastModified: importFile.lastModified
-      });
-
       const formData = new FormData();
       formData.append('file', importFile);
       formData.append('cityId', importCityId); // Добавляем выбранный город
-
-      // Проверяем, что файл добавлен в FormData
-      console.log('FormData создан, проверка содержимого...');
-      for (const pair of formData.entries()) {
-        console.log('FormData entry:', pair[0], pair[1] instanceof File ? `File: ${pair[1].name} (${pair[1].size} bytes)` : pair[1]);
-      }
 
       // Явно создаем конфигурацию для axios, чтобы убедиться, что FormData обрабатывается правильно
       // Важно: не устанавливаем Content-Type - axios должен автоматически установить multipart/form-data
@@ -315,15 +292,7 @@ export default function AdminDashboard() {
         },
         timeout: 600000, // 10 минут (увеличено для больших файлов)
         // Явно указываем, что это FormData, чтобы axios не пытался сериализовать как JSON
-        transformRequest: [(data: any) => {
-          // Если это FormData, возвращаем как есть
-          if (data instanceof FormData) {
-            console.log('[API] transformRequest: FormData detected, returning as-is');
-            return data;
-          }
-          // Для других типов данных используем стандартную сериализацию
-          return data;
-        }],
+        transformRequest: [(data: any) => data],
         onUploadProgress: (progressEvent: any) => {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
@@ -334,14 +303,6 @@ export default function AdminDashboard() {
           }
         },
       };
-
-      console.log('Отправка запроса с конфигурацией:', {
-        url: '/api/admin/import-fridges',
-        method: 'POST',
-        hasFormData: formData instanceof FormData,
-        formDataType: formData.constructor.name,
-        configHeaders: axiosConfig.headers
-      });
 
       setProcessingProgress('Обработка данных на сервере...');
       const response = await api.post('/api/admin/import-fridges', formData, axiosConfig);
