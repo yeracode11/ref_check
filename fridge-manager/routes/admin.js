@@ -54,19 +54,16 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     const limitNum = shouldPaginate && limit ? Math.max(1, Math.min(100, Number(limit))) : undefined;
     const skipNum = shouldPaginate && skip ? Math.max(0, Number(skip)) : 0;
 
-    // Агрегируем статистику по каждому холодильнику: получаем все отметки для анализа
+    // Агрегируем статистику по каждому холодильнику:
+    // только последняя дата визита и количество отметок.
+    // Убрали тяжелое хранение всех локаций и сложную геометрию,
+    // т.к. черные метки по перемещению сейчас отключены.
     const statsByFridgeId = new Map();
     const checkinStats = await Checkin.aggregate([
-      { $sort: { fridgeId: 1, visitedAt: 1 } }, // Сортируем по дате
       {
         $group: {
           _id: '$fridgeId',
-          firstVisit: { $first: '$visitedAt' },
-          firstLocation: { $first: '$location' },
-          lastVisit: { $last: '$visitedAt' },
-          lastLocation: { $last: '$location' },
-          // Собираем все локации для проверки последних отметок
-          allLocations: { $push: '$location' },
+          lastVisit: { $max: '$visitedAt' },
           totalCheckins: { $sum: 1 },
         },
       },
@@ -74,16 +71,8 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 
     checkinStats.forEach((s) => {
       if (s && s._id) {
-        // Получаем предпоследнюю локацию (если есть)
-        const secondLastLocation = s.allLocations && s.allLocations.length >= 2 
-          ? s.allLocations[s.allLocations.length - 2] 
-          : null;
-        
         statsByFridgeId.set(s._id, {
           lastVisit: s.lastVisit,
-          firstLocation: s.firstLocation,
-          lastLocation: s.lastLocation,
-          secondLastLocation: secondLastLocation,
           totalCheckins: s.totalCheckins,
         });
       }
@@ -107,32 +96,9 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 
     const now = Date.now();
 
-    // Функция для вычисления расстояния между двумя точками (в метрах)
-    function calculateDistance(loc1, loc2) {
-      if (!loc1 || !loc2 || !loc1.coordinates || !loc2.coordinates) {
-        return null;
-      }
-      const [lng1, lat1] = loc1.coordinates;
-      const [lng2, lat2] = loc2.coordinates;
-      
-      // Формула гаверсинуса для расчета расстояния между двумя точками на сфере
-      const R = 6371000; // Радиус Земли в метрах
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLng = (lng2 - lng1) * Math.PI / 180;
-      const a = 
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLng / 2) * Math.sin(dLng / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    }
-
     const result = fridges.map((f) => {
       const stats = statsByFridgeId.get(f.code) || null;
       const lastVisit = stats ? stats.lastVisit : null;
-      const firstLocation = stats ? stats.firstLocation : null;
-      const lastLocation = stats ? stats.lastLocation : null;
-      const secondLastLocation = stats ? stats.secondLastLocation : null;
       const totalCheckins = stats ? stats.totalCheckins : 0;
 
       // Определяем статус визита
@@ -144,14 +110,10 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
         else visitStatus = 'old';
       }
 
-      // Определяем статус для отображения на карте
-      // Новая логика: 
-      // - При первой отметке (totalCheckins === 1) - зеленый
-      // - При второй и последующих отметках - сравниваем ПОСЛЕДНИЕ ДВЕ координаты (не первую и последнюю!)
-      // - Если последние 2 координаты в пределах 50м - зеленый (местоположение стабилизировалось)
-      // - Если последние 2 координаты далеко друг от друга (>50м) - красный (холодильник перемещается)
-      // - Это позволяет показать зеленый, если после перемещения холодильник снова отмечен в стабильном месте
-      // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка (location_changed) отключена
+      // Определяем статус для отображения на карте.
+      // Упрощенная логика без учета перемещений (черные метки отключены):
+      // - Если нет визитов или warehouseStatus === 'returned' -> 'never' (синий)
+      // - Иначе используем visitStatus (today / week / old)
       let status;
       const warehouseStatus = f.warehouseStatus || 'warehouse';
       
@@ -164,25 +126,10 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
           // На складе или установлен без отметок - синий
           status = 'never';
         }
-      } else if (totalCheckins === 1) {
-        // Первая отметка - всегда зеленый
-        status = visitStatus; // today, week, или old
-      } else if (totalCheckins >= 2 && lastLocation && secondLastLocation) {
-        // Вторая и последующие отметки - сравниваем ПОСЛЕДНИЕ ДВЕ координаты
-        // Если возвращен на склад - синий (приоритет над временем последнего визита)
-        if (warehouseStatus === 'returned') {
-          status = 'never'; // Синий цвет для возвращенных
-        } else {
-          const distance = calculateDistance(secondLastLocation, lastLocation);
-          // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
-          // Последние 2 отметки близко - местоположение стабилизировалось - зеленый/красный
-          status = visitStatus;
-        }
       } else {
-        // Fallback - если не удалось сравнить координаты, используем warehouseStatus или обычный статус
-        // Если возвращен на склад - синий (приоритет)
+        // Есть визиты
         if (warehouseStatus === 'returned') {
-          status = 'never'; // Синий цвет для возвращенных
+          status = 'never';
         } else {
           status = visitStatus;
         }
