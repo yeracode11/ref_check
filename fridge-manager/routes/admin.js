@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
 const City = require('../models/City');
@@ -1118,21 +1119,52 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
     ]);
 
     // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые идентификаторы
+    // и объединяем случаи, когда у одного менеджера есть чек-ины как по ObjectId, так и по username
     if (managerStats.length > 0) {
       const managerIds = managerStats.map((m) => m._id);
-      // В Checkin.managerId у нас хранится ЛОГИН (username), а не ObjectId пользователя,
-      // поэтому ищем пользователей по username, а не по _id, чтобы избежать CastError
-      const users = await User.find({ username: { $in: managerIds } }).select('username fullName');
-      const userMap = new Map(users.map((u) => [u.username, u]));
+      const objectIdStrings = managerIds.filter((id) => mongoose.isValidObjectId(id));
+      const objectIds = objectIdStrings.map((id) => new mongoose.Types.ObjectId(id));
 
-      managerStats = managerStats.map((m) => {
-        const user = userMap.get(String(m._id));
+      const users = await User.find({
+        $or: [
+          { username: { $in: managerIds } },
+          { _id: { $in: objectIds } },
+        ],
+      }).select('username fullName');
+
+      const userMap = new Map();
+      users.forEach((u) => {
+        if (u.username) userMap.set(u.username, u);
+        userMap.set(String(u._id), u);
+      });
+
+      const detailed = managerStats.map((m) => {
+        const user =
+          userMap.get(String(m._id)) ||
+          userMap.get(m._id);
         return {
           ...m,
           username: user ? user.username : String(m._id),
           fullName: user && user.fullName ? user.fullName : '',
         };
       });
+
+      // Объединяем по username: если у одного менеджера были разные managerId, складываем count
+      const mergedMap = new Map();
+      detailed.forEach((m) => {
+        const key = m.username || String(m._id);
+        const existing = mergedMap.get(key);
+        if (!existing) {
+          mergedMap.set(key, { ...m });
+        } else {
+          existing.count += m.count;
+          if (m.lastVisit && (!existing.lastVisit || new Date(m.lastVisit) > new Date(existing.lastVisit))) {
+            existing.lastVisit = m.lastVisit;
+          }
+        }
+      });
+
+      managerStats = Array.from(mergedMap.values());
     }
 
     // 3. Топ непосещаемых холодильников
@@ -1320,21 +1352,52 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
     ]);
 
     // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые идентификаторы
+    // и объединяем случаи, когда у одного менеджера есть чек-ины как по ObjectId, так и по username
     if (managerStats.length > 0) {
       const managerIds = managerStats.map((m) => m._id);
-      // В Checkin.managerId у нас хранится ЛОГИН (username), а не ObjectId пользователя,
-      // поэтому ищем пользователей по username, а не по _id, чтобы избежать CastError
-      const users = await User.find({ username: { $in: managerIds } }).select('username fullName');
-      const userMap = new Map(users.map((u) => [u.username, u]));
+      const objectIdStrings = managerIds.filter((id) => mongoose.isValidObjectId(id));
+      const objectIds = objectIdStrings.map((id) => new mongoose.Types.ObjectId(id));
 
-      managerStats = managerStats.map((m) => {
-        const user = userMap.get(String(m._id));
+      const users = await User.find({
+        $or: [
+          { username: { $in: managerIds } },
+          { _id: { $in: objectIds } },
+        ],
+      }).select('username fullName');
+
+      const userMap = new Map();
+      users.forEach((u) => {
+        if (u.username) userMap.set(u.username, u);
+        userMap.set(String(u._id), u);
+      });
+
+      const detailed = managerStats.map((m) => {
+        const user =
+          userMap.get(String(m._id)) ||
+          userMap.get(m._id);
         return {
           ...m,
           username: user ? user.username : String(m._id),
           fullName: user && user.fullName ? user.fullName : '',
         };
       });
+
+      // Объединяем по username: если у одного менеджера были разные managerId, складываем count
+      const mergedMap = new Map();
+      detailed.forEach((m) => {
+        const key = m.username || String(m._id);
+        const existing = mergedMap.get(key);
+        if (!existing) {
+          mergedMap.set(key, { ...m });
+        } else {
+          existing.count += m.count;
+          if (m.lastVisit && (!existing.lastVisit || new Date(m.lastVisit) > new Date(existing.lastVisit))) {
+            existing.lastVisit = m.lastVisit;
+          }
+        }
+      });
+
+      managerStats = Array.from(mergedMap.values());
     }
 
     // 3. Топ непосещаемых холодильников (только из города)
