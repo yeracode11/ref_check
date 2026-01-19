@@ -1101,15 +1101,51 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
 // Аналитика: посещения по дням, статистика по менеджерам, топ непосещаемых
 router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { days = 30 } = req.query;
+    const { days = 30, cityId } = req.query;
     const daysNum = parseInt(days, 10) || 30;
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - daysNum);
     startDate.setHours(0, 0, 0, 0);
 
+    // Если выбран город, получаем список кодов холодильников этого города
+    let fridgeFilter = {};
+    let fridgeCodes = [];
+    if (cityId && cityId !== 'all') {
+      const cityFridges = await Fridge.find({ 
+        cityId: cityId,
+        active: true 
+      }).select('code number');
+      
+      // Для Шымкента и Кызылорды нужно учитывать и code, и number
+      cityFridges.forEach((f) => {
+        fridgeCodes.push(f.code);
+        if (f.number) {
+          fridgeCodes.push(f.number);
+        }
+      });
+      
+      if (fridgeCodes.length === 0) {
+        // Если в городе нет холодильников, возвращаем пустые данные
+        return res.json({
+          dailyCheckins: [],
+          managerStats: [],
+          topUnvisited: [],
+          summary: {
+            totalFridges: 0,
+            totalCheckins: 0,
+            uniqueManagers: 0,
+            avgCheckinsPerDay: 0,
+            fridgesByStatus: { warehouse: 0, installed: 0, returned: 0 },
+          },
+        });
+      }
+      
+      fridgeFilter = { fridgeId: { $in: fridgeCodes } };
+    }
+
     // 1. Посещения по дням
     const checkinsByDay = await Checkin.aggregate([
-      { $match: { visitedAt: { $gte: startDate } } },
+      { $match: { visitedAt: { $gte: startDate }, ...fridgeFilter } },
       {
         $group: {
           _id: {
@@ -1131,7 +1167,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
 
     // 2. Статистика по менеджерам
     const managerStats = await Checkin.aggregate([
-      { $match: { visitedAt: { $gte: startDate } } },
+      { $match: { visitedAt: { $gte: startDate }, ...fridgeFilter } },
       {
         $group: {
           _id: '$managerId',
@@ -1144,8 +1180,13 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
     ]);
 
     // 3. Топ непосещаемых холодильников
-    const allFridges = await Fridge.find({ active: true }).select('code name address');
+    const fridgeQuery = { active: true };
+    if (cityId && cityId !== 'all') {
+      fridgeQuery.cityId = cityId;
+    }
+    const allFridges = await Fridge.find(fridgeQuery).select('code number name address cityId').populate('cityId', 'name');
     const lastCheckins = await Checkin.aggregate([
+      { $match: fridgeFilter },
       { $sort: { visitedAt: -1 } },
       {
         $group: {
@@ -1158,15 +1199,25 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
     const lastVisitMap = new Map();
     lastCheckins.forEach((c) => lastVisitMap.set(c._id, c.lastVisit));
 
-    const fridgesWithLastVisit = allFridges.map((f) => ({
-      code: f.code,
-      name: f.name,
-      address: f.address,
-      lastVisit: lastVisitMap.get(f.code) || null,
-      daysSinceVisit: lastVisitMap.get(f.code)
-        ? Math.floor((Date.now() - new Date(lastVisitMap.get(f.code)).getTime()) / (1000 * 60 * 60 * 24))
-        : null,
-    }));
+    const fridgesWithLastVisit = allFridges.map((f) => {
+      // Проверяем и по code, и по number для Шымкента и Кызылорды
+      const lastVisitCode = lastVisitMap.get(f.code);
+      const lastVisitNumber = f.number ? lastVisitMap.get(f.number) : null;
+      const lastVisit = lastVisitCode || lastVisitNumber || null;
+      const lastVisitDate = lastVisit ? new Date(lastVisit) : null;
+      
+      return {
+        code: f.code,
+        number: f.number,
+        name: f.name,
+        address: f.address,
+        cityId: f.cityId ? { name: f.cityId.name } : null,
+        lastVisit: lastVisit,
+        daysSinceVisit: lastVisitDate
+          ? Math.floor((Date.now() - lastVisitDate.getTime()) / (1000 * 60 * 60 * 24))
+          : null,
+      };
+    });
 
     // Сортируем: сначала те, кто никогда не посещался, потом по давности
     const topUnvisited = fridgesWithLastVisit
@@ -1179,13 +1230,13 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       .slice(0, 20);
 
     // 4. Общая статистика
-    const totalFridges = await Fridge.countDocuments({ active: true });
-    const totalCheckins = await Checkin.countDocuments({ visitedAt: { $gte: startDate } });
-    const uniqueManagers = await Checkin.distinct('managerId', { visitedAt: { $gte: startDate } });
+    const totalFridges = await Fridge.countDocuments(fridgeQuery);
+    const totalCheckins = await Checkin.countDocuments({ visitedAt: { $gte: startDate }, ...fridgeFilter });
+    const uniqueManagers = await Checkin.distinct('managerId', { visitedAt: { $gte: startDate }, ...fridgeFilter });
     
     // Холодильники по статусам
     const fridgesByStatus = await Fridge.aggregate([
-      { $match: { active: true } },
+      { $match: fridgeQuery },
       {
         $group: {
           _id: '$warehouseStatus',

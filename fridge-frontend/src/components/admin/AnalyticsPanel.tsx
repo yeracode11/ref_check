@@ -51,22 +51,34 @@ function formatShortDate(dateStr: string) {
   return `${day}.${month}`;
 }
 
-type AnalyticsPanelProps = {
-  endpoint?: string; // По умолчанию '/api/admin/analytics', для бухгалтера '/api/admin/analytics/accountant'
+type City = {
+  _id: string;
+  name: string;
+  code: string;
 };
 
-export function AnalyticsPanel({ endpoint = '/api/admin/analytics' }: AnalyticsPanelProps = {}) {
+type AnalyticsPanelProps = {
+  endpoint?: string; // По умолчанию '/api/admin/analytics', для бухгалтера '/api/admin/analytics/accountant'
+  cities?: City[]; // Список городов для фильтра (только для админа)
+};
+
+export function AnalyticsPanel({ endpoint = '/api/admin/analytics', cities = [] }: AnalyticsPanelProps = {}) {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
+  const [selectedCityId, setSelectedCityId] = useState<string>('all'); // 'all' для всех городов
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         setLoading(true);
-        const res = await api.get(`${endpoint}?days=${days}`);
+        const params = new URLSearchParams({ days: days.toString() });
+        if (selectedCityId && selectedCityId !== 'all') {
+          params.append('cityId', selectedCityId);
+        }
+        const res = await api.get(`${endpoint}?${params.toString()}`);
         if (!alive) return;
         setData(res.data);
         setError(null);
@@ -78,7 +90,7 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics' }: AnalyticsP
       }
     })();
     return () => { alive = false; };
-  }, [days, endpoint]);
+  }, [days, endpoint, selectedCityId]);
 
   if (loading) {
     return (
@@ -108,19 +120,37 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics' }: AnalyticsP
 
   return (
     <div className="space-y-6">
-      {/* Период */}
-      <div className="flex items-center justify-between">
+      {/* Период и фильтры */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-lg font-semibold text-slate-900">📊 Аналитика</h2>
-        <select
-          value={days}
-          onChange={(e) => setDays(Number(e.target.value))}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value={7}>7 дней</option>
-          <option value={14}>14 дней</option>
-          <option value={30}>30 дней</option>
-          <option value={90}>90 дней</option>
-        </select>
+        <div className="flex items-center gap-3">
+          {/* Фильтр по городам (только для админа) */}
+          {cities.length > 0 && (
+            <select
+              value={selectedCityId}
+              onChange={(e) => setSelectedCityId(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">Все города</option>
+              {cities.map((city) => (
+                <option key={city._id} value={city._id}>
+                  {city.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {/* Фильтр по дням */}
+          <select
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value={7}>7 дней</option>
+            <option value={14}>14 дней</option>
+            <option value={30}>30 дней</option>
+            <option value={90}>90 дней</option>
+          </select>
+        </div>
       </div>
 
       {/* Сводка */}

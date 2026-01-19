@@ -1019,7 +1019,7 @@ export default function AdminDashboard() {
       </Card>
 
       {/* Аналитика */}
-      <AnalyticsPanel />
+      <AnalyticsPanel cities={cities} />
 
       {/* Модальное окно для добавления холодильника */}
       {showAddFridgeModal && (
