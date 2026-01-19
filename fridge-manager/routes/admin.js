@@ -1179,11 +1179,13 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       { $limit: 20 },
     ]);
 
-    // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые ObjectId
+    // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые идентификаторы
     if (managerStats.length > 0) {
       const managerIds = managerStats.map((m) => m._id);
-      const users = await User.find({ _id: { $in: managerIds } }).select('username fullName');
-      const userMap = new Map(users.map((u) => [String(u._id), u]));
+      // В Checkin.managerId у нас хранится ЛОГИН (username), а не ObjectId пользователя,
+      // поэтому ищем пользователей по username, а не по _id, чтобы избежать CastError
+      const users = await User.find({ username: { $in: managerIds } }).select('username fullName');
+      const userMap = new Map(users.map((u) => [u.username, u]));
 
       managerStats = managerStats.map((m) => {
         const user = userMap.get(String(m._id));
@@ -1379,11 +1381,13 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
       { $limit: 20 },
     ]);
 
-    // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые ObjectId
+    // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые идентификаторы
     if (managerStats.length > 0) {
       const managerIds = managerStats.map((m) => m._id);
-      const users = await User.find({ _id: { $in: managerIds } }).select('username fullName');
-      const userMap = new Map(users.map((u) => [String(u._id), u]));
+      // В Checkin.managerId у нас хранится ЛОГИН (username), а не ObjectId пользователя,
+      // поэтому ищем пользователей по username, а не по _id, чтобы избежать CastError
+      const users = await User.find({ username: { $in: managerIds } }).select('username fullName');
+      const userMap = new Map(users.map((u) => [u.username, u]));
 
       managerStats = managerStats.map((m) => {
         const user = userMap.get(String(m._id));
