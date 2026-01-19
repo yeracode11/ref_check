@@ -139,8 +139,8 @@ export default function CheckinPage() {
       }
 
       await api.post('/api/checkins', {
-        // Важно: сохраняем managerId = _id пользователя, чтобы фильтр по пользователю работал корректно
-        managerId: user._id,
+        // Сохраняем managerId = username (код менеджера), а при его отсутствии используем _id
+        managerId: user.username || user._id,
         fridgeId: code,
         address: address || undefined,
         location: geo,

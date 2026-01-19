@@ -1,6 +1,8 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Checkin = require('../models/Checkin');
 const Fridge = require('../models/Fridge');
+const User = require('../models/User');
 const { getNextSequence } = require('../models/Counter');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
@@ -218,7 +220,41 @@ router.get('/', authenticateToken, async (req, res) => {
       };
     }
 
-    const items = await Checkin.find(filter).sort({ visitedAt: -1, id: -1 }).limit(500);
+    let items = await Checkin.find(filter).sort({ visitedAt: -1, id: -1 }).limit(300);
+
+    // Для админа обогащаем данными о менеджерах, чтобы показывать логин вместо сырых идентификаторов
+    if (req.user && req.user.role === 'admin' && items.length > 0) {
+      const managerIds = [...new Set(items.map((i) => i.managerId).filter(Boolean))];
+
+      const objectIdStrings = managerIds.filter((id) => mongoose.isValidObjectId(id));
+      const objectIds = objectIdStrings.map((id) => new mongoose.Types.ObjectId(id));
+
+      const users = await User.find({
+        $or: [
+          { username: { $in: managerIds } },
+          { _id: { $in: objectIds } },
+        ],
+      }).select('username fullName');
+
+      const userMap = new Map();
+      users.forEach((u) => {
+        if (u.username) userMap.set(u.username, u);
+        userMap.set(String(u._id), u);
+      });
+
+      items = items.map((item) => {
+        const plain = item.toObject();
+        const user =
+          userMap.get(plain.managerId) ||
+          userMap.get(String(plain.managerId));
+        return {
+          ...plain,
+          managerUsername: user ? user.username : plain.managerId,
+          managerFullName: user && user.fullName ? user.fullName : '',
+        };
+      });
+    }
+
     return res.json(items);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch checkins', details: err.message });

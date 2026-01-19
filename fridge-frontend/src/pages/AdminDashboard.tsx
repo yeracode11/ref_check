@@ -37,6 +37,8 @@ type AdminFridge = {
 type Checkin = {
   id: number;
   managerId: string;
+  managerUsername?: string;
+  managerFullName?: string;
   fridgeId: string;
   visitedAt: string;
   address?: string;
@@ -810,7 +812,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                      <span>👤 Менеджер: <span className="font-medium">{c.managerId}</span></span>
+                      <span>👤 Менеджер: <span className="font-medium">{c.managerUsername || c.managerId}</span></span>
                       <span>🧊 Холодильник: <span className="font-medium text-blue-600">#{c.fridgeId}</span></span>
                     </div>
                     {c.address && (
