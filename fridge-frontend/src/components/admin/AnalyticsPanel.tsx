@@ -13,6 +13,8 @@ type DailyCheckin = {
 
 type ManagerStat = {
   _id: string;
+  username?: string;
+  fullName?: string;
   count: number;
   lastVisit: string;
 };
@@ -258,7 +260,7 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics', cities = [] 
                 <XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
                 <YAxis 
                   type="category" 
-                  dataKey="_id" 
+                  dataKey="username" 
                   width={100}
                   tick={{ fontSize: 11 }}
                   stroke="#94a3b8"

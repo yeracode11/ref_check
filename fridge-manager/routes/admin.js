@@ -1166,7 +1166,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
     }));
 
     // 2. Статистика по менеджерам
-    const managerStats = await Checkin.aggregate([
+    let managerStats = await Checkin.aggregate([
       { $match: { visitedAt: { $gte: startDate }, ...fridgeFilter } },
       {
         $group: {
@@ -1178,6 +1178,22 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       { $sort: { count: -1 } },
       { $limit: 20 },
     ]);
+
+    // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые ObjectId
+    if (managerStats.length > 0) {
+      const managerIds = managerStats.map((m) => m._id);
+      const users = await User.find({ _id: { $in: managerIds } }).select('username fullName');
+      const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+      managerStats = managerStats.map((m) => {
+        const user = userMap.get(String(m._id));
+        return {
+          ...m,
+          username: user ? user.username : String(m._id),
+          fullName: user && user.fullName ? user.fullName : '',
+        };
+      });
+    }
 
     // 3. Топ непосещаемых холодильников
     const fridgeQuery = { active: true };
@@ -1345,7 +1361,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
     }));
 
     // 2. Статистика по менеджерам (только для холодильников из города)
-    const managerStats = await Checkin.aggregate([
+    let managerStats = await Checkin.aggregate([
       {
         $match: {
           fridgeId: { $in: fridgeCodes },
@@ -1362,6 +1378,22 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
       { $sort: { count: -1 } },
       { $limit: 20 },
     ]);
+
+    // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые ObjectId
+    if (managerStats.length > 0) {
+      const managerIds = managerStats.map((m) => m._id);
+      const users = await User.find({ _id: { $in: managerIds } }).select('username fullName');
+      const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+      managerStats = managerStats.map((m) => {
+        const user = userMap.get(String(m._id));
+        return {
+          ...m,
+          username: user ? user.username : String(m._id),
+          fullName: user && user.fullName ? user.fullName : '',
+        };
+      });
+    }
 
     // 3. Топ непосещаемых холодильников (только из города)
     // Для Шымкента нужно учитывать и code, и number
