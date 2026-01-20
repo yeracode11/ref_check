@@ -667,7 +667,7 @@ export default function AccountantDashboard() {
                     {getStatusBadge(f.warehouseStatus)}
                   </div>
                   <div className="text-sm text-slate-600 space-y-1">
-                    {(f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда') && f.number ? (
+                    {(f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда' || f.cityId?.name === 'Талдыкорган') && f.number ? (
                       <p><span className="text-slate-500">Номер:</span> {f.number}</p>
                     ) : (
                       <p><span className="text-slate-500">Код:</span> {f.code}</p>
@@ -892,7 +892,7 @@ export default function AccountantDashboard() {
             </h3>
             <p className="text-sm text-slate-600 mb-4">
               Холодильник: {selectedFridge.name}{' '}
-              {selectedFridge.cityId?.name === 'Шымкент' && selectedFridge.number 
+              {(selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Талдыкорган') && selectedFridge.number 
                 ? `(${selectedFridge.number})` 
                 : `(#${selectedFridge.code})`}
             </p>
@@ -1006,7 +1006,7 @@ export default function AccountantDashboard() {
               <button onClick={() => setShowQRModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl">×</button>
             </div>
             <div className="mb-4">
-              {(selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Кызылорда') && selectedFridge.number ? (
+              {(selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Кызылорда' || selectedFridge.cityId?.name === 'Талдыкорган') && selectedFridge.number ? (
                 <p className="text-xs text-slate-500 font-mono text-center">{selectedFridge.number}</p>
               ) : (
                 <p className="text-xs text-slate-500 font-mono text-center">#{selectedFridge.code}</p>
@@ -1015,7 +1015,7 @@ export default function AccountantDashboard() {
             <div className="flex justify-center mb-4">
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
-                  (selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Кызылорда') && selectedFridge.number 
+                  (selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Кызылорда' || selectedFridge.cityId?.name === 'Талдыкорган') && selectedFridge.number 
                     ? selectedFridge.number 
                     : selectedFridge.code
                 )}`}

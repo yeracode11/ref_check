@@ -330,7 +330,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <div>
               <h2 className="font-semibold text-slate-900">{fridge.name}</h2>
               <p className="text-sm text-slate-500 font-mono">
-                {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : `#${fridge.code}`}
+                {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? fridge.number : `#${fridge.code}`}
               </p>
             </div>
           </div>
@@ -396,7 +396,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <dl className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-slate-500">
-                    {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? 'Номер:' : 'Код:'}
+                    {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? 'Номер:' : 'Код:'}
                   </dt>
                   <dd className="font-mono text-slate-900">
                     {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : fridge.code}
@@ -748,14 +748,14 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               </button>
             </div>
             <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto min-h-0">
-              {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? (
+              {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? (
                 <p className="text-xs text-slate-500 font-mono mb-2">{fridge.number}</p>
               ) : (
                 <p className="text-xs text-slate-500 font-mono mb-2">#{fridge.code}</p>
               )}
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
-                  (fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : fridge.code
+                  (fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? fridge.number : fridge.code
                 )}`}
                 code={fridge.code}
                 number={fridge.number}

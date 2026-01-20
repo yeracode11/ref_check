@@ -297,7 +297,7 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics', cities = [] 
                   <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-2 px-3 font-medium text-slate-900">{f.name}</td>
                     <td className="py-2 px-3 text-slate-500 font-mono">
-                      {(f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда') && f.number ? f.number : `#${f.code}`}
+                      {(f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда' || f.cityId?.name === 'Талдыкорган') && f.number ? f.number : `#${f.code}`}
                     </td>
                     <td className="py-2 px-3 text-slate-500 max-w-[200px] truncate">{f.address || '—'}</td>
                     <td className="py-2 px-3 text-right text-slate-500">

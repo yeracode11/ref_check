@@ -203,22 +203,22 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
     const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code');
     console.log(`[Export] Found ${fridges.length} fridges to export`);
     
-    // Сортируем: для Шымкента и Кызылорды по number, для остальных по code
+    // Сортируем: для Шымкента, Кызылорды и Талдыкоргана по number, для остальных по code
     fridges.sort((a, b) => {
-      const isNumberCityA = a.cityId?.name === 'Шымкент' || a.cityId?.name === 'Кызылорда';
-      const isNumberCityB = b.cityId?.name === 'Шымкент' || b.cityId?.name === 'Кызылорда';
+      const isNumberCityA = a.cityId?.name === 'Шымкент' || a.cityId?.name === 'Кызылорда' || a.cityId?.name === 'Талдыкорган';
+      const isNumberCityB = b.cityId?.name === 'Шымкент' || b.cityId?.name === 'Кызылорда' || b.cityId?.name === 'Талдыкорган';
       
       if (isNumberCityA && isNumberCityB) {
-        // Оба из Шымкента или Кызылорды - сортируем по number
+        // Оба из Шымкента, Кызылорды или Талдыкоргана - сортируем по number
         const numA = a.number || '';
         const numB = b.number || '';
         return numA.localeCompare(numB);
       } else if (isNumberCityA) {
-        return -1; // Шымкент/Кызылорда в начале
+        return -1; // Шымкент/Кызылорда/Талдыкорган в начале
       } else if (isNumberCityB) {
-        return 1; // Шымкент/Кызылорда в начале
+        return 1; // Шымкент/Кызылорда/Талдыкорган в начале
       } else {
-        // Оба не из Шымкента/Кызылорды - сортируем по code
+        // Оба не из Шымкента/Кызылорды/Талдыкоргана - сортируем по code
         const codeA = a.code || '';
         const codeB = b.code || '';
         return codeA.localeCompare(codeB);
@@ -685,12 +685,14 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
       const description = descriptionParts.length > 0 ? descriptionParts.join('; ') : null;
 
-      // Для Шымкента и Кызылорды сохраняем длинный номер из Excel в поле number
+      // Для Шымкента, Кызылорды и Талдыкоргана сохраняем длинный номер из Excel в поле number
       // Проверяем название города более гибко (с учетом разных вариантов написания)
       const cityNameLower = (city.name || '').toLowerCase();
       const isNumberCity = cityNameLower.includes('шымкент') || 
                           cityNameLower.includes('кызылорда') || 
                           cityNameLower.includes('қызылорда') ||
+                          cityNameLower.includes('талдыкорган') ||
+                          cityNameLower.includes('taldykorgan') ||
                           cityNameLower === 'kyzylorda';
       
       let fridgeNumber = null;
@@ -709,11 +711,11 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         console.log(`[Import] Row ${i}: City ${city.name} requires number but column not found`);
       }
 
-      // Для Шымкента и Кызылорды: используем номер из Excel как code (как для Шымкента)
+      // Для Шымкента, Кызылорды и Талдыкоргана: используем номер из Excel как code
       // Если номера нет, генерируем последовательный код
       let code;
       if (isNumberCity && fridgeNumber) {
-        // Используем номер из Excel как code (как для Шымкента)
+        // Используем номер из Excel как code
         code = fridgeNumber;
       } else {
         // Генерируем уникальный код
@@ -726,7 +728,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
 
       const record = {
-        code, // Для Шымкента и Кызылорды code = номер из Excel
+        code, // Для Шымкента, Кызылорды и Талдыкоргана code = номер из Excel
         name: name.substring(0, 200),
         cityId: city._id,
         address: null, // Адрес будет обновляться через чек-ины

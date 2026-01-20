@@ -874,7 +874,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-900 truncate">{f.name}</p>
-                        {(f.city?.name === 'Шымкент' || f.city?.name === 'Кызылорда') && f.number ? (
+                        {(f.city?.name === 'Шымкент' || f.city?.name === 'Кызылорда' || f.city?.name === 'Талдыкорган') && f.number ? (
                           <p className="text-xs text-slate-500 font-mono truncate">{f.number}</p>
                         ) : (
                           <p className="text-xs text-slate-500 font-mono truncate">#{f.code}</p>
@@ -1111,7 +1111,7 @@ export default function AdminDashboard() {
               </button>
             </div>
             <div className="mb-4">
-              {(selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда') && selectedQRFridge.number ? (
+              {(selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда' || selectedQRFridge.city?.name === 'Талдыкорган') && selectedQRFridge.number ? (
                 <p className="text-xs text-slate-500 font-mono text-center">{selectedQRFridge.number}</p>
               ) : (
                 <p className="text-xs text-slate-500 font-mono text-center">#{selectedQRFridge.code}</p>
@@ -1120,7 +1120,7 @@ export default function AdminDashboard() {
             <div className="flex justify-center mb-4">
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
-                  (selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда') && selectedQRFridge.number 
+                  (selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда' || selectedQRFridge.city?.name === 'Талдыкорган') && selectedQRFridge.number 
                     ? selectedQRFridge.number 
                     : selectedQRFridge.code
                 )}`}
