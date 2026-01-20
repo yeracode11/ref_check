@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+// Загружаем переменные окружения так же, как в других скриптах (например, backup_database.js)
+require('dotenv').config();
 const Fridge = require('./models/Fridge');
 const Checkin = require('./models/Checkin');
 const City = require('./models/City');
