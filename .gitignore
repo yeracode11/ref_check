@@ -29,3 +29,25 @@ out/
 .DS_Store
 Thumbs.db
 
+# TypeScript build info
+*.tsbuildinfo
+
+# Backups and dumps
+**/backups/
+**/dump/
+*.log
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Temporary Excel files
+*.xls
+*.xlsx
+!data/*.xlsx
+
+# MongoDB tools and packages
+*.deb
+*.rpm
+*.tar.gz
