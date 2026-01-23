@@ -212,7 +212,22 @@ router.get('/', authenticateToken, async (req, res) => {
       };
     }
 
-    let items = await Checkin.find(filter).sort({ visitedAt: -1, id: -1 }).limit(300);
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
+
+    // Для админа по умолчанию возвращаем больше отметок (или все, если limit не указан)
+    // Для остальных ролей ограничиваем 300 для производительности
+    const defaultLimit = req.user && req.user.role === 'admin' ? null : 300;
+    const queryLimit = limit !== null ? limit : defaultLimit;
+
+    let query = Checkin.find(filter).sort({ visitedAt: -1, id: -1 });
+    if (queryLimit !== null) {
+      query = query.limit(queryLimit);
+    }
+    if (skip > 0) {
+      query = query.skip(skip);
+    }
+    let items = await query;
 
     // Для админа обогащаем данными о менеджерах, чтобы показывать логин вместо сырых идентификаторов
     if (req.user && req.user.role === 'admin' && items.length > 0) {
