@@ -545,15 +545,6 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       headers: headers.slice(0, 10) // Первые 10 заголовков для отладки
     });
 
-    console.log('[Import] Column indices:', {
-      contractorIdx,
-      contractNumIdx,
-      equipmentIdx,
-      addressIdx,
-      fridgeNumberIdx,
-      headers: headers.slice(0, 10) // Первые 10 заголовков для отладки
-    });
-
     // Проверяем обязательные колонки
     if (contractorIdx === -1) {
       return res.status(400).json({ error: 'Не найдена колонка "Контрагент" в Excel файле' });
@@ -561,30 +552,11 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     if (addressIdx === -1) {
       return res.status(400).json({ error: 'Не найдена колонка "Адрес" в Excel файле' });
     }
-    
-    // Для городов с номерами (Шымкент, Кызылорда, Талдыкорган) проверяем наличие колонки "Номер"
-    const requestedCityId = req.body?.cityId || req.query?.cityId;
-    let cityForCheck = null;
-    if (requestedCityId) {
-      cityForCheck = await City.findById(requestedCityId);
-    } else if (req.user.role === 'accountant' && req.user.cityId) {
-      cityForCheck = await City.findById(req.user.cityId);
-    }
-    
-    if (cityForCheck) {
-      const cityNameLower = (cityForCheck.name || '').toLowerCase();
-      const isNumberCity = cityNameLower.includes('шымкент') || 
-                          cityNameLower.includes('кызылорда') || 
-                          cityNameLower.includes('қызылорда') ||
-                          cityNameLower.includes('талдыкорган') ||
-                          cityNameLower.includes('taldykorgan') ||
-                          cityNameLower === 'kyzylorda';
-      
-      if (isNumberCity && fridgeNumberIdx === -1) {
-        return res.status(400).json({ 
-          error: `Для города "${cityForCheck.name}" требуется колонка "Номер" в Excel файле` 
-        });
-      }
+    if (fridgeNumberIdx === -1) {
+      return res.status(400).json({ 
+        error: 'Не найдена колонка "Номер" в Excel файле',
+        details: `Найденные заголовки: ${headers.join(', ')}`
+      });
     }
 
     // Определяем город для импорта
@@ -606,7 +578,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       if (!city) {
         return res.status(400).json({ error: 'Указанный город не найден' });
       }
-      console.log('[Import] Using requested city:', city.name, city.code);
+      console.log('[Import] Using requested city:', city.name, city.code, 'ID:', city._id);
       
       // Для бухгалтера проверяем, что он может импортировать только в свой город
       if (req.user.role === 'accountant' && req.user.cityId) {
@@ -620,7 +592,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       if (!city) {
         return res.status(400).json({ error: 'Город бухгалтера не найден' });
       }
-      console.log('[Import] Using accountant city:', city.name, city.code);
+      console.log('[Import] Using accountant city:', city.name, city.code, 'ID:', city._id);
     } else {
       // Для админа cityId обязателен
       return res.status(400).json({ error: 'Не указан город для импорта. Пожалуйста, выберите город.' });
@@ -628,22 +600,12 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
 
     // Парсим данные
     const records = [];
-    let codeCounter = 1;
-
-    // Находим максимальный существующий код
-    const maxFridge = await Fridge.findOne().sort({ code: -1 });
-    if (maxFridge && maxFridge.code) {
-      const maxCode = parseInt(maxFridge.code, 10);
-      if (!isNaN(maxCode)) {
-        codeCounter = maxCode + 1;
-      }
-    }
+    // Не нужен codeCounter - всегда используем номер из Excel
 
     console.log('[Import] Starting to parse data:', {
       dataStartRow,
       totalRows: rawData.length,
-      rowsToProcess: rawData.length - dataStartRow,
-      codeCounter
+      rowsToProcess: rawData.length - dataStartRow
     });
 
     let skippedNoAddress = 0;
@@ -677,7 +639,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
 
       // Используем контрагента для названия, если он есть
-      const name = contractor || `Холодильник ${codeCounter}`;
+      const name = contractor || 'Холодильник';
 
       // Формируем описание из Договора и Оборудования
       const descriptionParts = [];
@@ -696,59 +658,24 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       }
       const description = descriptionParts.length > 0 ? descriptionParts.join('; ') : null;
 
-      // Для городов с номерами (Шымкент, Кызылорда, Талдыкорган) номер обязателен
-      const cityNameLower = (city.name || '').toLowerCase();
-      const isNumberCity = cityNameLower.includes('шымкент') || 
-                          cityNameLower.includes('кызылорда') || 
-                          cityNameLower.includes('қызылорда') ||
-                          cityNameLower.includes('талдыкорган') ||
-                          cityNameLower.includes('taldykorgan') ||
-                          cityNameLower === 'kyzylorda';
+      // Номер из Excel обязателен - всегда используем его как code
+      const numberValue = String(row[fridgeNumberIdx] || '').trim();
+      if (!numberValue || numberValue === 'null' || numberValue === 'undefined') {
+        console.warn(`[Import] Row ${i}: Number is empty. Skipping.`);
+        skippedNoNumber++;
+        continue; // Пропускаем строку без номера
+      }
       
-      let fridgeNumber = null;
-      if (isNumberCity) {
-        if (fridgeNumberIdx === -1) {
-          console.error(`[Import] Row ${i}: City ${city.name} requires number column but it was not found`);
-          skippedNoNumber++;
-          continue; // Пропускаем строку без номера для городов с номерами
-        }
-        const numberValue = String(row[fridgeNumberIdx] || '').trim();
-        if (!numberValue || numberValue === 'null' || numberValue === 'undefined') {
-          console.warn(`[Import] Row ${i}: City ${city.name} requires number but value is empty. Skipping.`);
-          skippedNoNumber++;
-          continue; // Пропускаем строку без номера
-        }
-        fridgeNumber = numberValue;
-        // Логируем первые несколько для отладки
-        if (records.length < 5) {
-          console.log(`[Import] Row ${i}: Found number for ${city.name}: "${fridgeNumber}"`);
-        }
-      } else if (fridgeNumberIdx >= 0) {
-        // Для остальных городов номер опционален
-        const numberValue = String(row[fridgeNumberIdx] || '').trim();
-        if (numberValue && numberValue !== 'null' && numberValue !== 'undefined') {
-          fridgeNumber = numberValue;
-        }
-      }
-
-      // Для Шымкента, Кызылорды и Талдыкоргана: используем номер из Excel как code
-      // Если номера нет, генерируем последовательный код (без проверки в БД на каждом шаге)
-      let code;
-      if (isNumberCity && fridgeNumber) {
-        // Используем номер из Excel как code
-        code = fridgeNumber;
-      } else {
-        // Генерируем уникальный код (проверка дубликатов будет позже)
-        code = String(codeCounter);
-        codeCounter++;
-      }
+      const fridgeNumber = numberValue;
+      const code = fridgeNumber; // Всегда используем номер из Excel как code
 
       const record = {
-        code, // Для Шымкента, Кызылорды и Талдыкоргана code = номер из Excel
+        code, // Всегда равен номеру из Excel
         name: name.substring(0, 200),
         cityId: city._id,
         address: address ? address.substring(0, 500) : null, // Сохраняем адрес из Excel
         description: description ? description.substring(0, 500) : null,
+        number: fridgeNumber, // Сохраняем также в поле number
         location: {
           type: 'Point',
           coordinates: [0.0, 0.0], // Временные координаты
@@ -756,14 +683,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         active: true,
       };
 
-      // Добавляем number (равен code, если есть номер из Excel)
-      if (fridgeNumber) {
-        record.number = fridgeNumber;
-      }
-
       records.push(record);
-
-      codeCounter++;
     }
 
     console.log('[Import] Parsing complete:', {
@@ -783,48 +703,33 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     }
 
     // Импортируем в базу данных
-    // Оптимизация: загружаем только коды существующих холодильников для проверки дубликатов
-    // Для городов с номерами (Шымкент, Кызылорда, Талдыкорган) проверяем по code
-    // Для остальных городов проверяем по code
+    // Загружаем существующие коды для проверки дубликатов
     console.log('[Import] Loading existing fridge codes for duplicate check...');
-    const cityNameLower = (city.name || '').toLowerCase();
-    const isNumberCity = cityNameLower.includes('шымкент') || 
-                        cityNameLower.includes('кызылорда') || 
-                        cityNameLower.includes('қызылорда') ||
-                        cityNameLower.includes('талдыкорган') ||
-                        cityNameLower.includes('taldykorgan') ||
-                        cityNameLower === 'kyzylorda';
     
-    // Загружаем только коды из этого города для оптимизации (если город большой)
-    // Или все коды, если город маленький
-    const existingFridges = await Fridge.find({}, { code: 1, cityId: 1 }).lean();
+    const existingFridges = await Fridge.find({}, { code: 1, cityId: 1, number: 1 }).lean();
     const existingCodes = new Set(existingFridges.map(f => f.code));
     
-    // Также проверяем дубликаты по number + cityId для городов с номерами
+    // Проверяем дубликаты по number + cityId
     const existingByNumberAndCity = new Map();
-    if (isNumberCity) {
-      existingFridges
-        .filter(f => {
-          // Проверяем, что есть number и cityId совпадает
-          if (!f.number) return false;
-          if (!f.cityId) return false;
-          // Сравниваем cityId как строки для надежности
-          const fCityId = f.cityId.toString ? f.cityId.toString() : String(f.cityId);
-          const targetCityId = city._id.toString ? city._id.toString() : String(city._id);
-          return fCityId === targetCityId;
-        })
-        .forEach(f => {
-          const key = `${f.number}|${city._id}`;
-          existingByNumberAndCity.set(key, f.code); // Сохраняем также code для логирования
-        });
-    }
+    existingFridges
+      .filter(f => {
+        // Проверяем, что есть number и cityId совпадает
+        if (!f.number) return false;
+        if (!f.cityId) return false;
+        // Сравниваем cityId как строки для надежности
+        const fCityId = f.cityId.toString ? f.cityId.toString() : String(f.cityId);
+        const targetCityId = city._id.toString ? city._id.toString() : String(city._id);
+        return fCityId === targetCityId;
+      })
+      .forEach(f => {
+        const key = `${f.number}|${city._id}`;
+        existingByNumberAndCity.set(key, f.code); // Сохраняем также code для логирования
+      });
     
     console.log('[Import] Found', existingCodes.size, 'existing fridges total');
-    if (isNumberCity) {
-      console.log('[Import] Found', existingByNumberAndCity.size, 'existing fridges with numbers in city', city.name);
-      if (existingByNumberAndCity.size > 0) {
-        console.log('[Import] Sample existing numbers:', Array.from(existingByNumberAndCity.keys()).slice(0, 5));
-      }
+    console.log('[Import] Found', existingByNumberAndCity.size, 'existing fridges with numbers in city', city.name);
+    if (existingByNumberAndCity.size > 0) {
+      console.log('[Import] Sample existing numbers:', Array.from(existingByNumberAndCity.keys()).slice(0, 5));
     }
 
     // Фильтруем записи, исключая дубликаты
@@ -847,8 +752,8 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         duplicateReason = `code "${record.code}" duplicate in this import file`;
       }
       
-      // Для городов с номерами проверяем также по number + cityId
-      if (!isDuplicate && isNumberCity && record.number) {
+      // Проверяем дубликаты по number + cityId
+      if (!isDuplicate && record.number) {
         // Проверяем в базе данных
         const key = `${record.number}|${city._id}`;
         if (existingByNumberAndCity.has(key)) {
@@ -879,7 +784,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       
       // Добавляем код и номер в Set, чтобы избежать дубликатов в текущем импорте
       codesInThisImport.add(record.code);
-      if (isNumberCity && record.number) {
+      if (record.number) {
         numbersInThisImport.add(record.number);
       }
       recordsToInsert.push(record);
