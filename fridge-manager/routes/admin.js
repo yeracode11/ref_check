@@ -562,6 +562,8 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     // Определяем город для импорта
     // Приоритет: cityId из запроса > город бухгалтера > ошибка
     let city;
+    // Multer помещает текстовые поля FormData в req.body
+    const requestedCityId = req.body?.cityId || req.query?.cityId;
     
     console.log('[Import] City selection:', {
       requestedCityId,
