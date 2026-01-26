@@ -63,11 +63,12 @@ async function deleteTaldykorganFridges() {
       return;
     }
 
-    // Собираем все коды/номера для поиска чек-инов
+    // Собираем все коды/номера/ИНН для поиска чек-инов
     const fridgeIds = [];
     fridges.forEach((f) => {
       if (f.code) fridgeIds.push(f.code);
       if (f.number) fridgeIds.push(f.number);
+      if (f.clientInfo?.inn) fridgeIds.push(f.clientInfo.inn);
     });
 
     console.log(`\n📝 Поиск отметок по ${fridgeIds.length} идентификаторам...`);

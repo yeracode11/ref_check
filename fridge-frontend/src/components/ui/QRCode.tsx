@@ -240,8 +240,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             }
           } else {
             // Старый формат для остальных городов (Тараз): код и название снизу в canvas
-            // Увеличиваем размер QR кода для Тараза (для термопринтера 70x30)
-            const tarazQRSize = Math.floor(size * 0.92); // 92% от исходного размера (увеличено для четкости)
+            // Размер QR кода для Тараза такой же, как для Талдыкоргана
+            const tarazQRSize = Math.floor(size * 0.75); // 75% от исходного размера (как в Талдыкоргане)
             
             if (code) {
               // Высота для кода - увеличиваем размер шрифта для четкости при печати
@@ -249,7 +249,33 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               bottomTextHeight += 32 + topPadding; // Увеличено для лучшего отображения
             }
             
-            // Название убрано - не отображаем title
+            // Для Тараза добавляем название контрагента (title)
+            const isTaraz = cityName === 'Тараз' || cityName === 'Taraz';
+            if (isTaraz && title) {
+              // Высота для названия - используем меньший шрифт для названия
+              ctx.font = '16px Arial'; // Размер шрифта для названия
+              const maxWidth = tarazQRSize - 20; // Максимальная ширина с отступами
+              const titleLines = [];
+              const words = title.split(' ');
+              let currentLine = '';
+              
+              for (const word of words) {
+                const testLine = currentLine ? `${currentLine} ${word}` : word;
+                const metrics = ctx.measureText(testLine);
+                if (metrics.width > maxWidth && currentLine) {
+                  titleLines.push(currentLine);
+                  currentLine = word;
+                  if (titleLines.length >= 2) break; // Максимум 2 строки для названия
+                } else {
+                  currentLine = testLine;
+                }
+              }
+              if (currentLine && titleLines.length < 2) {
+                titleLines.push(currentLine);
+              }
+              
+              bottomTextHeight += titleLines.length * 20 + 10; // 20px между строками, 10px отступ сверху
+            }
           }
           
           // Теперь устанавливаем финальные размеры canvas
@@ -328,8 +354,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             canvas.width = shymkentQRSize + padding * 2;
             canvas.height = shymkentQRSize + padding * 2 + bottomTextHeight;
           } else {
-            // Для Тараза - QR код (увеличен) + текст снизу
-            const tarazQRSize = Math.floor(size * 0.92); // Увеличено до 92% для четкости при печати
+            // Для Тараза - QR код + текст снизу
+            const tarazQRSize = Math.floor(size * 0.75); // 75% от исходного размера (как в Талдыкоргане)
             canvas.width = tarazQRSize + padding * 2;
             canvas.height = tarazQRSize + padding * 2 + bottomTextHeight;
           }
@@ -446,8 +472,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               }
             } else {
               // Старый формат для остальных городов (Тараз и др.)
-              // Увеличиваем размер QR кода для термопринтера 70x30, чтобы избежать искажений при печати
-              const tarazQRSize = Math.floor(size * 0.92); // Увеличено до 92% для четкости
+              // Размер QR кода для Тараза такой же, как для Талдыкоргана
+              const tarazQRSize = Math.floor(size * 0.75); // 75% от исходного размера (как в Талдыкоргане)
               const qrX = (canvas.width - tarazQRSize) / 2;
               
               // Включаем сглаживание для лучшего качества при печати
@@ -467,7 +493,36 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
                 currentY += 32; // Увеличено для лучшего отображения
               }
               
-              // Название убрано - не отображаем title
+              // Для Тараза добавляем название контрагента (title)
+              const isTaraz = cityName === 'Тараз' || cityName === 'Taraz';
+              if (isTaraz && title) {
+                finalCtx.font = '16px Arial'; // Размер шрифта для названия
+                finalCtx.fillStyle = '#000000';
+                const maxWidth = tarazQRSize - 20; // Максимальная ширина с отступами
+                const titleLines = [];
+                const words = title.split(' ');
+                let currentLine = '';
+                
+                for (const word of words) {
+                  const testLine = currentLine ? `${currentLine} ${word}` : word;
+                  const metrics = finalCtx.measureText(testLine);
+                  if (metrics.width > maxWidth && currentLine) {
+                    titleLines.push(currentLine);
+                    currentLine = word;
+                    if (titleLines.length >= 2) break; // Максимум 2 строки для названия
+                  } else {
+                    currentLine = testLine;
+                  }
+                }
+                if (currentLine && titleLines.length < 2) {
+                  titleLines.push(currentLine);
+                }
+                
+                // Рисуем название под кодом
+                titleLines.forEach((line, idx) => {
+                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 20));
+                });
+              }
             }
           URL.revokeObjectURL(url);
           resolve(canvas);

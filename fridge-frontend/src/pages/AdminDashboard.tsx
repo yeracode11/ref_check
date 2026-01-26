@@ -1163,6 +1163,7 @@ export default function AdminDashboard() {
                   return displayId || undefined;
                 })()}
                 cityName={selectedQRFridge.city?.name}
+                title={selectedQRFridge.city?.name === 'Тараз' ? selectedQRFridge.name : undefined}
                 size={200}
               />
             </div>

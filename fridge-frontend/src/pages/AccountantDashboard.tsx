@@ -1103,6 +1103,7 @@ export default function AccountantDashboard() {
                   return displayId || undefined;
                 })()}
                 cityName={selectedFridge.cityId?.name}
+                title={selectedFridge.cityId?.name === 'Тараз' ? selectedFridge.name : undefined}
                 size={200}
               />
             </div>

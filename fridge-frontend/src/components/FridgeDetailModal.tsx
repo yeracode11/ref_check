@@ -805,6 +805,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   return displayId || undefined;
                 })()}
                 cityName={fridge.cityId?.name}
+                title={fridge.cityId?.name === 'Тараз' ? fridge.name : undefined}
                 size={250}
               />
               <p className="text-sm text-slate-500 mt-4 text-center max-w-md">
