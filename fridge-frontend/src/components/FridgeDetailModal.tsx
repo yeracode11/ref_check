@@ -331,12 +331,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <h2 className="font-semibold text-slate-900">{fridge.name}</h2>
               <p className="text-sm text-slate-500 font-mono">
                 {(() => {
-                  // Для Кызылорды используем ИНН клиента, если он есть
-                  if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                  // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
+                  if (fridge.clientInfo?.inn) {
                     return fridge.clientInfo.inn;
                   }
-                  // Для Шымкента и Талдыкоргана используем number
-                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                  // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
                     return fridge.number;
                   }
                   // Для остальных городов используем code с префиксом #
@@ -408,12 +408,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 <div className="flex justify-between">
                   <dt className="text-slate-500">
                     {(() => {
-                      // Для Кызылорды показываем "ИНН:", если есть ИНН
-                      if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                      // Если есть ИНН клиента (ручное создание) → показываем "ИНН:" для всех городов
+                      if (fridge.clientInfo?.inn) {
                         return 'ИНН:';
                       }
-                      // Для Шымкента и Талдыкоргана показываем "Номер:", если есть number
-                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                      // Для Шымкента, Кызылорды и Талдыкоргана показываем "Номер:", если есть number
+                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
                         return 'Номер:';
                       }
                       // Для остальных городов показываем "Код:"
@@ -422,12 +422,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   </dt>
                   <dd className="font-mono text-slate-900">
                     {(() => {
-                      // Для Кызылорды используем ИНН клиента, если он есть
-                      if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                      // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
+                      if (fridge.clientInfo?.inn) {
                         return fridge.clientInfo.inn;
                       }
-                      // Для Шымкента и Талдыкоргана используем number
-                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                      // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
                         return fridge.number;
                       }
                       // Для остальных городов используем code без префикса #
@@ -796,12 +796,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
                   (() => {
-                    // Для Кызылорды используем ИНН клиента, если он есть
-                    if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                    // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
+                    if (fridge.clientInfo?.inn) {
                       return fridge.clientInfo.inn;
                     }
-                    // Для Шымкента и Талдыкоргана используем number
-                    if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                    // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                    if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
                       return fridge.number;
                     }
                     // Для остальных городов используем code
@@ -810,8 +810,8 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 )}`}
                 code={fridge.code}
                 number={(() => {
-                  // Для Кызылорды используем ИНН клиента, если он есть
-                  if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                  // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
+                  if (fridge.clientInfo?.inn) {
                     return fridge.clientInfo.inn;
                   }
                   // Для остальных городов используем number
@@ -834,12 +834,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить холодильник?</h3>
               <p className="text-slate-600 text-sm mb-4">
                 Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> ({(() => {
-                  // Для Кызылорды используем ИНН клиента, если он есть
-                  if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                  // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
+                  if (fridge.clientInfo?.inn) {
                     return fridge.clientInfo.inn;
                   }
-                  // Для Шымкента и Талдыкоргана используем number
-                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                  // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
                     return fridge.number;
                   }
                   // Для остальных городов используем code с префиксом #

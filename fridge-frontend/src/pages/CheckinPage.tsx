@@ -12,6 +12,10 @@ type Fridge = {
   address?: string;
   description?: string;
   cityId?: { _id?: string; name: string; code: string } | null;
+  clientInfo?: {
+    inn?: string;
+    name?: string;
+  } | null;
 };
 
 type RouteParams = {
@@ -212,11 +216,18 @@ export default function CheckinPage() {
         {fridge && (
           <p className="text-slate-500 mt-1">
             Холодильник: <span className="font-medium">{fridge.name}</span>{' '}
-            {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? (
-              <Badge variant="info">{fridge.number}</Badge>
-            ) : (
-              <Badge variant="info">#{fridge.code}</Badge>
-            )}
+            {(() => {
+              // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
+              if (fridge.clientInfo?.inn) {
+                return <Badge variant="info">{fridge.clientInfo.inn}</Badge>;
+              }
+              // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+              if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                return <Badge variant="info">{fridge.number}</Badge>;
+              }
+              // Для остальных городов показываем code с префиксом #
+              return <Badge variant="info">#{fridge.code}</Badge>;
+            })()}
           </p>
         )}
         {!fridge && code && (

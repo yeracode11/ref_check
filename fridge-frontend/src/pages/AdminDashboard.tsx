@@ -391,27 +391,9 @@ export default function AdminDashboard() {
       return;
     }
 
-    // Проверяем, является ли выбранный город "number city" или Кызылорда
-    const selectedCity = cities.find(c => c._id === newFridge.cityId);
-    const cityNameLower = (selectedCity?.name || '').toLowerCase();
-    const isKyzylorda = cityNameLower === 'кызылорда' || 
-                        cityNameLower === 'қызылорда' ||
-                        cityNameLower === 'kyzylorda';
-    const isNumberCity = cityNameLower === 'шымкент' || 
-                         cityNameLower === 'талдыкорган' ||
-                         cityNameLower === 'талдыкорған' ||
-                         cityNameLower === 'taldykorgan' ||
-                         cityNameLower === 'taldikorgan';
-
-    // Для Кызылорды ИНН клиента обязателен
-    if (isKyzylorda && !newFridge.clientInn.trim()) {
-      alert('Для Кызылорды необходимо указать ИНН клиента');
-      return;
-    }
-
-    // Для других городов с номерами number обязателен
-    if (isNumberCity && !newFridge.number.trim()) {
-      alert('Для этого города необходимо указать номер холодильника');
+    // При ручном создании ИНН клиента обязателен для всех городов
+    if (!newFridge.clientInn.trim()) {
+      alert('Необходимо указать ИНН клиента');
       return;
     }
 
@@ -424,22 +406,14 @@ export default function AdminDashboard() {
       setShowAddFridgeModal(false);
       
       // Создаем холодильник в фоне
+      // При ручном создании для всех городов отправляем ИНН клиента
       const requestData: any = {
         name: newFridge.name.trim(),
         address: newFridge.address.trim() || undefined,
         description: newFridge.description.trim() || undefined,
         cityId: newFridge.cityId || undefined,
+        clientInfo: { inn: newFridge.clientInn.trim() },
       };
-      
-      // Для Кызылорды отправляем ИНН клиента
-      if (isKyzylorda && newFridge.clientInn.trim()) {
-        requestData.clientInfo = { inn: newFridge.clientInn.trim() };
-      }
-      
-      // Для других городов отправляем number
-      if (isNumberCity && newFridge.number.trim()) {
-        requestData.number = newFridge.number.trim();
-      }
       
       const response = await api.post('/api/admin/fridges', requestData);
 
@@ -888,12 +862,12 @@ export default function AdminDashboard() {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-900 truncate">{f.name}</p>
                         {(() => {
-                          // Для Кызылорды используем ИНН клиента, если он есть
-                          if (f.city?.name === 'Кызылорда' && f.clientInfo?.inn) {
+                          // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
+                          if (f.clientInfo?.inn) {
                             return <p className="text-xs text-slate-500 font-mono truncate">{f.clientInfo.inn}</p>;
                           }
-                          // Для Шымкента и Талдыкоргана используем number
-                          if ((f.city?.name === 'Шымкент' || f.city?.name === 'Талдыкорган') && f.number) {
+                          // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                          if ((f.city?.name === 'Шымкент' || f.city?.name === 'Кызылорда' || f.city?.name === 'Талдыкорган') && f.number) {
                             return <p className="text-xs text-slate-500 font-mono truncate">{f.number}</p>;
                           }
                           // Для остальных городов используем code с префиксом #
@@ -1059,55 +1033,19 @@ export default function AdminDashboard() {
                   ))}
                 </select>
               </div>
-              {(() => {
-                const selectedCity = cities.find(c => c._id === newFridge.cityId);
-                const cityNameLower = (selectedCity?.name || '').toLowerCase();
-                const isKyzylorda = cityNameLower === 'кызылорда' || 
-                                    cityNameLower === 'қызылорда' ||
-                                    cityNameLower === 'kyzylorda';
-                const isNumberCity = cityNameLower === 'шымкент' || 
-                                     cityNameLower === 'талдыкорган' ||
-                                     cityNameLower === 'талдыкорған' ||
-                                     cityNameLower === 'taldykorgan' ||
-                                     cityNameLower === 'taldikorgan';
-                
-                // Для Кызылорды показываем поле "ИНН клиента"
-                if (isKyzylorda) {
-                  return (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        ИНН клиента <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={newFridge.clientInn}
-                        onChange={(e) => setNewFridge({ ...newFridge, clientInn: e.target.value })}
-                        placeholder="Введите ИНН клиента"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                  );
-                }
-                
-                // Для Шымкента и Талдыкоргана показываем поле "Номер холодильника"
-                if (isNumberCity) {
-                  return (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Номер холодильника <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={newFridge.number}
-                        onChange={(e) => setNewFridge({ ...newFridge, number: e.target.value })}
-                        placeholder="Введите номер холодильника"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                  );
-                }
-                return null;
-              })()}
+              {/* Поле ИНН клиента для всех городов при ручном создании */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  ИНН клиента <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newFridge.clientInn}
+                  onChange={(e) => setNewFridge({ ...newFridge, clientInn: e.target.value })}
+                  placeholder="Введите ИНН клиента"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Адрес
@@ -1135,22 +1073,7 @@ export default function AdminDashboard() {
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleCreateFridge}
-                  disabled={(() => {
-                    if (creatingFridge || !newFridge.name.trim()) return true;
-                    const selectedCity = cities.find(c => c._id === newFridge.cityId);
-                    const cityNameLower = (selectedCity?.name || '').toLowerCase();
-                    const isKyzylorda = cityNameLower === 'кызылорда' || 
-                                        cityNameLower === 'қызылорда' ||
-                                        cityNameLower === 'kyzylorda';
-                    const isNumberCity = cityNameLower === 'шымкент' || 
-                                         cityNameLower === 'талдыкорган' ||
-                                         cityNameLower === 'талдыкорған' ||
-                                         cityNameLower === 'taldykorgan' ||
-                                         cityNameLower === 'taldikorgan';
-                    if (isKyzylorda && !newFridge.clientInn.trim()) return true;
-                    if (isNumberCity && !newFridge.number.trim()) return true;
-                    return false;
-                  })()}
+                  disabled={creatingFridge || !newFridge.name.trim() || !newFridge.clientInn.trim()}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                 >
                   {creatingFridge ? 'Создание...' : 'Создать'}
@@ -1202,12 +1125,12 @@ export default function AdminDashboard() {
             </div>
             <div className="mb-4">
               {(() => {
-                // Для Кызылорды используем ИНН клиента, если он есть
-                if (selectedQRFridge.city?.name === 'Кызылорда' && selectedQRFridge.clientInfo?.inn) {
+                // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
+                if (selectedQRFridge.clientInfo?.inn) {
                   return <p className="text-xs text-slate-500 font-mono text-center">{selectedQRFridge.clientInfo.inn}</p>;
                 }
-                // Для Шымкента и Талдыкоргана используем number
-                if ((selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Талдыкорган') && selectedQRFridge.number) {
+                // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                if ((selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда' || selectedQRFridge.city?.name === 'Талдыкорган') && selectedQRFridge.number) {
                   return <p className="text-xs text-slate-500 font-mono text-center">{selectedQRFridge.number}</p>;
                 }
                 // Для остальных городов используем code
@@ -1218,12 +1141,12 @@ export default function AdminDashboard() {
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
                   (() => {
-                    // Для Кызылорды используем ИНН клиента, если он есть
-                    if (selectedQRFridge.city?.name === 'Кызылорда' && selectedQRFridge.clientInfo?.inn) {
+                    // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
+                    if (selectedQRFridge.clientInfo?.inn) {
                       return selectedQRFridge.clientInfo.inn;
                     }
-                    // Для Шымкента и Талдыкоргана используем number
-                    if ((selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Талдыкорган') && selectedQRFridge.number) {
+                    // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                    if ((selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда' || selectedQRFridge.city?.name === 'Талдыкорган') && selectedQRFridge.number) {
                       return selectedQRFridge.number;
                     }
                     // Для остальных городов используем code
@@ -1232,8 +1155,8 @@ export default function AdminDashboard() {
                 )}`}
                 code={selectedQRFridge.code}
                 number={(() => {
-                  // Для Кызылорды используем ИНН клиента, если он есть
-                  if (selectedQRFridge.city?.name === 'Кызылорда' && selectedQRFridge.clientInfo?.inn) {
+                  // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
+                  if (selectedQRFridge.clientInfo?.inn) {
                     return selectedQRFridge.clientInfo.inn;
                   }
                   // Для остальных городов используем number

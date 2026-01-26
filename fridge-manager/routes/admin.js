@@ -935,33 +935,17 @@ router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req,
       }
     }
 
-    // Определяем, является ли город Кызылордой или "number city" (Шымкент, Талдыкорган)
-    const cityNameLower = (city.name || '').toLowerCase();
-    const isKyzylorda = cityNameLower === 'кызылорда' || 
-                        cityNameLower === 'қызылорда' ||
-                        cityNameLower === 'kyzylorda';
-    const isNumberCity = cityNameLower === 'шымкент' || 
-                         cityNameLower === 'талдыкорган' ||
-                         cityNameLower === 'талдыкорған' ||
-                         cityNameLower === 'taldykorgan' ||
-                         cityNameLower === 'taldikorgan';
-
-    // Для Кызылорды при ручном добавлении ИНН клиента обязателен
-    if (isKyzylorda && (!clientInfo || !clientInfo.inn)) {
-      return res.status(400).json({ error: 'Для Кызылорды необходимо указать ИНН клиента' });
-    }
-
-    // Для других городов с номерами (Шымкент, Талдыкорган) number обязателен
-    if (isNumberCity && !number) {
-      return res.status(400).json({ error: 'Для этого города необходимо указать номер холодильника' });
+    // При ручном создании для всех городов ИНН клиента обязателен
+    if (!clientInfo || !clientInfo.inn) {
+      return res.status(400).json({ error: 'При ручном создании необходимо указать ИНН клиента' });
     }
 
     // Определяем code для холодильника
+    // При ручном создании для всех городов используем ИНН как code
     let code;
     let fridgeClientInfo = null;
     
-    // Для Кызылорды при ручном добавлении используем ИНН как code
-    if (isKyzylorda && clientInfo && clientInfo.inn) {
+    if (clientInfo && clientInfo.inn) {
       code = String(clientInfo.inn).trim();
       if (!code) {
         return res.status(400).json({ error: 'ИНН клиента не может быть пустым' });
@@ -975,20 +959,8 @@ router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req,
       if (existingFridge) {
         return res.status(400).json({ error: `Холодильник с ИНН "${code}" уже существует` });
       }
-    } else if (number) {
-      // Для других городов используем number как code
-      code = String(number).trim();
-      if (!code) {
-        return res.status(400).json({ error: 'Номер холодильника не может быть пустым' });
-      }
-      
-      // Проверяем, не существует ли уже холодильник с таким code
-      const existingFridge = await Fridge.findOne({ code });
-      if (existingFridge) {
-        return res.status(400).json({ error: `Холодильник с номером "${code}" уже существует` });
-      }
     } else {
-      // Для городов без number генерируем уникальный код (старая логика для обратной совместимости)
+      // Если ИНН не указан (не должно произойти, т.к. проверка выше), генерируем код
       let codeCounter = 1;
       const maxFridge = await Fridge.findOne().sort({ code: -1 });
       if (maxFridge && maxFridge.code) {
@@ -1027,14 +999,9 @@ router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req,
       }],
     };
 
-    // Для Кызылорды сохраняем clientInfo с ИНН
-    if (isKyzylorda && fridgeClientInfo) {
+    // При ручном создании для всех городов сохраняем clientInfo с ИНН
+    if (fridgeClientInfo) {
       fridgeData.clientInfo = fridgeClientInfo;
-    }
-
-    // Для других number cities сохраняем number
-    if (isNumberCity && number) {
-      fridgeData.number = String(number).trim();
     }
 
     const fridge = await Fridge.create(fridgeData);
@@ -1100,7 +1067,7 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
       }
     }
 
-    // Получаем чек-ины по коду/номеру/ИНН холодильника (для Шымкента может быть number, для Кызылорды - ИНН)
+    // Получаем чек-ины по коду/номеру/ИНН холодильника (для импорта из Excel может быть number, для ручного создания - ИНН во всех городах)
     const fridgeIds = [fridge.code];
     if (fridge.number) {
       fridgeIds.push(fridge.number);

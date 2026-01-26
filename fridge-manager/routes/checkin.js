@@ -50,14 +50,14 @@ router.post('/', async (req, res) => {
     });
     
     // Обновляем местоположение, адрес и статус холодильника по последней отметке
-    // fridgeId в чек-ине может быть как code, так и number (для Шымкента), так и ИНН (для Кызылорды)
+    // fridgeId в чек-ине может быть как code, так и number (для импорта из Excel), так и ИНН (для ручного создания)
     try {
-      // Ищем холодильник и по code, и по number, и по ИНН клиента (для Кызылорды)
+      // Ищем холодильник и по code, и по number, и по ИНН клиента (для ручного создания во всех городах)
       const fridge = await Fridge.findOne({
         $or: [
           { code: fridgeId },
           { number: fridgeId },
-          { 'clientInfo.inn': fridgeId } // Для Кызылорды может быть ИНН
+          { 'clientInfo.inn': fridgeId } // Для ручного создания во всех городах может быть ИНН
         ]
       });
       if (!fridge) {
@@ -135,7 +135,7 @@ router.post('/', async (req, res) => {
             $or: [
               { code: fridgeId },
               { number: fridgeId },
-              { 'clientInfo.inn': fridgeId } // Для Кызылорды может быть ИНН
+              { 'clientInfo.inn': fridgeId } // Для ручного создания во всех городах может быть ИНН
             ]
           },
           {

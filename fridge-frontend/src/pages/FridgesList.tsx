@@ -382,11 +382,18 @@ export default function FridgesList() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h3 className="font-semibold text-slate-900 text-lg mb-1">{f.name}</h3>
-                      {((typeof f.cityId === 'object' && (f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда')) || (typeof f.cityId === 'string' && (cities.find(c => c._id === f.cityId)?.name === 'Шымкент' || cities.find(c => c._id === f.cityId)?.name === 'Кызылорда'))) && f.number ? (
-                        <div className="text-sm text-slate-500 font-mono">{f.number}</div>
-                      ) : (
-                        <div className="text-sm text-slate-500 font-mono">#{f.code}</div>
-                      )}
+                      {(() => {
+                        // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
+                        if (f.clientInfo?.inn) {
+                          return <div className="text-sm text-slate-500 font-mono">{f.clientInfo.inn}</div>;
+                        }
+                        // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                        if ((f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда' || f.cityId?.name === 'Талдыкорган') && f.number) {
+                          return <div className="text-sm text-slate-500 font-mono">{f.number}</div>;
+                        }
+                        // Для остальных городов показываем code с префиксом #
+                        return <div className="text-sm text-slate-500 font-mono">#{f.code}</div>;
+                      })()}
                     </div>
                     <Badge variant={f.active ? 'success' : 'error'}>
                       {f.active ? 'Активен' : 'Неактивен'}
