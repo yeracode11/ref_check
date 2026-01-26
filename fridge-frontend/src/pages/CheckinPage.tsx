@@ -221,8 +221,16 @@ export default function CheckinPage() {
               if (fridge.clientInfo?.inn) {
                 return <Badge variant="info">{fridge.clientInfo.inn}</Badge>;
               }
-              // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-              if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+              // Для Кызылорды: если есть number (импорт) → показываем только number, без code
+              if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
+                return <Badge variant="info">{fridge.number}</Badge>;
+              }
+              // Для Кызылорды без number и без ИНН не показываем code
+              if (fridge.cityId?.name === 'Кызылорда') {
+                return null;
+              }
+              // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
+              if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
                 return <Badge variant="info">{fridge.number}</Badge>;
               }
               // Для остальных городов показываем code с префиксом #

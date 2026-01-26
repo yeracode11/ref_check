@@ -866,9 +866,17 @@ export default function AdminDashboard() {
                           if (f.clientInfo?.inn) {
                             return <p className="text-xs text-slate-500 font-mono truncate">{f.clientInfo.inn}</p>;
                           }
-                          // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                          if ((f.city?.name === 'Шымкент' || f.city?.name === 'Кызылорда' || f.city?.name === 'Талдыкорган') && f.number) {
+                          // Для Кызылорды: если есть number (импорт) → показываем только number, без code
+                          if (f.city?.name === 'Кызылорда' && f.number) {
                             return <p className="text-xs text-slate-500 font-mono truncate">{f.number}</p>;
+                          }
+                          // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
+                          if ((f.city?.name === 'Шымкент' || f.city?.name === 'Талдыкорган') && f.number) {
+                            return <p className="text-xs text-slate-500 font-mono truncate">{f.number}</p>;
+                          }
+                          // Для Кызылорды без number и без ИНН не показываем ничего (или пустое)
+                          if (f.city?.name === 'Кызылорда') {
+                            return null;
                           }
                           // Для остальных городов используем code с префиксом #
                           return <p className="text-xs text-slate-500 font-mono truncate">#{f.code}</p>;
@@ -1153,11 +1161,15 @@ export default function AdminDashboard() {
                     return selectedQRFridge.code;
                   })()
                 )}`}
-                code={selectedQRFridge.code}
+                code={selectedQRFridge.city?.name === 'Кызылорда' ? undefined : selectedQRFridge.code}
                 number={(() => {
                   // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
                   if (selectedQRFridge.clientInfo?.inn) {
                     return selectedQRFridge.clientInfo.inn;
+                  }
+                  // Для Кызылорды: если нет number, не передаем code (порядковый номер не нужен)
+                  if (selectedQRFridge.city?.name === 'Кызылорда') {
+                    return selectedQRFridge.number || undefined;
                   }
                   // Для остальных городов используем number
                   return selectedQRFridge.number;

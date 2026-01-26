@@ -391,9 +391,17 @@ export default function FridgesList() {
                         if (f.clientInfo?.inn) {
                           return <div className="text-sm text-slate-500 font-mono">{f.clientInfo.inn}</div>;
                         }
-                        // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
+                        // Для Кызылорды: если есть number (импорт) → показываем только number, без code
                         const cityName = typeof f.cityId === 'object' ? f.cityId?.name : (cities.find(c => c._id === f.cityId)?.name || '');
-                        if ((cityName === 'Шымкент' || cityName === 'Кызылорда' || cityName === 'Талдыкорган') && f.number) {
+                        if (cityName === 'Кызылорда' && f.number) {
+                          return <div className="text-sm text-slate-500 font-mono">{f.number}</div>;
+                        }
+                        // Для Кызылорды без number и без ИНН не показываем code
+                        if (cityName === 'Кызылорда') {
+                          return null;
+                        }
+                        // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
+                        if ((cityName === 'Шымкент' || cityName === 'Талдыкорган') && f.number) {
                           return <div className="text-sm text-slate-500 font-mono">{f.number}</div>;
                         }
                         // Для остальных городов показываем code с префиксом #

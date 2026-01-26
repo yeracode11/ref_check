@@ -944,8 +944,16 @@ export default function AccountantDashboard() {
                 if (selectedFridge.clientInfo?.inn) {
                   return `(${selectedFridge.clientInfo.inn})`;
                 }
-                // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                if ((selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Кызылорда' || selectedFridge.cityId?.name === 'Талдыкорган') && selectedFridge.number) {
+                // Для Кызылорды: если есть number (импорт) → показываем только number, без code
+                if (selectedFridge.cityId?.name === 'Кызылорда' && selectedFridge.number) {
+                  return `(${selectedFridge.number})`;
+                }
+                // Для Кызылорды без number и без ИНН не показываем code
+                if (selectedFridge.cityId?.name === 'Кызылорда') {
+                  return '';
+                }
+                // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
+                if ((selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Талдыкорган') && selectedFridge.number) {
                   return `(${selectedFridge.number})`;
                 }
                 // Для остальных городов используем code с префиксом #
@@ -1067,8 +1075,16 @@ export default function AccountantDashboard() {
                 if (selectedFridge.clientInfo?.inn) {
                   return <p className="text-xs text-slate-500 font-mono text-center">{selectedFridge.clientInfo.inn}</p>;
                 }
-                // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                if ((selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Кызылорда' || selectedFridge.cityId?.name === 'Талдыкорган') && selectedFridge.number) {
+                // Для Кызылорды: если есть number (импорт) → показываем только number, без code
+                if (selectedFridge.cityId?.name === 'Кызылорда' && selectedFridge.number) {
+                  return <p className="text-xs text-slate-500 font-mono text-center">{selectedFridge.number}</p>;
+                }
+                // Для Кызылорды без number и без ИНН не показываем code
+                if (selectedFridge.cityId?.name === 'Кызылорда') {
+                  return null;
+                }
+                // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
+                if ((selectedFridge.cityId?.name === 'Шымкент' || selectedFridge.cityId?.name === 'Талдыкорган') && selectedFridge.number) {
                   return <p className="text-xs text-slate-500 font-mono text-center">{selectedFridge.number}</p>;
                 }
                 // Для остальных городов используем code
@@ -1091,11 +1107,15 @@ export default function AccountantDashboard() {
                     return selectedFridge.code;
                   })()
                 )}`}
-                code={selectedFridge.code}
+                code={selectedFridge.cityId?.name === 'Кызылорда' ? undefined : selectedFridge.code}
                 number={(() => {
                   // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
                   if (selectedFridge.clientInfo?.inn) {
                     return selectedFridge.clientInfo.inn;
+                  }
+                  // Для Кызылорды: если нет number, не передаем code (порядковый номер не нужен)
+                  if (selectedFridge.cityId?.name === 'Кызылорда') {
+                    return selectedFridge.number || undefined;
                   }
                   // Для остальных городов используем number
                   return selectedFridge.number;

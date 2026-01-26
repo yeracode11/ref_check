@@ -335,9 +335,17 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   if (fridge.clientInfo?.inn) {
                     return fridge.clientInfo.inn;
                   }
-                  // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                  // Для Кызылорды: если есть number (импорт) → показываем только number, без code
+                  if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
                     return fridge.number;
+                  }
+                  // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
+                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                    return fridge.number;
+                  }
+                  // Для Кызылорды без number и без ИНН не показываем code
+                  if (fridge.cityId?.name === 'Кызылорда') {
+                    return '';
                   }
                   // Для остальных городов используем code с префиксом #
                   return `#${fridge.code}`;
@@ -412,9 +420,17 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                       if (fridge.clientInfo?.inn) {
                         return 'ИНН:';
                       }
-                      // Для Шымкента, Кызылорды и Талдыкоргана показываем "Номер:", если есть number
-                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                      // Для Кызылорды: если есть number (импорт) → показываем "Номер:"
+                      if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
                         return 'Номер:';
+                      }
+                      // Для Шымкента и Талдыкоргана показываем "Номер:", если есть number
+                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                        return 'Номер:';
+                      }
+                      // Для Кызылорды без number и без ИНН не показываем ничего
+                      if (fridge.cityId?.name === 'Кызылорда') {
+                        return null;
                       }
                       // Для остальных городов показываем "Код:"
                       return 'Код:';
@@ -426,9 +442,17 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                       if (fridge.clientInfo?.inn) {
                         return fridge.clientInfo.inn;
                       }
-                      // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                      // Для Кызылорды: если есть number (импорт) → показываем только number, без code
+                      if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
                         return fridge.number;
+                      }
+                      // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
+                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                        return fridge.number;
+                      }
+                      // Для Кызылорды без number и без ИНН не показываем code
+                      if (fridge.cityId?.name === 'Кызылорда') {
+                        return '';
                       }
                       // Для остальных городов используем code без префикса #
                       return fridge.code;
@@ -808,11 +832,15 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     return fridge.code;
                   })()
                 )}`}
-                code={fridge.code}
+                code={fridge.cityId?.name === 'Кызылорда' ? undefined : fridge.code}
                 number={(() => {
                   // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
                   if (fridge.clientInfo?.inn) {
                     return fridge.clientInfo.inn;
+                  }
+                  // Для Кызылорды: если нет number, не передаем code (порядковый номер не нужен)
+                  if (fridge.cityId?.name === 'Кызылорда') {
+                    return fridge.number || undefined;
                   }
                   // Для остальных городов используем number
                   return fridge.number;
@@ -838,9 +866,17 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                   if (fridge.clientInfo?.inn) {
                     return fridge.clientInfo.inn;
                   }
-                  // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                  // Для Кызылорды: если есть number (импорт) → показываем только number, без code
+                  if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
                     return fridge.number;
+                  }
+                  // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
+                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                    return fridge.number;
+                  }
+                  // Для Кызылорды без number и без ИНН не показываем code
+                  if (fridge.cityId?.name === 'Кызылорда') {
+                    return '';
                   }
                   // Для остальных городов используем code с префиксом #
                   return `#${fridge.code}`;
