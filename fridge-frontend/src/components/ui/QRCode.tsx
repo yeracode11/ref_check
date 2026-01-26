@@ -132,6 +132,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           // Определяем формат: для Шымкента, Кызылорды и Талдыкоргана - новый формат, для остальных - старый
           const isShymkent = cityName === 'Шымкент' || cityName === 'Кызылорда' || cityName === 'Талдыкорган';
           const isKyzylorda = cityName === 'Кызылорда';
+          const isTaldykorgan = cityName === 'Талдыкорган';
           
           // Добавляем отступы
           const padding = 40;
@@ -159,9 +160,9 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           if (isShymkent) {
             // Новый формат для Шымкента, Кызылорды и Талдыкоргана: только длинный номер снизу (без кода с #)
             // Если номер не помещается, уменьшаем QR-код и размещаем номер внизу QR-кода
-            // Для Кызылорды используем меньший размер QR-кода
-            let shymkentQRSize = isKyzylorda 
-              ? Math.floor(size * 0.75) // 75% от исходного размера для Кызылорды
+            // Для Кызылорды и Талдыкоргана используем меньший размер QR-кода (75%), для Шымкента 92%
+            let shymkentQRSize = (isKyzylorda || isTaldykorgan)
+              ? Math.floor(size * 0.75) // 75% от исходного размера для Кызылорды и Талдыкоргана
               : Math.floor(size * 0.92); // 92% от исходного размера для Шымкента
             let numberLines: string[] = [];
             let numberInsideQR = false; // Флаг: номер внутри QR-кода или снаружи
@@ -189,7 +190,10 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
                   // Если больше 2 строк, уменьшаем QR-код и размещаем номер внутри
                   if (numberLines.length >= 2) {
                     // Уменьшаем QR-код, чтобы номер поместился внутри
-                    shymkentQRSize = Math.floor(size * 0.80); // 80% от исходного размера
+                    // Для Кызылорды и Талдыкоргана 60%, для Шымкента 80%
+                    shymkentQRSize = (isKyzylorda || isTaldykorgan)
+                      ? Math.floor(size * 0.60) // 60% от исходного размера для Кызылорды и Талдыкоргана
+                      : Math.floor(size * 0.80); // 80% от исходного размера для Шымкента
                     numberInsideQR = true;
                     // Пересчитываем с новым размером
                     ctx.font = 'bold 14px Arial';
@@ -245,9 +249,9 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           if (isShymkent) {
             // Используем размер, вычисленный выше (может быть уменьшен, если номер не помещается)
             // Пересчитываем для точности
-            // Для Кызылорды используем меньший размер QR-кода
-            let shymkentQRSize = isKyzylorda 
-              ? Math.floor(size * 0.75) // 75% от исходного размера для Кызылорды
+            // Для Кызылорды и Талдыкоргана используем меньший размер QR-кода (75%), для Шымкента 92%
+            let shymkentQRSize = (isKyzylorda || isTaldykorgan)
+              ? Math.floor(size * 0.75) // 75% от исходного размера для Кызылорды и Талдыкоргана
               : Math.floor(size * 0.92); // 92% от исходного размера для Шымкента
             let numberInsideQR = false;
             // Для Шымкента используем number, если он передан (даже если пустой), иначе code как fallback
@@ -268,7 +272,10 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
                   currentLine = char;
                   if (testLines.length >= 2) {
                     // Номер не помещается - уменьшаем QR-код
-                    shymkentQRSize = Math.floor(size * 0.80);
+                    // Для Кызылорды и Талдыкоргана 60%, для Шымкента 80%
+                    shymkentQRSize = (isKyzylorda || isTaldykorgan)
+                      ? Math.floor(size * 0.60) // 60% от исходного размера для Кызылорды и Талдыкоргана
+                      : Math.floor(size * 0.80); // 80% от исходного размера для Шымкента
                     numberInsideQR = true;
                     // Пересчитываем строки с новым размером
                     ctx.font = 'bold 14px Arial';
@@ -331,9 +338,9 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             
             if (isShymkent) {
               // Новый формат для Шымкента, Кызылорды и Талдыкоргана: только длинный номер снизу (без кода с #)
-              // Для Кызылорды используем меньший размер QR-кода
-              let shymkentQRSize = isKyzylorda 
-                ? Math.floor(size * 0.75) // 75% от исходного размера для Кызылорды
+              // Для Кызылорды и Талдыкоргана используем меньший размер QR-кода (75%), для Шымкента 92%
+              let shymkentQRSize = (isKyzylorda || isTaldykorgan)
+                ? Math.floor(size * 0.75) // 75% от исходного размера для Кызылорды и Талдыкоргана
                 : Math.floor(size * 0.92); // 92% от исходного размера для Шымкента
               let numberLines: string[] = [];
               let numberInsideQR = false;
@@ -359,7 +366,10 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
                     currentLine = char;
                     if (numberLines.length >= 2) {
                       // Уменьшаем QR-код и размещаем номер внутри
-                      shymkentQRSize = Math.floor(size * 0.80);
+                      // Для Кызылорды и Талдыкоргана 60%, для Шымкента 80%
+                      shymkentQRSize = (isKyzylorda || isTaldykorgan)
+                        ? Math.floor(size * 0.60) // 60% от исходного размера для Кызылорды и Талдыкоргана
+                        : Math.floor(size * 0.80); // 80% от исходного размера для Шымкента
                       numberInsideQR = true;
                       // Пересчитываем с новым размером
                       finalCtx.font = 'bold 14px Arial';
@@ -567,11 +577,12 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
 
   const isShymkent = cityName === 'Шымкент' || cityName === 'Кызылорда' || cityName === 'Талдыкорган';
   const isKyzylorda = cityName === 'Кызылорда';
+  const isTaldykorgan = cityName === 'Талдыкорган';
 
-  // Размер QR кода: для Шымкента и Талдыкоргана 92%, для Кызылорды 75%, для остальных 92%
-  const displaySize = isKyzylorda 
-    ? Math.floor(size * 0.75) // 75% для Кызылорды
-    : (isShymkent ? Math.floor(size * 0.92) : Math.floor(size * 0.92)); // 92% для Шымкента, Талдыкоргана и остальных
+  // Размер QR кода: для Кызылорды и Талдыкоргана 75%, для Шымкента 92%, для остальных 92%
+  const displaySize = (isKyzylorda || isTaldykorgan)
+    ? Math.floor(size * 0.75) // 75% для Кызылорды и Талдыкоргана
+    : (isShymkent ? Math.floor(size * 0.92) : Math.floor(size * 0.92)); // 92% для Шымкента и остальных
 
   return (
     <div className={`flex flex-col items-center gap-3 ${className}`}>
