@@ -50,25 +50,30 @@ router.post('/', async (req, res) => {
     });
     
     // Обновляем местоположение, адрес и статус холодильника по последней отметке
-    // fridgeId в чек-ине может быть как code, так и number (для Шымкента)
+    // fridgeId в чек-ине может быть как code, так и number (для Шымкента), так и ИНН (для Кызылорды)
     try {
-      // Ищем холодильник и по code, и по number
+      // Ищем холодильник и по code, и по number, и по ИНН клиента (для Кызылорды)
       const fridge = await Fridge.findOne({
         $or: [
           { code: fridgeId },
-          { number: fridgeId }
+          { number: fridgeId },
+          { 'clientInfo.inn': fridgeId } // Для Кызылорды может быть ИНН
         ]
       });
       if (!fridge) {
-        console.warn(`[Checkins] Fridge with code/number ${fridgeId} not found`);
+        console.warn(`[Checkins] Fridge with code/number/inn ${fridgeId} not found`);
       } else {
         // Получаем все отметки для этого холодильника
-        // Используем и code, и number для поиска (на случай, если часть отметок еще не мигрирована)
+        // Используем и code, и number, и ИНН для поиска (на случай, если часть отметок еще не мигрирована)
+        const fridgeIdentifiers = [fridge.code];
+        if (fridge.number) {
+          fridgeIdentifiers.push(fridge.number);
+        }
+        if (fridge.clientInfo?.inn) {
+          fridgeIdentifiers.push(fridge.clientInfo.inn);
+        }
         const allCheckins = await Checkin.find({
-          $or: [
-            { fridgeId: fridge.code },
-            { fridgeId: fridge.number }
-          ].filter(Boolean) // Убираем undefined, если number отсутствует
+          fridgeId: { $in: fridgeIdentifiers }
         }).sort({ visitedAt: 1 });
         const totalCheckins = allCheckins.length;
         
@@ -124,12 +129,13 @@ router.post('/', async (req, res) => {
           }
         }
         
-        // Обновляем холодильник (ищем и по code, и по number)
+        // Обновляем холодильник (ищем и по code, и по number, и по ИНН)
         await Fridge.findOneAndUpdate(
           {
             $or: [
               { code: fridgeId },
-              { number: fridgeId }
+              { number: fridgeId },
+              { 'clientInfo.inn': fridgeId } // Для Кызылорды может быть ИНН
             ]
           },
           {

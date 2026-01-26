@@ -330,7 +330,18 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <div>
               <h2 className="font-semibold text-slate-900">{fridge.name}</h2>
               <p className="text-sm text-slate-500 font-mono">
-                {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? fridge.number : `#${fridge.code}`}
+                {(() => {
+                  // Для Кызылорды используем ИНН клиента, если он есть
+                  if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                    return fridge.clientInfo.inn;
+                  }
+                  // Для Шымкента и Талдыкоргана используем number
+                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                    return fridge.number;
+                  }
+                  // Для остальных городов используем code с префиксом #
+                  return `#${fridge.code}`;
+                })()}
               </p>
             </div>
           </div>
@@ -396,10 +407,32 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <dl className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-slate-500">
-                    {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? 'Номер:' : 'Код:'}
+                    {(() => {
+                      // Для Кызылорды показываем "ИНН:", если есть ИНН
+                      if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                        return 'ИНН:';
+                      }
+                      // Для Шымкента и Талдыкоргана показываем "Номер:", если есть number
+                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                        return 'Номер:';
+                      }
+                      // Для остальных городов показываем "Код:"
+                      return 'Код:';
+                    })()}
                   </dt>
                   <dd className="font-mono text-slate-900">
-                    {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : fridge.code}
+                    {(() => {
+                      // Для Кызылорды используем ИНН клиента, если он есть
+                      if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                        return fridge.clientInfo.inn;
+                      }
+                      // Для Шымкента и Талдыкоргана используем number
+                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                        return fridge.number;
+                      }
+                      // Для остальных городов используем code без префикса #
+                      return fridge.code;
+                    })()}
                   </dd>
                 </div>
                 {fridge.cityId && (
@@ -748,17 +781,42 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               </button>
             </div>
             <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto min-h-0">
-              {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? (
-                <p className="text-xs text-slate-500 font-mono mb-2">{fridge.number}</p>
-              ) : (
-                <p className="text-xs text-slate-500 font-mono mb-2">#{fridge.code}</p>
-              )}
+              {(() => {
+                // Для Кызылорды используем ИНН клиента, если он есть
+                if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                  return <p className="text-xs text-slate-500 font-mono mb-2">{fridge.clientInfo.inn}</p>;
+                }
+                // Для Шымкента и Талдыкоргана используем number
+                if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                  return <p className="text-xs text-slate-500 font-mono mb-2">{fridge.number}</p>;
+                }
+                // Для остальных городов используем code
+                return <p className="text-xs text-slate-500 font-mono mb-2">#{fridge.code}</p>;
+              })()}
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
-                  (fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? fridge.number : fridge.code
+                  (() => {
+                    // Для Кызылорды используем ИНН клиента, если он есть
+                    if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                      return fridge.clientInfo.inn;
+                    }
+                    // Для Шымкента и Талдыкоргана используем number
+                    if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                      return fridge.number;
+                    }
+                    // Для остальных городов используем code
+                    return fridge.code;
+                  })()
                 )}`}
                 code={fridge.code}
-                number={fridge.number}
+                number={(() => {
+                  // Для Кызылорды используем ИНН клиента, если он есть
+                  if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                    return fridge.clientInfo.inn;
+                  }
+                  // Для остальных городов используем number
+                  return fridge.number;
+                })()}
                 cityName={fridge.cityId?.name}
                 size={250}
               />
@@ -775,7 +833,18 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <div className="bg-white rounded-lg p-6 max-w-sm mx-4 relative z-[1201]" style={{ zIndex: 1201 }}>
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить холодильник?</h3>
               <p className="text-slate-600 text-sm mb-4">
-                Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> ({(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда') && fridge.number ? fridge.number : `#${fridge.code}`})?
+                Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> ({(() => {
+                  // Для Кызылорды используем ИНН клиента, если он есть
+                  if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
+                    return fridge.clientInfo.inn;
+                  }
+                  // Для Шымкента и Талдыкоргана используем number
+                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
+                    return fridge.number;
+                  }
+                  // Для остальных городов используем code с префиксом #
+                  return `#${fridge.code}`;
+                })()})?
                 Все связанные отметки также будут удалены. Это действие нельзя отменить.
               </p>
               <div className="flex gap-3">
