@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../shared/apiClient';
+import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { GeocodedAddress } from '../components/ui/GeocodedAddress';
-import { useAuth } from '../contexts/AuthContext';
+import { getDisplayIdentifier } from '../utils/fridgeUtils';
 
 type City = {
   _id: string;
@@ -387,25 +388,14 @@ export default function FridgesList() {
                     <div className="flex-1">
                       <h3 className="font-semibold text-slate-900 text-lg mb-1">{f.name}</h3>
                       {(() => {
-                        // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
-                        if (f.clientInfo?.inn) {
-                          return <div className="text-sm text-slate-500 font-mono">{f.clientInfo.inn}</div>;
-                        }
-                        // Для Кызылорды: если есть number (импорт) → показываем только number, без code
                         const cityName = typeof f.cityId === 'object' ? f.cityId?.name : (cities.find(c => c._id === f.cityId)?.name || '');
-                        if (cityName === 'Кызылорда' && f.number) {
-                          return <div className="text-sm text-slate-500 font-mono">{f.number}</div>;
-                        }
-                        // Для Кызылорды без number и без ИНН не показываем code
-                        if (cityName === 'Кызылорда') {
-                          return null;
-                        }
-                        // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
-                        if ((cityName === 'Шымкент' || cityName === 'Талдыкорган') && f.number) {
-                          return <div className="text-sm text-slate-500 font-mono">{f.number}</div>;
-                        }
-                        // Для остальных городов показываем code с префиксом #
-                        return <div className="text-sm text-slate-500 font-mono">#{f.code}</div>;
+                        const displayId = getDisplayIdentifier(
+                          { clientInfo: f.clientInfo, number: f.number, code: f.code, name: f.name },
+                          cityName
+                        );
+                        if (!displayId) return null;
+                        const isNumberCity = cityName === 'Кызылорда' || cityName === 'Шымкент' || cityName === 'Талдыкорган';
+                        return <div className="text-sm text-slate-500 font-mono">{isNumberCity ? displayId : `#${displayId}`}</div>;
                       })()}
                     </div>
                     <Badge variant={f.active ? 'success' : 'error'}>

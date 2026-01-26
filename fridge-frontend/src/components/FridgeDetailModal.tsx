@@ -6,6 +6,7 @@ import { QRCode } from './ui/QRCode';
 import { GeocodedAddress } from './ui/GeocodedAddress';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
+import { getDisplayIdentifier } from '../utils/fridgeUtils';
 
 type ClientInfo = {
   name?: string;
@@ -331,24 +332,13 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <h2 className="font-semibold text-slate-900">{fridge.name}</h2>
               <p className="text-sm text-slate-500 font-mono">
                 {(() => {
-                  // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
-                  if (fridge.clientInfo?.inn) {
-                    return fridge.clientInfo.inn;
-                  }
-                  // Для Кызылорды: если есть number (импорт) → показываем только number, без code
-                  if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
-                    return fridge.number;
-                  }
-                  // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
-                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
-                    return fridge.number;
-                  }
-                  // Для Кызылорды без number и без ИНН не показываем code
-                  if (fridge.cityId?.name === 'Кызылорда') {
-                    return '';
-                  }
-                  // Для остальных городов используем code с префиксом #
-                  return `#${fridge.code}`;
+                  const displayId = getDisplayIdentifier(
+                    { clientInfo: fridge.clientInfo, number: fridge.number, code: fridge.code, name: fridge.name },
+                    fridge.cityId?.name
+                  );
+                  if (!displayId) return '';
+                  const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган';
+                  return isNumberCity ? displayId : `#${displayId}`;
                 })()}
               </p>
             </div>
@@ -416,46 +406,23 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 <div className="flex justify-between">
                   <dt className="text-slate-500">
                     {(() => {
-                      // Если есть ИНН клиента (ручное создание) → показываем "ИНН:" для всех городов
-                      if (fridge.clientInfo?.inn) {
-                        return 'ИНН:';
-                      }
-                      // Для Кызылорды: если есть number (импорт) → показываем "Номер:"
-                      if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
-                        return 'Номер:';
-                      }
-                      // Для Шымкента и Талдыкоргана показываем "Номер:", если есть number
-                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
-                        return 'Номер:';
-                      }
-                      // Для Кызылорды без number и без ИНН не показываем ничего
-                      if (fridge.cityId?.name === 'Кызылорда') {
-                        return null;
-                      }
-                      // Для остальных городов показываем "Код:"
-                      return 'Код:';
+                      const displayId = getDisplayIdentifier(
+                        { clientInfo: fridge.clientInfo, number: fridge.number, code: fridge.code, name: fridge.name },
+                        fridge.cityId?.name
+                      );
+                      if (!displayId) return null;
+                      if (fridge.clientInfo?.inn) return 'ИНН:';
+                      const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган';
+                      return isNumberCity ? 'Номер:' : 'Код:';
                     })()}
                   </dt>
                   <dd className="font-mono text-slate-900">
                     {(() => {
-                      // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
-                      if (fridge.clientInfo?.inn) {
-                        return fridge.clientInfo.inn;
-                      }
-                      // Для Кызылорды: если есть number (импорт) → показываем только number, без code
-                      if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
-                        return fridge.number;
-                      }
-                      // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
-                      if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
-                        return fridge.number;
-                      }
-                      // Для Кызылорды без number и без ИНН не показываем code
-                      if (fridge.cityId?.name === 'Кызылорда') {
-                        return '';
-                      }
-                      // Для остальных городов используем code без префикса #
-                      return fridge.code;
+                      const displayId = getDisplayIdentifier(
+                        { clientInfo: fridge.clientInfo, number: fridge.number, code: fridge.code, name: fridge.name },
+                        fridge.cityId?.name
+                      );
+                      return displayId || '';
                     })()}
                   </dd>
                 </div>
@@ -819,31 +786,23 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               })()}
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
-                  (() => {
-                    // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
-                    if (fridge.clientInfo?.inn) {
-                      return fridge.clientInfo.inn;
-                    }
-                    // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                    if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
-                      return fridge.number;
-                    }
-                    // Для остальных городов используем code
-                    return fridge.code;
-                  })()
+                  getDisplayIdentifier(
+                    { clientInfo: fridge.clientInfo, number: fridge.number, code: fridge.code, name: fridge.name },
+                    fridge.cityId?.name
+                  ) || fridge.code
                 )}`}
                 code={fridge.cityId?.name === 'Кызылорда' ? undefined : fridge.code}
                 number={(() => {
-                  // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
-                  if (fridge.clientInfo?.inn) {
-                    return fridge.clientInfo.inn;
-                  }
-                  // Для Кызылорды: если нет number, не передаем code (порядковый номер не нужен)
+                  const displayId = getDisplayIdentifier(
+                    { clientInfo: fridge.clientInfo, number: fridge.number, code: fridge.code, name: fridge.name },
+                    fridge.cityId?.name
+                  );
+                  // Для Кызылорды: если нет number и нет ИНН, но есть извлеченный номер, используем его
                   if (fridge.cityId?.name === 'Кызылорда') {
-                    return fridge.number || undefined;
+                    return displayId || undefined;
                   }
-                  // Для остальных городов используем number
-                  return fridge.number;
+                  // Для остальных городов используем displayId (ИНН или number)
+                  return displayId || undefined;
                 })()}
                 cityName={fridge.cityId?.name}
                 size={250}
@@ -862,24 +821,13 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Удалить холодильник?</h3>
               <p className="text-slate-600 text-sm mb-4">
                 Вы уверены, что хотите удалить холодильник <strong>{fridge.name}</strong> ({(() => {
-                  // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
-                  if (fridge.clientInfo?.inn) {
-                    return fridge.clientInfo.inn;
-                  }
-                  // Для Кызылорды: если есть number (импорт) → показываем только number, без code
-                  if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
-                    return fridge.number;
-                  }
-                  // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
-                  if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
-                    return fridge.number;
-                  }
-                  // Для Кызылорды без number и без ИНН не показываем code
-                  if (fridge.cityId?.name === 'Кызылорда') {
-                    return '';
-                  }
-                  // Для остальных городов используем code с префиксом #
-                  return `#${fridge.code}`;
+                  const displayId = getDisplayIdentifier(
+                    { clientInfo: fridge.clientInfo, number: fridge.number, code: fridge.code, name: fridge.name },
+                    fridge.cityId?.name
+                  );
+                  if (!displayId) return '';
+                  const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган';
+                  return isNumberCity ? displayId : `#${displayId}`;
                 })()})?
                 Все связанные отметки также будут удалены. Это действие нельзя отменить.
               </p>

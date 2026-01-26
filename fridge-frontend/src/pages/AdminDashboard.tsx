@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { getDisplayIdentifier } from '../utils/fridgeUtils';
 import { api } from '../shared/apiClient';
+import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge, Button } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
@@ -862,24 +863,18 @@ export default function AdminDashboard() {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-900 truncate">{f.name}</p>
                         {(() => {
-                          // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
-                          if (f.clientInfo?.inn) {
-                            return <p className="text-xs text-slate-500 font-mono truncate">{f.clientInfo.inn}</p>;
-                          }
-                          // Для Кызылорды: если есть number (импорт) → показываем только number, без code
-                          if (f.city?.name === 'Кызылорда' && f.number) {
-                            return <p className="text-xs text-slate-500 font-mono truncate">{f.number}</p>;
-                          }
-                          // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
-                          if ((f.city?.name === 'Шымкент' || f.city?.name === 'Талдыкорган') && f.number) {
-                            return <p className="text-xs text-slate-500 font-mono truncate">{f.number}</p>;
-                          }
-                          // Для Кызылорды без number и без ИНН не показываем ничего (или пустое)
-                          if (f.city?.name === 'Кызылорда') {
-                            return null;
-                          }
-                          // Для остальных городов используем code с префиксом #
-                          return <p className="text-xs text-slate-500 font-mono truncate">#{f.code}</p>;
+                          const displayId = getDisplayIdentifier(
+                            { clientInfo: f.clientInfo, number: f.number, code: f.code, name: f.name },
+                            f.city?.name
+                          );
+                          if (!displayId) return null;
+                          // Для Кызылорды и городов с number не добавляем префикс #
+                          const isNumberCity = f.city?.name === 'Кызылорда' || f.city?.name === 'Шымкент' || f.city?.name === 'Талдыкорган';
+                          return (
+                            <p className="text-xs text-slate-500 font-mono truncate">
+                              {isNumberCity ? displayId : `#${displayId}`}
+                            </p>
+                          );
                         })()}
                       </div>
                       <span
@@ -1133,46 +1128,39 @@ export default function AdminDashboard() {
             </div>
             <div className="mb-4">
               {(() => {
-                // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
-                if (selectedQRFridge.clientInfo?.inn) {
-                  return <p className="text-xs text-slate-500 font-mono text-center">{selectedQRFridge.clientInfo.inn}</p>;
-                }
-                // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                if ((selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда' || selectedQRFridge.city?.name === 'Талдыкорган') && selectedQRFridge.number) {
-                  return <p className="text-xs text-slate-500 font-mono text-center">{selectedQRFridge.number}</p>;
-                }
-                // Для остальных городов используем code
-                return <p className="text-xs text-slate-500 font-mono text-center">#{selectedQRFridge.code}</p>;
+                const displayId = getDisplayIdentifier(
+                  { clientInfo: selectedQRFridge.clientInfo, number: selectedQRFridge.number, code: selectedQRFridge.code, name: selectedQRFridge.name },
+                  selectedQRFridge.city?.name
+                );
+                if (!displayId) return null;
+                const isNumberCity = selectedQRFridge.city?.name === 'Кызылорда' || selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Талдыкорган';
+                return (
+                  <p className="text-xs text-slate-500 font-mono text-center">
+                    {isNumberCity ? displayId : `#${displayId}`}
+                  </p>
+                );
               })()}
             </div>
             <div className="flex justify-center mb-4">
               <QRCode
                 value={`${window.location.origin}/checkin/${encodeURIComponent(
-                  (() => {
-                    // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
-                    if (selectedQRFridge.clientInfo?.inn) {
-                      return selectedQRFridge.clientInfo.inn;
-                    }
-                    // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                    if ((selectedQRFridge.city?.name === 'Шымкент' || selectedQRFridge.city?.name === 'Кызылорда' || selectedQRFridge.city?.name === 'Талдыкорган') && selectedQRFridge.number) {
-                      return selectedQRFridge.number;
-                    }
-                    // Для остальных городов используем code
-                    return selectedQRFridge.code;
-                  })()
+                  getDisplayIdentifier(
+                    { clientInfo: selectedQRFridge.clientInfo, number: selectedQRFridge.number, code: selectedQRFridge.code, name: selectedQRFridge.name },
+                    selectedQRFridge.city?.name
+                  ) || selectedQRFridge.code
                 )}`}
                 code={selectedQRFridge.city?.name === 'Кызылорда' ? undefined : selectedQRFridge.code}
                 number={(() => {
-                  // Если есть ИНН клиента (ручное создание) → используем ИНН для всех городов
-                  if (selectedQRFridge.clientInfo?.inn) {
-                    return selectedQRFridge.clientInfo.inn;
-                  }
-                  // Для Кызылорды: если нет number, не передаем code (порядковый номер не нужен)
+                  const displayId = getDisplayIdentifier(
+                    { clientInfo: selectedQRFridge.clientInfo, number: selectedQRFridge.number, code: selectedQRFridge.code, name: selectedQRFridge.name },
+                    selectedQRFridge.city?.name
+                  );
+                  // Для Кызылорды: если нет number и нет ИНН, но есть извлеченный номер, используем его
                   if (selectedQRFridge.city?.name === 'Кызылорда') {
-                    return selectedQRFridge.number || undefined;
+                    return displayId || undefined;
                   }
-                  // Для остальных городов используем number
-                  return selectedQRFridge.number;
+                  // Для остальных городов используем displayId (ИНН или number)
+                  return displayId || undefined;
                 })()}
                 cityName={selectedQRFridge.city?.name}
                 size={200}

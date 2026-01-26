@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
+import { getDisplayIdentifier } from '../utils/fridgeUtils';
 import { Card, Button, Badge } from '../components/ui/Card';
 
 type Fridge = {
@@ -217,24 +218,13 @@ export default function CheckinPage() {
           <p className="text-slate-500 mt-1">
             Холодильник: <span className="font-medium">{fridge.name}</span>{' '}
             {(() => {
-              // Если есть ИНН клиента (ручное создание) → показываем ИНН для всех городов
-              if (fridge.clientInfo?.inn) {
-                return <Badge variant="info">{fridge.clientInfo.inn}</Badge>;
-              }
-              // Для Кызылорды: если есть number (импорт) → показываем только number, без code
-              if (fridge.cityId?.name === 'Кызылорда' && fridge.number) {
-                return <Badge variant="info">{fridge.number}</Badge>;
-              }
-              // Для Кызылорды без number и без ИНН не показываем code
-              if (fridge.cityId?.name === 'Кызылорда') {
-                return null;
-              }
-              // Для Шымкента и Талдыкоргана используем number (импорт из Excel)
-              if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
-                return <Badge variant="info">{fridge.number}</Badge>;
-              }
-              // Для остальных городов показываем code с префиксом #
-              return <Badge variant="info">#{fridge.code}</Badge>;
+              const displayId = getDisplayIdentifier(
+                { clientInfo: fridge.clientInfo, number: fridge.number, code: fridge.code, name: fridge.name },
+                fridge.cityId?.name
+              );
+              if (!displayId) return null;
+              const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган';
+              return <Badge variant="info">{isNumberCity ? displayId : `#${displayId}`}</Badge>;
             })()}
           </p>
         )}
