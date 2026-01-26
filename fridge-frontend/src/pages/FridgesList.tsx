@@ -24,6 +24,10 @@ type Fridge = {
   active: boolean;
   description?: string;
   cityId?: City | string;
+  clientInfo?: {
+    inn?: string;
+    name?: string;
+  } | null;
 };
 
 const ITEMS_PER_PAGE = 30; // Количество элементов на странице
@@ -388,7 +392,8 @@ export default function FridgesList() {
                           return <div className="text-sm text-slate-500 font-mono">{f.clientInfo.inn}</div>;
                         }
                         // Для Шымкента, Кызылорды и Талдыкоргана используем number (импорт из Excel)
-                        if ((f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда' || f.cityId?.name === 'Талдыкорган') && f.number) {
+                        const cityName = typeof f.cityId === 'object' ? f.cityId?.name : (cities.find(c => c._id === f.cityId)?.name || '');
+                        if ((cityName === 'Шымкент' || cityName === 'Кызылорда' || cityName === 'Талдыкорган') && f.number) {
                           return <div className="text-sm text-slate-500 font-mono">{f.number}</div>;
                         }
                         // Для остальных городов показываем code с префиксом #
