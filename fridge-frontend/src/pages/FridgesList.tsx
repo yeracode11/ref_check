@@ -25,6 +25,7 @@ type Fridge = {
   active: boolean;
   description?: string;
   cityId?: City | string;
+  warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
   clientInfo?: {
     inn?: string;
     name?: string;
@@ -33,6 +34,22 @@ type Fridge = {
 
 const ITEMS_PER_PAGE = 30; // Количество элементов на странице
 const SEARCH_DEBOUNCE_MS = 500; // Задержка перед поиском (мс)
+
+function getStatusBadge(status?: string) {
+  if (!status) return <Badge className="bg-slate-100 text-slate-700">Неизвестно</Badge>;
+  switch (status) {
+    case 'warehouse':
+      return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
+    case 'installed':
+      return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
+    case 'returned':
+      return <Badge className="bg-yellow-100 text-yellow-700">Возврат</Badge>;
+    case 'moved':
+      return <Badge className="bg-gray-900 text-white">Перемещен</Badge>;
+    default:
+      return <Badge className="bg-slate-100 text-slate-700">{status}</Badge>;
+  }
+}
 
 export default function FridgesList() {
   const { user } = useAuth();
@@ -384,9 +401,9 @@ export default function FridgesList() {
                 onClick={() => setSelectedFridgeId(f._id)}
               >
                 <div className="space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-slate-900 text-lg mb-1">{f.name}</h3>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-slate-900 text-lg mb-1 truncate">{f.name}</h3>
                       {(() => {
                         const cityName = typeof f.cityId === 'object' ? f.cityId?.name : (cities.find(c => c._id === f.cityId)?.name || '');
                         const displayId = getDisplayIdentifier(
@@ -395,12 +412,12 @@ export default function FridgesList() {
                         );
                         if (!displayId) return null;
                         const isNumberCity = cityName === 'Кызылорда' || cityName === 'Шымкент' || cityName === 'Талдыкорган';
-                        return <div className="text-sm text-slate-500 font-mono">{isNumberCity ? displayId : `#${displayId}`}</div>;
+                        return <div className="text-sm text-slate-500 font-mono truncate">{isNumberCity ? displayId : `#${displayId}`}</div>;
                       })()}
                     </div>
-                    <Badge variant={f.active ? 'success' : 'error'}>
-                      {f.active ? 'Активен' : 'Неактивен'}
-                    </Badge>
+                    <div className="flex-shrink-0">
+                      {getStatusBadge(f.warehouseStatus)}
+                    </div>
                   </div>
                   
                   {f.address && (
