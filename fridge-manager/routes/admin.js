@@ -2047,7 +2047,7 @@ router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) 
 
 // DELETE /api/admin/fridges/:id
 // Удалить холодильник
-router.delete('/fridges/:id', authenticateToken, requireAdmin, async (req, res) => {
+router.delete('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const fridge = await Fridge.findById(req.params.id);
     if (!fridge) {
