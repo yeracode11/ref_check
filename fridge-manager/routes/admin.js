@@ -630,8 +630,26 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       // Получаем контрагента (название) - используем для проверки, что строка не пустая
       const contractor = contractorIdx >= 0 ? String(row[contractorIdx] || '').trim() : '';
       
+      // Определяем, является ли текущий город Талдыкорганом (для особой логики склада)
+      const cityName = (city && city.name) ? String(city.name) : '';
+      const isTaldykorganCity =
+        cityName === 'Талдыкорган' ||
+        cityName === 'Талдыкорған' ||
+        cityName === 'Taldykorgan' ||
+        cityName === 'Taldikorgan';
+
+      // Для Талдыкоргана: если в файле указаны только номера без контрагента и адреса,
+      // такие строки считаем "холодильниками на складе" и НЕ пропускаем их.
+      const isWarehouseRowForTaldykorgan =
+        isTaldykorganCity &&
+        (!address || address === 'null' || address === 'undefined') &&
+        (!contractor || contractor === 'null' || contractor === 'undefined');
+
       // Пропускаем строку только если она полностью пустая (нет ни адреса, ни контрагента)
-      if ((!address || address === 'null' || address === 'undefined') && 
+      // Для Талдыкоргана оставляем строки, где есть только номер (warehouse),
+      // чтобы создать по ним холодильники со статусом "warehouse"
+      if (!isWarehouseRowForTaldykorgan &&
+          (!address || address === 'null' || address === 'undefined') && 
           (!contractor || contractor === 'null' || contractor === 'undefined')) {
         skippedNoAddress++;
         if (processedRows <= 5) {
@@ -670,12 +688,12 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       
       const fridgeNumber = numberValue;
       const code = fridgeNumber; // Всегда используем номер из Excel как code
-
+      
       const record = {
         code, // Всегда равен номеру из Excel
         name: name.substring(0, 200),
         cityId: city._id,
-        address: address ? address.substring(0, 500) : null, // Сохраняем адрес из Excel
+        address: address ? address.substring(0, 500) : null, // Сохраняем адрес из Excel (если есть)
         description: description ? description.substring(0, 500) : null,
         number: fridgeNumber, // Сохраняем также в поле number
         location: {
@@ -684,6 +702,19 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         },
         active: true,
       };
+
+      // Для Талдыкоргана: строки без адреса и контрагента (только номер) считаем "на складе"
+      // и сразу выставляем статус склада = warehouse
+      if (isWarehouseRowForTaldykorgan) {
+        record.warehouseStatus = 'warehouse';
+        record.statusHistory = [{
+          status: 'warehouse',
+          changedAt: new Date(),
+          // В некоторых сценариях user может быть не загружен (теоретически), поэтому проверяем
+          changedBy: req.user && req.user.id ? req.user.id : null,
+          notes: 'Импорт со склада (Талдыкорган)',
+        }];
+      }
 
       records.push(record);
     }
