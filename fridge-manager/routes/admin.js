@@ -302,6 +302,20 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
         else status = 'Давно';
       }
 
+      // Определяем статус склада и флаг возврата для экспорта
+      let warehouseStatusLabel = '';
+      let isReturned = false;
+      if (f.warehouseStatus === 'warehouse') {
+        warehouseStatusLabel = 'На складе';
+      } else if (f.warehouseStatus === 'installed') {
+        warehouseStatusLabel = 'Установлен';
+      } else if (f.warehouseStatus === 'returned') {
+        warehouseStatusLabel = 'Возврат';
+        isReturned = true;
+      } else if (f.warehouseStatus === 'moved') {
+        warehouseStatusLabel = 'Перемещён';
+      }
+
       // Конвертируем координаты в адрес (только если включено геокодирование)
       let geocodedAddress = '';
       if (enableGeocoding && f.location && f.location.coordinates && f.location.coordinates[0] !== 0 && f.location.coordinates[1] !== 0) {
