@@ -240,8 +240,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             }
           } else {
             // Старый формат для остальных городов (Тараз): код и название снизу в canvas
-            // Размер QR кода для Тараза такой же, как для Талдыкоргана
-            const tarazQRSize = Math.floor(size * 0.75); // 75% от исходного размера (как в Талдыкоргане)
+            // Размер QR кода для Тараза 82% от исходного (чуть больше, чем у Талдыкоргана)
+            const tarazQRSize = Math.floor(size * 0.82); // 82% от исходного размера
             
             if (code) {
               // Высота для кода - увеличиваем размер шрифта для четкости при печати
@@ -252,8 +252,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             // Для Тараза добавляем название контрагента (title)
             const isTaraz = cityName === 'Тараз' || cityName === 'Taraz';
             if (isTaraz && title) {
-              // Высота для названия - используем меньший шрифт для названия
-              ctx.font = '16px Arial'; // Размер шрифта для названия
+              // Высота для названия - используем чуть больший жирный шрифт для названия
+              ctx.font = 'bold 18px Arial'; // Увеличенный жирный шрифт для названия
               const maxWidth = tarazQRSize - 20; // Максимальная ширина с отступами
               const titleLines = [];
               const words = title.split(' ');
@@ -355,7 +355,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             canvas.height = shymkentQRSize + padding * 2 + bottomTextHeight;
           } else {
             // Для Тараза - QR код + текст снизу
-            const tarazQRSize = Math.floor(size * 0.75); // 75% от исходного размера (как в Талдыкоргане)
+            const tarazQRSize = Math.floor(size * 0.82); // 82% от исходного размера
             canvas.width = tarazQRSize + padding * 2;
             canvas.height = tarazQRSize + padding * 2 + bottomTextHeight;
           }
@@ -472,8 +472,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               }
             } else {
               // Старый формат для остальных городов (Тараз и др.)
-              // Размер QR кода для Тараза такой же, как для Талдыкоргана
-              const tarazQRSize = Math.floor(size * 0.75); // 75% от исходного размера (как в Талдыкоргане)
+              // Размер QR кода для Тараза 82% от исходного (чуть больше, чем у Талдыкоргана)
+              const tarazQRSize = Math.floor(size * 0.82); // 82% от исходного размера
               const qrX = (canvas.width - tarazQRSize) / 2;
               
               // Включаем сглаживание для лучшего качества при печати
@@ -496,7 +496,7 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               // Для Тараза добавляем название контрагента (title)
               const isTaraz = cityName === 'Тараз' || cityName === 'Taraz';
               if (isTaraz && title) {
-                finalCtx.font = '16px Arial'; // Размер шрифта для названия
+                finalCtx.font = 'bold 18px Arial'; // Увеличенный жирный шрифт для названия
                 finalCtx.fillStyle = '#000000';
                 const maxWidth = tarazQRSize - 20; // Максимальная ширина с отступами
                 const titleLines = [];
