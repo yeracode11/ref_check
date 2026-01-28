@@ -1319,7 +1319,9 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
 
     // 4. Общая статистика
     const totalFridges = await Fridge.countDocuments(fridgeQuery);
-    const totalCheckins = await Checkin.countDocuments({ visitedAt: { $gte: startDate }, ...fridgeFilter });
+    // Считаем количество холодильников, по которым были отметки за период (каждый холодильник только один раз)
+    const uniqueFridgeIds = await Checkin.distinct('fridgeId', { visitedAt: { $gte: startDate }, ...fridgeFilter });
+    const totalCheckins = uniqueFridgeIds.length;
     const uniqueManagers = await Checkin.distinct('managerId', { visitedAt: { $gte: startDate }, ...fridgeFilter });
     
     // Холодильники по статусам
@@ -1353,6 +1355,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         totalFridges,
         totalCheckins,
         uniqueManagers: uniqueManagers.length,
+        // Среднее количество холодильников с отметками в день
         avgCheckinsPerDay: daysNum > 0 ? Math.round(totalCheckins / daysNum * 10) / 10 : 0,
         fridgesByStatus: statusCounts,
       },
@@ -1563,10 +1566,12 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
 
     // 4. Общая статистика (только для города)
     const totalFridges = cityFridges.length;
-    const totalCheckins = await Checkin.countDocuments({
+    // Считаем количество холодильников, по которым были отметки за период (каждый холодильник только один раз)
+    const uniqueFridgeIds = await Checkin.distinct('fridgeId', {
       fridgeId: { $in: fridgeCodes },
       visitedAt: { $gte: startDate },
     });
+    const totalCheckins = uniqueFridgeIds.length;
     const uniqueManagers = await Checkin.distinct('managerId', {
       fridgeId: { $in: fridgeCodes },
       visitedAt: { $gte: startDate },
