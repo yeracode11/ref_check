@@ -89,9 +89,27 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     const now = Date.now();
 
     const result = fridges.map((f) => {
-      const stats = statsByFridgeId.get(f.code) || null;
-      const lastVisit = stats ? stats.lastVisit : null;
-      const totalCheckins = stats ? stats.totalCheckins : 0;
+      // Собираем все возможные идентификаторы холодильника
+      const identifiers = [f.code];
+      if (f.number) {
+        identifiers.push(f.number);
+      }
+      if (f.clientInfo?.inn) {
+        identifiers.push(f.clientInfo.inn);
+      }
+
+      // Находим последнюю дату визита и общее количество отметок
+      let lastVisit = null;
+      let totalCheckins = 0;
+      identifiers.forEach((id) => {
+        const stats = statsByFridgeId.get(id);
+        if (stats) {
+          if (!lastVisit || (stats.lastVisit && new Date(stats.lastVisit) > new Date(lastVisit))) {
+            lastVisit = stats.lastVisit;
+          }
+          totalCheckins += stats.totalCheckins || 0;
+        }
+      });
 
       // Определяем статус визита
       let visitStatus = 'never';
