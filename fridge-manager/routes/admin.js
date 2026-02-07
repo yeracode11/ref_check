@@ -2068,6 +2068,107 @@ router.delete('/fridges/all', authenticateToken, requireAdmin, async (req, res) 
   }
 });
 
+// DELETE /api/admin/fridges/city/:cityId
+// Удалить все холодильники определенного города (только для админа)
+// ВАЖНО: Этот роут должен быть ПЕРЕД /fridges/:id, чтобы Express обрабатывал точное совпадение первым
+router.delete('/fridges/city/:cityId', authenticateToken, requireAdmin, async (req, res) => {
+  let checkinsDeleted = 0;
+  let deletedCount = 0;
+  
+  try {
+    const cityId = req.params.cityId;
+    console.log('[Admin] Starting deletion of all fridges for city:', cityId);
+    console.log('[Admin] User:', req.user?.username, req.user?.role);
+    
+    // Проверяем, что город существует
+    const city = await City.findById(cityId);
+    if (!city) {
+      return res.status(404).json({ error: 'Город не найден' });
+    }
+    
+    // Проверяем, что модели доступны
+    if (!Fridge) {
+      throw new Error('Fridge model is not available');
+    }
+    if (!Checkin) {
+      console.warn('[Admin] Checkin model is not available, will skip checkin deletion');
+    }
+    
+    // Получаем все холодильники этого города
+    const fridges = await Fridge.find({ cityId: cityId });
+    const count = fridges.length;
+    console.log(`[Admin] Found ${count} fridges to delete for city ${city.name}`);
+    
+    if (count === 0) {
+      return res.json({ 
+        message: `Нет холодильников для удаления в городе ${city.name}`, 
+        deleted: 0,
+        checkinsDeleted: 0
+      });
+    }
+
+    // Собираем все идентификаторы холодильников (code, number, ИНН) для удаления связанных чек-инов
+    const fridgeIdentifiers = [];
+    fridges.forEach(f => {
+      fridgeIdentifiers.push(f.code);
+      if (f.number) {
+        fridgeIdentifiers.push(f.number);
+      }
+      if (f.clientInfo?.inn) {
+        fridgeIdentifiers.push(f.clientInfo.inn);
+      }
+    });
+
+    // Удаляем все связанные отметки посещений
+    if (Checkin && fridgeIdentifiers.length > 0) {
+      try {
+        console.log('[Admin] Deleting checkins for city fridges...');
+        const checkinResult = await Checkin.deleteMany({ 
+          fridgeId: { $in: fridgeIdentifiers } 
+        });
+        checkinsDeleted = checkinResult.deletedCount || 0;
+        console.log(`[Admin] Deleted ${checkinsDeleted} checkins`);
+      } catch (checkinErr) {
+        // Логируем ошибку, но продолжаем удаление холодильников
+        console.error('[Admin] Error deleting checkins (continuing with fridge deletion):', checkinErr);
+        console.error('[Admin] Checkin error message:', checkinErr.message);
+        // Не прерываем выполнение, просто продолжаем
+      }
+    } else {
+      console.log('[Admin] Skipping checkin deletion (model not available or no identifiers)');
+    }
+
+    // Удаляем все холодильники города
+    try {
+      console.log('[Admin] Deleting fridges for city...');
+      const deleteResult = await Fridge.deleteMany({ cityId: cityId });
+      deletedCount = deleteResult.deletedCount || 0;
+      console.log(`[Admin] Deleted ${deletedCount} fridges`);
+    } catch (fridgeErr) {
+      console.error('[Admin] Error deleting fridges:', fridgeErr);
+      return res.status(500).json({ 
+        error: 'Ошибка удаления холодильников', 
+        details: fridgeErr.message 
+      });
+    }
+
+    console.log(`[Admin] Successfully deleted all fridges for city ${city.name}: ${deletedCount} fridges, ${checkinsDeleted} checkins`);
+
+    return res.json({ 
+      message: `Удалено ${deletedCount} холодильников и ${checkinsDeleted} отметок посещений из города ${city.name}`, 
+      deleted: deletedCount,
+      checkinsDeleted: checkinsDeleted,
+      cityName: city.name
+    });
+  } catch (err) {
+    console.error('[Admin] Unexpected error deleting city fridges:', err);
+    return res.status(500).json({ 
+      error: 'Ошибка удаления холодильников города', 
+      details: err.message || 'Неизвестная ошибка'
+    });
+  }
+});
+
 // DELETE /api/admin/fridges/:id
 // Удалить холодильник
 router.delete('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {

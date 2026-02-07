@@ -52,6 +52,8 @@ export default function CitiesManagement() {
   const [fridges, setFridges] = useState<Fridge[]>([]);
   const [fridgesLoading, setFridgesLoading] = useState(false);
   const [fridgesError, setFridgesError] = useState<string | null>(null);
+  const [showDeleteCityFridgesConfirm, setShowDeleteCityFridgesConfirm] = useState(false);
+  const [deletingCityFridges, setDeletingCityFridges] = useState(false);
 
   // Загрузка данных
   useEffect(() => {
@@ -165,6 +167,29 @@ export default function CitiesManagement() {
       setFridges([]);
     } finally {
       setFridgesLoading(false);
+    }
+  };
+
+  // Удалить все холодильники города
+  const handleDeleteCityFridges = async () => {
+    if (!selectedCityForFridges) return;
+
+    try {
+      setDeletingCityFridges(true);
+      const res = await api.delete(`/api/admin/fridges/city/${selectedCityForFridges._id}`);
+      
+      alert(`✅ ${res.data.message || `Удалено ${res.data.deleted || 0} холодильников и ${res.data.checkinsDeleted || 0} отметок посещений`}`);
+      
+      // Обновляем список холодильников (теперь должен быть пустым)
+      setFridges([]);
+      setShowDeleteCityFridgesConfirm(false);
+      
+      // Перезагружаем список городов (на случай, если нужно обновить статистику)
+      loadCities();
+    } catch (e: any) {
+      alert('Ошибка удаления: ' + (e?.response?.data?.error || e.message));
+    } finally {
+      setDeletingCityFridges(false);
     }
   };
 
@@ -392,6 +417,38 @@ export default function CitiesManagement() {
         </div>
       )}
 
+      {/* Подтверждение удаления всех холодильников города */}
+      {showDeleteCityFridgesConfirm && selectedCityForFridges && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteCityFridgesConfirm(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">⚠️ Удалить все холодильники?</h3>
+            <p className="text-slate-600 mb-4">
+              Вы уверены, что хотите удалить <strong>все {fridges.length} холодильников</strong> из города <strong>{selectedCityForFridges.name}</strong>?
+              <br /><br />
+              <span className="text-red-600 text-sm font-semibold">⚠️ Это действие необратимо!</span>
+              <br />
+              <span className="text-slate-500 text-sm">Будут удалены все холодильники и связанные с ними отметки посещений.</span>
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteCityFridges}
+                disabled={deletingCityFridges}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium"
+              >
+                {deletingCityFridges ? 'Удаление...' : '🗑️ Удалить все'}
+              </button>
+              <button
+                onClick={() => setShowDeleteCityFridgesConfirm(false)}
+                disabled={deletingCityFridges}
+                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 disabled:opacity-50 transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Модальное окно со списком холодильников города */}
       {showFridgesModal && selectedCityForFridges && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowFridgesModal(false)}>
@@ -473,12 +530,26 @@ export default function CitiesManagement() {
 
             {/* Футер */}
             <div className="p-6 border-t border-slate-200 bg-slate-50">
-              <button
-                onClick={() => setShowFridgesModal(false)}
-                className="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors font-medium"
-              >
-                Закрыть
-              </button>
+              <div className="flex gap-3">
+                {fridges.length > 0 && (
+                  <button
+                    onClick={() => setShowDeleteCityFridgesConfirm(true)}
+                    disabled={deletingCityFridges}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    {deletingCityFridges ? 'Удаление...' : `Удалить все (${fridges.length})`}
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowFridgesModal(false)}
+                  className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors font-medium"
+                >
+                  Закрыть
+                </button>
+              </div>
             </div>
           </div>
         </div>
