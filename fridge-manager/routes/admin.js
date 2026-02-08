@@ -99,12 +99,31 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       }
 
       // Находим последнюю дату визита и общее количество отметок
+      // Важно: один холодильник может иметь отметки с разными идентификаторами
+      // (code, number, ИНН), поэтому нужно проверить все и взять самую свежую дату
       let lastVisit = null;
+      let lastVisitTime = null;
       let totalCheckins = 0;
       identifiers.forEach((id) => {
         const stats = statsByFridgeId.get(id);
-        if (stats) {
-          if (!lastVisit || (stats.lastVisit && new Date(stats.lastVisit) > new Date(lastVisit))) {
+        if (stats && stats.lastVisit) {
+          // Преобразуем lastVisit в timestamp для надежного сравнения
+          // MongoDB может вернуть Date объект или строку, поэтому проверяем оба случая
+          let visitTime;
+          if (stats.lastVisit instanceof Date) {
+            visitTime = stats.lastVisit.getTime();
+          } else if (typeof stats.lastVisit === 'string') {
+            visitTime = new Date(stats.lastVisit).getTime();
+          } else if (stats.lastVisit && typeof stats.lastVisit.getTime === 'function') {
+            visitTime = stats.lastVisit.getTime();
+          } else {
+            // Fallback: пытаемся преобразовать любым способом
+            visitTime = new Date(stats.lastVisit).getTime();
+          }
+          
+          // Проверяем, что visitTime валидный (не NaN)
+          if (!isNaN(visitTime) && (!lastVisitTime || visitTime > lastVisitTime)) {
+            lastVisitTime = visitTime;
             lastVisit = stats.lastVisit;
           }
           totalCheckins += stats.totalCheckins || 0;
@@ -113,11 +132,21 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 
       // Определяем статус визита
       let visitStatus = 'never';
-      if (lastVisit) {
-        const diffDays = (now - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24);
-        if (diffDays < 1) visitStatus = 'today';
-        else if (diffDays < 7) visitStatus = 'week';
-        else visitStatus = 'old';
+      if (lastVisitTime) {
+        // Используем уже вычисленный timestamp для точного расчета
+        const diffDays = (now - lastVisitTime) / (1000 * 60 * 60 * 24);
+        if (diffDays < 1) {
+          visitStatus = 'today';
+        } else if (diffDays < 7) {
+          visitStatus = 'week';
+        } else {
+          visitStatus = 'old';
+        }
+        
+        // Логирование для отладки (можно убрать после проверки)
+        if (diffDays < 0) {
+          console.warn(`[Admin] Negative diffDays for fridge ${f.code}: ${diffDays} days (now: ${new Date(now).toISOString()}, lastVisit: ${new Date(lastVisitTime).toISOString()})`);
+        }
       }
 
       // Определяем статус для отображения на карте.
