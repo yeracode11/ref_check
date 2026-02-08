@@ -461,16 +461,36 @@ export default function CitiesManagement() {
                 </h3>
                 <p className="text-sm text-slate-500 mt-1">
                   Код города: <span className="font-mono">{selectedCityForFridges.code}</span>
+                  {!fridgesLoading && !fridgesError && fridges.length > 0 && (
+                    <span className="ml-3 text-slate-700">
+                      • Всего: <span className="font-semibold">{fridges.length}</span>
+                    </span>
+                  )}
                 </p>
               </div>
-              <button
-                onClick={() => setShowFridgesModal(false)}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-3">
+                {!fridgesLoading && !fridgesError && fridges.length > 0 && (
+                  <button
+                    onClick={() => setShowDeleteCityFridgesConfirm(true)}
+                    disabled={deletingCityFridges}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium flex items-center gap-2 text-sm"
+                    title="Удалить все холодильники города"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    {deletingCityFridges ? 'Удаление...' : `Удалить все (${fridges.length})`}
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowFridgesModal(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Содержимое */}

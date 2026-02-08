@@ -2217,6 +2217,61 @@ router.delete('/fridges/:id/soft', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+// GET /api/admin/backup
+// Резервное копирование всех холодильников и отметок (только для админа)
+router.get('/backup', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('[Admin] Starting backup creation...');
+    console.log('[Admin] User:', req.user?.username, req.user?.role);
+
+    // Получаем все холодильники с полной информацией
+    const fridges = await Fridge.find({}).populate('cityId', 'name code').lean();
+    console.log(`[Admin] Found ${fridges.length} fridges`);
+
+    // Получаем все отметки
+    const checkins = await Checkin.find({}).lean();
+    console.log(`[Admin] Found ${checkins.length} checkins`);
+
+    // Получаем все города для полноты данных
+    const cities = await City.find({}).lean();
+    console.log(`[Admin] Found ${cities.length} cities`);
+
+    // Формируем объект резервной копии
+    const backup = {
+      version: '1.0',
+      createdAt: new Date().toISOString(),
+      createdBy: req.user?.username || 'unknown',
+      metadata: {
+        fridgesCount: fridges.length,
+        checkinsCount: checkins.length,
+        citiesCount: cities.length,
+      },
+      data: {
+        cities: cities,
+        fridges: fridges,
+        checkins: checkins,
+      },
+    };
+
+    // Устанавливаем заголовки для скачивания файла
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `backup-${timestamp}.json`;
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    console.log(`[Admin] Backup created successfully: ${filename}`);
+
+    return res.json(backup);
+  } catch (err) {
+    console.error('[Admin] Error creating backup:', err);
+    return res.status(500).json({ 
+      error: 'Ошибка создания резервной копии', 
+      details: err.message 
+    });
+  }
+});
+
 module.exports = router;
 
 
