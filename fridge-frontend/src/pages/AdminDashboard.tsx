@@ -78,6 +78,8 @@ export default function AdminDashboard() {
   const [backingUp, setBackingUp] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [cityStatistics, setCityStatistics] = useState<any>(null);
+  const [loadingCityStats, setLoadingCityStats] = useState(false);
   const [importCityId, setImportCityId] = useState<string>(''); // Выбранный город для импорта
   const [showImportModal, setShowImportModal] = useState(false); // Модальное окно выбора города
   const [importResult, setImportResult] = useState<{ imported: number; duplicates: number; errors: number; total: number } | null>(null);
@@ -138,6 +140,32 @@ export default function AdminDashboard() {
       } finally {
         // Ничего не делаем с основным состоянием загрузки,
         // чтобы не блокировать первый рендер списка
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [user]);
+
+  // Загрузка статистики по городам
+  useEffect(() => {
+    if (!user || (user.role !== 'admin' && user.role !== 'accountant')) {
+      return;
+    }
+
+    let alive = true;
+    (async () => {
+      try {
+        setLoadingCityStats(true);
+        const res = await api.get('/api/admin/statistics/by-cities');
+        if (!alive) return;
+        setCityStatistics(res.data);
+      } catch (e: any) {
+        if (!alive) return;
+        console.error('Ошибка загрузки статистики по городам:', e);
+      } finally {
+        if (alive) setLoadingCityStats(false);
       }
     })();
 
@@ -779,6 +807,109 @@ export default function AdminDashboard() {
           <p className="text-xs text-slate-500 mt-1 capitalize">{user.role}</p>
         </Card>
       </div>
+
+      {/* Статистика по городам */}
+      {cityStatistics && (
+        <Card>
+          <h2 className="text-lg font-semibold text-slate-900 mb-4">
+            📊 Статистика по городам
+          </h2>
+          {loadingCityStats ? (
+            <div className="flex items-center justify-center py-8">
+              <LoadingSpinner />
+            </div>
+          ) : cityStatistics.cities && cityStatistics.cities.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-3 px-4 font-semibold text-slate-700">Город</th>
+                    <th className="text-right py-3 px-4 font-semibold text-slate-700">Всего</th>
+                    <th className="text-right py-3 px-4 font-semibold text-green-600">Свежие</th>
+                    <th className="text-right py-3 px-4 font-semibold text-red-600">Старые</th>
+                    <th className="text-right py-3 px-4 font-semibold text-blue-600">На складе</th>
+                    <th className="text-right py-3 px-4 font-semibold text-slate-600">Установлены</th>
+                    <th className="text-right py-3 px-4 font-semibold text-yellow-600">Возврат</th>
+                    <th className="text-right py-3 px-4 font-semibold text-orange-600">Перемещены</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cityStatistics.cities.map((city: any) => (
+                    <tr key={city.cityId} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-slate-900">{city.cityName}</div>
+                        {city.cityCode && (
+                          <div className="text-xs text-slate-500 font-mono">{city.cityCode}</div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right font-semibold text-slate-900">
+                        {city.total}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className="inline-flex items-center gap-1 text-green-600 font-medium">
+                          <span className="w-2 h-2 rounded-full bg-green-500" />
+                          {city.fresh}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className="inline-flex items-center gap-1 text-red-600 font-medium">
+                          <span className="w-2 h-2 rounded-full bg-red-500" />
+                          {city.old}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className="inline-flex items-center gap-1 text-blue-600 font-medium">
+                          <span className="w-2 h-2 rounded-full bg-blue-600" />
+                          {city.never}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right text-slate-600">
+                        {city.installed}
+                      </td>
+                      <td className="py-3 px-4 text-right text-yellow-600">
+                        {city.returned}
+                      </td>
+                      <td className="py-3 px-4 text-right text-orange-600">
+                        {city.moved}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+                    <td className="py-3 px-4 text-slate-900">Итого</td>
+                    <td className="py-3 px-4 text-right text-slate-900">
+                      {cityStatistics.summary.totalFridges}
+                    </td>
+                    <td className="py-3 px-4 text-right text-green-600">
+                      {cityStatistics.summary.totalFresh}
+                    </td>
+                    <td className="py-3 px-4 text-right text-red-600">
+                      {cityStatistics.summary.totalOld}
+                    </td>
+                    <td className="py-3 px-4 text-right text-blue-600">
+                      {cityStatistics.summary.totalNever}
+                    </td>
+                    <td className="py-3 px-4 text-right text-slate-600">
+                      {cityStatistics.cities.reduce((sum: number, c: any) => sum + c.installed, 0)}
+                    </td>
+                    <td className="py-3 px-4 text-right text-yellow-600">
+                      {cityStatistics.cities.reduce((sum: number, c: any) => sum + c.returned, 0)}
+                    </td>
+                    <td className="py-3 px-4 text-right text-orange-600">
+                      {cityStatistics.cities.reduce((sum: number, c: any) => sum + c.moved, 0)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-500">
+              Нет данных по городам
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Recent checkins */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

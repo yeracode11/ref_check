@@ -2246,6 +2246,143 @@ router.delete('/fridges/:id/soft', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+// GET /api/admin/statistics/by-cities
+// Статистика по городам с разбивкой по статусам отметок
+router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  try {
+    // Для бухгалтера фильтруем по городу
+    let fridgeQuery = {};
+    if (req.user.role === 'accountant' && req.user.cityId) {
+      fridgeQuery.cityId = req.user.cityId;
+    }
+
+    // Получаем все холодильники
+    const fridges = await Fridge.find(fridgeQuery).populate('cityId', 'name code').lean();
+
+    // Агрегируем статистику по каждому холодильнику
+    const statsByFridgeId = new Map();
+    const checkinStats = await Checkin.aggregate([
+      {
+        $group: {
+          _id: '$fridgeId',
+          lastVisit: { $max: '$visitedAt' },
+          totalCheckins: { $sum: 1 },
+        },
+      },
+    ]);
+
+    checkinStats.forEach((s) => {
+      if (s && s._id) {
+        statsByFridgeId.set(s._id, {
+          lastVisit: s.lastVisit,
+          totalCheckins: s.totalCheckins,
+        });
+      }
+    });
+
+    const now = Date.now();
+
+    // Группируем холодильники по городам
+    const cityStatsMap = new Map();
+
+    fridges.forEach((f) => {
+      const cityId = f.cityId?._id?.toString() || 'unknown';
+      const cityName = f.cityId?.name || 'Не указан';
+      const cityCode = f.cityId?.code || '';
+
+      if (!cityStatsMap.has(cityId)) {
+        cityStatsMap.set(cityId, {
+          cityId: cityId,
+          cityName: cityName,
+          cityCode: cityCode,
+          total: 0,
+          fresh: 0, // today/week
+          old: 0, // old
+          never: 0, // never (на складе)
+          warehouse: 0,
+          installed: 0,
+          returned: 0,
+          moved: 0,
+        });
+      }
+
+      const stats = cityStatsMap.get(cityId);
+      stats.total++;
+
+      // Определяем статус визита
+      const identifiers = [f.code];
+      if (f.number) identifiers.push(f.number);
+      if (f.clientInfo?.inn) identifiers.push(f.clientInfo.inn);
+
+      let lastVisitTime = null;
+      identifiers.forEach((id) => {
+        const checkinStats = statsByFridgeId.get(id);
+        if (checkinStats && checkinStats.lastVisit) {
+          let visitTime;
+          if (checkinStats.lastVisit instanceof Date) {
+            visitTime = checkinStats.lastVisit.getTime();
+          } else if (typeof checkinStats.lastVisit === 'string') {
+            visitTime = new Date(checkinStats.lastVisit).getTime();
+          } else if (checkinStats.lastVisit && typeof checkinStats.lastVisit.getTime === 'function') {
+            visitTime = checkinStats.lastVisit.getTime();
+          } else {
+            visitTime = new Date(checkinStats.lastVisit).getTime();
+          }
+          if (!isNaN(visitTime) && (!lastVisitTime || visitTime > lastVisitTime)) {
+            lastVisitTime = visitTime;
+          }
+        }
+      });
+
+      // Определяем статус визита
+      if (lastVisitTime) {
+        const diffDays = (now - lastVisitTime) / (1000 * 60 * 60 * 24);
+        if (diffDays < 1 || diffDays < 7) {
+          stats.fresh++;
+        } else {
+          stats.old++;
+        }
+      } else {
+        stats.never++;
+      }
+
+      // Статус склада
+      const warehouseStatus = f.warehouseStatus || 'warehouse';
+      if (warehouseStatus === 'warehouse') {
+        stats.warehouse++;
+      } else if (warehouseStatus === 'installed') {
+        stats.installed++;
+      } else if (warehouseStatus === 'returned') {
+        stats.returned++;
+      } else if (warehouseStatus === 'moved') {
+        stats.moved++;
+      }
+    });
+
+    // Преобразуем Map в массив и сортируем по названию города
+    const cityStats = Array.from(cityStatsMap.values()).sort((a, b) => 
+      a.cityName.localeCompare(b.cityName, 'ru')
+    );
+
+    return res.json({
+      cities: cityStats,
+      summary: {
+        totalCities: cityStats.length,
+        totalFridges: cityStats.reduce((sum, c) => sum + c.total, 0),
+        totalFresh: cityStats.reduce((sum, c) => sum + c.fresh, 0),
+        totalOld: cityStats.reduce((sum, c) => sum + c.old, 0),
+        totalNever: cityStats.reduce((sum, c) => sum + c.never, 0),
+      },
+    });
+  } catch (err) {
+    console.error('[Admin] Error getting city statistics:', err);
+    return res.status(500).json({ 
+      error: 'Ошибка получения статистики по городам', 
+      details: err.message 
+    });
+  }
+});
+
 // GET /api/admin/backup
 // Резервное копирование всех холодильников и отметок (только для админа)
 router.get('/backup', authenticateToken, requireAdmin, async (req, res) => {
