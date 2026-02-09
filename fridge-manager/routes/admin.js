@@ -2334,20 +2334,37 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
         }
       });
 
-      // Определяем статус визита
-      if (lastVisitTime) {
-        const diffDays = (now - lastVisitTime) / (1000 * 60 * 60 * 24);
-        if (diffDays < 1 || diffDays < 7) {
-          stats.fresh++;
-        } else {
-          stats.old++;
-        }
-      } else {
+      // Определяем статус визита (логика должна совпадать с /fridge-status)
+      // В /fridge-status логика такая:
+      // - Если нет визитов ИЛИ warehouseStatus === 'returned' -> 'never' (синий)
+      // - Иначе используем visitStatus (today/week/old)
+      const warehouseStatus = f.warehouseStatus || 'warehouse';
+      
+      if (!lastVisitTime) {
+        // Нет визитов - на складе
         stats.never++;
+      } else {
+        // Есть визиты
+        if (warehouseStatus === 'returned') {
+          // Возвращен на склад - считается как "never" (синий)
+          stats.never++;
+        } else {
+          // Определяем статус по дате последнего визита
+          const diffDays = (now - lastVisitTime) / (1000 * 60 * 60 * 24);
+          if (diffDays < 1) {
+            // Сегодня - свежая отметка
+            stats.fresh++;
+          } else if (diffDays < 7) {
+            // В пределах недели - свежая отметка
+            stats.fresh++;
+          } else {
+            // Больше недели - старая отметка
+            stats.old++;
+          }
+        }
       }
 
-      // Статус склада
-      const warehouseStatus = f.warehouseStatus || 'warehouse';
+      // Статус склада (для информации)
       if (warehouseStatus === 'warehouse') {
         stats.warehouse++;
       } else if (warehouseStatus === 'installed') {
