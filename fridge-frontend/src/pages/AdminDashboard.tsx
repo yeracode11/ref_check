@@ -131,7 +131,12 @@ export default function AdminDashboard() {
           api.get('/api/checkins?limit=10000'), // Запрашиваем больше отметок для админа (до 10000)
         ]);
         if (!alive) return;
-        setAllFridges(fridgeStatusRes.data);
+        // При all=true эндпоинт возвращает массив напрямую
+        const fridgesData = Array.isArray(fridgeStatusRes.data) 
+          ? fridgeStatusRes.data 
+          : (fridgeStatusRes.data?.data || []);
+        console.log('[AdminDashboard] Loaded fridges:', fridgesData.length);
+        setAllFridges(fridgesData);
         setCheckins(checkinsRes.data);
         setError(null);
       } catch (e: any) {
@@ -392,7 +397,10 @@ export default function AdminDashboard() {
         const [fridgeStatusRes] = await Promise.all([
           api.get('/api/admin/fridge-status?all=true'),
         ]);
-        setAllFridges(fridgeStatusRes.data);
+        const fridgesData = Array.isArray(fridgeStatusRes.data) 
+          ? fridgeStatusRes.data 
+          : (fridgeStatusRes.data?.data || []);
+        setAllFridges(fridgesData);
         loadFridges(0, true);
       }
 
@@ -533,7 +541,10 @@ export default function AdminDashboard() {
           const [fridgeStatusRes] = await Promise.all([
             api.get('/api/admin/fridge-status?all=true'),
           ]);
-          setAllFridges(fridgeStatusRes.data);
+          const fridgesData = Array.isArray(fridgeStatusRes.data) 
+            ? fridgeStatusRes.data 
+            : (fridgeStatusRes.data?.data || []);
+          setAllFridges(fridgesData);
           // Обновляем список с сервера для синхронизации
           loadFridges(0, true);
         } catch (e) {
@@ -1397,7 +1408,10 @@ export default function AdminDashboard() {
                     setCheckins(checkinsRes.data);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
-                    setAllFridges(fridgeStatusRes.data);
+                    const fridgesData = Array.isArray(fridgeStatusRes.data) 
+                      ? fridgeStatusRes.data 
+                      : (fridgeStatusRes.data?.data || []);
+                    setAllFridges(fridgesData);
                     setDeleteCheckinId(null);
                     alert('Отметка удалена. Карта обновлена.');
                   } catch (e: any) {
@@ -1446,7 +1460,10 @@ export default function AdminDashboard() {
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     // После удаления всех отметок все холодильники должны получить status = 'never'
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
-                    setAllFridges(fridgeStatusRes.data);
+                    const fridgesData = Array.isArray(fridgeStatusRes.data) 
+                      ? fridgeStatusRes.data 
+                      : (fridgeStatusRes.data?.data || []);
+                    setAllFridges(fridgesData);
                     setShowDeleteAllCheckins(false);
                     // Принудительно обновляем страницу, чтобы карта точно обновилась и старые метки исчезли
                     setTimeout(() => {

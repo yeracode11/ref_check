@@ -337,7 +337,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     fridge.cityId?.name
                   );
                   if (!displayId) return '';
-                  const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган';
+                  const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Астана' || fridge.cityId?.name === 'Талдыкорган';
                   return isNumberCity ? displayId : `#${displayId}`;
                 })()}
               </p>
@@ -412,7 +412,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                       );
                       if (!displayId) return null;
                       if (fridge.clientInfo?.inn) return 'ИНН:';
-                      const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган';
+                      const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Астана' || fridge.cityId?.name === 'Талдыкорган';
                       return isNumberCity ? 'Номер:' : 'Код:';
                     })()}
                   </dt>
@@ -779,9 +779,13 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 if (fridge.cityId?.name === 'Кызылорда' && fridge.clientInfo?.inn) {
                   return <p className="text-xs text-slate-500 font-mono mb-2">{fridge.clientInfo.inn}</p>;
                 }
-                // Для Шымкента и Талдыкоргана используем number
-                if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган') && fridge.number) {
-                  return <p className="text-xs text-slate-500 font-mono mb-2">{fridge.number}</p>;
+                // Для Шымкента, Астаны и Талдыкоргана используем number или displayId
+                if ((fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Астана' || fridge.cityId?.name === 'Талдыкорган') && (fridge.number || fridge.code)) {
+                  const displayId = getDisplayIdentifier(
+                    { clientInfo: fridge.clientInfo, number: fridge.number, code: fridge.code, name: fridge.name },
+                    fridge.cityId?.name
+                  );
+                  return displayId ? <p className="text-xs text-slate-500 font-mono mb-2">{displayId}</p> : null;
                 }
                 // Для остальных городов используем code
                 return <p className="text-xs text-slate-500 font-mono mb-2">#{fridge.code}</p>;
@@ -829,7 +833,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     fridge.cityId?.name
                   );
                   if (!displayId) return '';
-                  const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Талдыкорган';
+                  const isNumberCity = fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Астана' || fridge.cityId?.name === 'Талдыкорган';
                   return isNumberCity ? displayId : `#${displayId}`;
                 })()})?
                 Все связанные отметки также будут удалены. Это действие нельзя отменить.

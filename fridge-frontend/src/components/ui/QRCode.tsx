@@ -129,8 +129,8 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
         const url = URL.createObjectURL(svgBlob);
 
         img.onload = () => {
-          // Определяем формат: для Шымкента, Кызылорды и Талдыкоргана - новый формат, для остальных - старый
-          const isShymkent = cityName === 'Шымкент' || cityName === 'Кызылорда' || cityName === 'Талдыкорган';
+          // Определяем формат: для Шымкента, Астаны, Кызылорды и Талдыкоргана - новый формат (перенос строк, жирный текст), для остальных - старый
+          const isShymkent = cityName === 'Шымкент' || cityName === 'Shymkent' || cityName === 'Астана' || cityName === 'Astana' || cityName === 'Кызылорда' || cityName === 'Талдыкорган';
           const isKyzylorda = cityName === 'Кызылорда';
           const isTaldykorgan = cityName === 'Талдыкорган';
           
@@ -644,11 +644,11 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
     }
   }
 
-  const isShymkent = cityName === 'Шымкент' || cityName === 'Кызылорда' || cityName === 'Талдыкорган';
+  const isShymkent = cityName === 'Шымкент' || cityName === 'Shymkent' || cityName === 'Астана' || cityName === 'Astana' || cityName === 'Кызылорда' || cityName === 'Талдыкорган';
   const isKyzylorda = cityName === 'Кызылорда';
   const isTaldykorgan = cityName === 'Талдыкорган';
 
-  // Размер QR кода: для Кызылорды и Талдыкоргана 75%, для Шымкента 92%, для остальных 92%
+  // Размер QR кода: для Кызылорды и Талдыкоргана 75%, для Шымкента/Астаны 92%, для остальных 92%
   const displaySize = (isKyzylorda || isTaldykorgan)
     ? Math.floor(size * 0.75) // 75% для Кызылорды и Талдыкоргана
     : (isShymkent ? Math.floor(size * 0.92) : Math.floor(size * 0.92)); // 92% для Шымкента и остальных
