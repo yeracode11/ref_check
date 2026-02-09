@@ -691,25 +691,30 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       // Получаем контрагента (название) - используем для проверки, что строка не пустая
       const contractor = contractorIdx >= 0 ? String(row[contractorIdx] || '').trim() : '';
       
-      // Определяем, является ли текущий город Талдыкорганом (для особой логики склада)
+      // Определяем, является ли текущий город Талдыкорганом или Астаной (для особой логики склада)
       const cityName = (city && city.name) ? String(city.name) : '';
       const isTaldykorganCity =
         cityName === 'Талдыкорган' ||
         cityName === 'Талдыкорған' ||
         cityName === 'Taldykorgan' ||
         cityName === 'Taldikorgan';
+      const isAstanaCity =
+        cityName === 'Астана' ||
+        cityName === 'Astana' ||
+        cityName === 'Нур-Султан' ||
+        cityName === 'Nur-Sultan';
 
-      // Для Талдыкоргана: если в файле указаны только номера без контрагента и адреса,
+      // Для Талдыкоргана и Астаны: если в файле указаны только номера без контрагента и адреса,
       // такие строки считаем "холодильниками на складе" и НЕ пропускаем их.
-      const isWarehouseRowForTaldykorgan =
-        isTaldykorganCity &&
+      const isWarehouseRow =
+        (isTaldykorganCity || isAstanaCity) &&
         (!address || address === 'null' || address === 'undefined') &&
         (!contractor || contractor === 'null' || contractor === 'undefined');
 
       // Пропускаем строку только если она полностью пустая (нет ни адреса, ни контрагента)
-      // Для Талдыкоргана оставляем строки, где есть только номер (warehouse),
+      // Для Талдыкоргана и Астаны оставляем строки, где есть только номер (warehouse),
       // чтобы создать по ним холодильники со статусом "warehouse"
-      if (!isWarehouseRowForTaldykorgan &&
+      if (!isWarehouseRow &&
           (!address || address === 'null' || address === 'undefined') && 
           (!contractor || contractor === 'null' || contractor === 'undefined')) {
         skippedNoAddress++;
@@ -764,16 +769,15 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         active: true,
       };
 
-      // Для Талдыкоргана: строки без адреса и контрагента (только номер) считаем "на складе"
+      // Для Талдыкоргана и Астаны: строки без адреса и контрагента (только номер) считаем "на складе"
       // и сразу выставляем статус склада = warehouse
-      if (isWarehouseRowForTaldykorgan) {
+      if (isWarehouseRow) {
         record.warehouseStatus = 'warehouse';
         record.statusHistory = [{
           status: 'warehouse',
           changedAt: new Date(),
-          // В некоторых сценариях user может быть не загружен (теоретически), поэтому проверяем
           changedBy: req.user && req.user.id ? req.user.id : null,
-          notes: 'Импорт со склада (Талдыкорган)',
+          notes: isAstanaCity ? 'Импорт со склада (Астана)' : 'Импорт со склада (Талдыкорган)',
         }];
       }
 
