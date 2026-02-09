@@ -527,13 +527,36 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
     console.log('[Import] Raw data rows:', rawData.length);
 
-    // Ищем строку с заголовками (обычно строка 5, индексация с 0)
+    // Определяем город ДО проверки колонок (нужно для минимального формата Астаны)
+    let city;
+    const requestedCityId = req.body?.cityId || req.query?.cityId;
+    if (requestedCityId) {
+      city = await City.findById(requestedCityId);
+      if (!city) {
+        return res.status(400).json({ error: 'Указанный город не найден' });
+      }
+      if (req.user.role === 'accountant' && req.user.cityId && city._id.toString() !== req.user.cityId.toString()) {
+        return res.status(403).json({ error: 'Доступ запрещён: можно импортировать только в свой город' });
+      }
+    } else if (req.user.role === 'accountant' && req.user.cityId) {
+      city = await City.findById(req.user.cityId);
+      if (!city) {
+        return res.status(400).json({ error: 'Город бухгалтера не найден' });
+      }
+    } else {
+      city = null; // Для админа без cityId - проверим позже
+    }
+
+    // Ищем строку с заголовками
+    // Стандартный формат: "Адрес" или "Контрагент"
+    // Минимальный формат (Астана на складе): "Оборудование" и "Номер"
     let headerRow = -1;
     for (let i = 0; i < Math.min(10, rawData.length); i++) {
       const row = rawData[i];
       if (row && Array.isArray(row)) {
         const rowStr = row.map(cell => String(cell || '').toLowerCase()).join(' ');
-        if (rowStr.includes('адрес') || rowStr.includes('контрагент')) {
+        if (rowStr.includes('адрес') || rowStr.includes('контрагент') ||
+            rowStr.includes('номер') || rowStr.includes('оборудование')) {
           headerRow = i;
           console.log('[Import] Found header row at index:', i);
           break;
@@ -545,7 +568,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       console.error('[Import] Header row not found. First 5 rows:', rawData.slice(0, 5));
       return res.status(400).json({ 
         error: 'Не найдена строка с заголовками в Excel файле',
-        details: 'Убедитесь, что в файле есть колонки "Адрес" или "Контрагент"'
+        details: 'Убедитесь, что в файле есть колонки "Адрес", "Контрагент", "Номер" или "Оборудование"'
       });
     }
 
@@ -603,63 +626,48 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       equipmentIdx,
       addressIdx,
       fridgeNumberIdx,
-      headers: headers.slice(0, 10) // Первые 10 заголовков для отладки
+      headers: headers.slice(0, 10)
     });
 
-    // Проверяем обязательные колонки
-    if (contractorIdx === -1) {
-      return res.status(400).json({ error: 'Не найдена колонка "Контрагент" в Excel файле' });
-    }
-    if (addressIdx === -1) {
-      return res.status(400).json({ error: 'Не найдена колонка "Адрес" в Excel файле' });
-    }
-    if (fridgeNumberIdx === -1) {
-      return res.status(400).json({ 
-        error: 'Не найдена колонка "Номер" в Excel файле',
-        details: `Найденные заголовки: ${headers.join(', ')}`
-      });
-    }
+    const cityName = (city && city.name) ? String(city.name) : '';
+    const isAstanaCity =
+      cityName === 'Астана' || cityName === 'Astana' ||
+      cityName === 'Нур-Султан' || cityName === 'Nur-Sultan';
 
-    // Определяем город для импорта
-    // Приоритет: cityId из запроса > город бухгалтера > ошибка
-    let city;
-    // Multer помещает текстовые поля FormData в req.body
-    const requestedCityId = req.body?.cityId || req.query?.cityId;
-    
-    console.log('[Import] City selection:', {
-      requestedCityId,
-      reqBodyKeys: Object.keys(req.body || {}),
-      reqBodyCityId: req.body?.cityId,
-      reqQueryCityId: req.query?.cityId,
-      userRole: req.user.role,
-      userCityId: req.user.cityId
-    });
-    
-    if (requestedCityId) {
-      // Если указан cityId в запросе, используем его
-      city = await City.findById(requestedCityId);
-      if (!city) {
-        return res.status(400).json({ error: 'Указанный город не найден' });
+    // Минимальный формат для Астаны (склад): только "Оборудование" и "Номер" — Контрагент и Адрес не обязательны
+    if (isAstanaCity) {
+      if (fridgeNumberIdx === -1) {
+        return res.status(400).json({ 
+          error: 'Не найдена колонка "Номер" в Excel файле',
+          details: `Найденные заголовки: ${headers.join(', ')}`
+        });
       }
-      console.log('[Import] Using requested city:', city.name, city.code, 'ID:', city._id);
-      
-      // Для бухгалтера проверяем, что он может импортировать только в свой город
-      if (req.user.role === 'accountant' && req.user.cityId) {
-        if (city._id.toString() !== req.user.cityId.toString()) {
-          return res.status(403).json({ error: 'Доступ запрещён: можно импортировать только в свой город' });
-        }
-      }
-    } else if (req.user.role === 'accountant' && req.user.cityId) {
-      // Если бухгалтер и cityId не указан, используем его город
-      city = await City.findById(req.user.cityId);
-      if (!city) {
-        return res.status(400).json({ error: 'Город бухгалтера не найден' });
-      }
-      console.log('[Import] Using accountant city:', city.name, city.code, 'ID:', city._id);
+      console.log('[Import] Astana warehouse format: only Номер required (Оборудование optional)');
     } else {
-      // Для админа cityId обязателен
+      // Для админа без cityId — город обязателен
+      if (!city) {
+        return res.status(400).json({ error: 'Не указан город для импорта. Пожалуйста, выберите город.' });
+      }
+      if (contractorIdx === -1) {
+        return res.status(400).json({ error: 'Не найдена колонка "Контрагент" в Excel файле' });
+      }
+      if (addressIdx === -1) {
+        return res.status(400).json({ error: 'Не найдена колонка "Адрес" в Excel файле' });
+      }
+      if (fridgeNumberIdx === -1) {
+        return res.status(400).json({ 
+          error: 'Не найдена колонка "Номер" в Excel файле',
+          details: `Найденные заголовки: ${headers.join(', ')}`
+        });
+      }
+    }
+
+    // Город обязателен для импорта
+    if (!city) {
       return res.status(400).json({ error: 'Не указан город для импорта. Пожалуйста, выберите город.' });
     }
+    
+    console.log('[Import] City:', city.name, city.code, 'ID:', city._id);
 
     // Парсим данные
     const records = [];
