@@ -126,19 +126,28 @@ export default function AdminDashboard() {
     let alive = true;
     (async () => {
       try {
-        const [fridgeStatusRes, checkinsRes] = await Promise.all([
-          api.get('/api/admin/fridge-status?all=true'), // Все для карты
-          api.get('/api/checkins?limit=10000'), // Запрашиваем больше отметок для админа (до 10000)
-        ]);
+        // Сначала грузим холодильники: это критично для карты.
+        const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
         if (!alive) return;
+
         // При all=true эндпоинт возвращает массив напрямую
-        const fridgesData = Array.isArray(fridgeStatusRes.data) 
-          ? fridgeStatusRes.data 
+        const fridgesData = Array.isArray(fridgeStatusRes.data)
+          ? fridgeStatusRes.data
           : (fridgeStatusRes.data?.data || []);
         console.log('[AdminDashboard] Loaded fridges:', fridgesData.length);
         setAllFridges(fridgesData);
-        setCheckins(checkinsRes.data);
         setError(null);
+
+        // Чекины догружаем отдельно, чтобы не задерживать рендер карты.
+        api.get('/api/checkins?limit=10000')
+          .then((checkinsRes) => {
+            if (!alive) return;
+            setCheckins(checkinsRes.data);
+          })
+          .catch((checkinsErr: any) => {
+            if (!alive) return;
+            console.error('[AdminDashboard] Error loading checkins:', checkinsErr);
+          });
       } catch (e: any) {
         if (!alive) return;
         setError(e?.message || 'Ошибка загрузки данных');
