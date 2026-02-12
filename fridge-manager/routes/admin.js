@@ -63,15 +63,13 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 
     checkinStats.forEach((s) => {
       if (s && s._id) {
+        // Храним только реальный ключ из checkins (trim, без принудительной нормализации),
+        // чтобы не перетирать свежую дату более старой при коллизии '1341' и '#1341'.
         const rawId = String(s._id).trim();
-        const normalizedId = rawId.replace(/^#/, '');
-        const payload = {
+        statsByFridgeId.set(rawId, {
           lastVisit: s.lastVisit,
           totalCheckins: s.totalCheckins,
-        };
-        statsByFridgeId.set(rawId, payload);
-        // Дублируем по нормализованному ключу, чтобы старые/новые форматы id совпадали
-        statsByFridgeId.set(normalizedId, payload);
+        });
       }
     });
 
@@ -109,7 +107,13 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       let lastVisit = null;
       let lastVisitTime = null;
       let totalCheckins = 0;
+      const candidateIds = new Set();
       identifiers.forEach((id) => {
+        candidateIds.add(id);
+        candidateIds.add(`#${id}`);
+      });
+
+      candidateIds.forEach((id) => {
         const stats = statsByFridgeId.get(id);
         if (stats && stats.lastVisit) {
           // Преобразуем lastVisit в timestamp для надежного сравнения
@@ -139,10 +143,10 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       let visitStatus = 'never';
       if (lastVisitTime) {
         // Используем уже вычисленный timestamp для точного расчета
-        const diffDays = (now - lastVisitTime) / (1000 * 60 * 60 * 24);
-        if (diffDays < 1) {
+        const diffDays = Math.floor((now - lastVisitTime) / (1000 * 60 * 60 * 24));
+        if (diffDays <= 0) {
           visitStatus = 'today';
-        } else if (diffDays < 7) {
+        } else if (diffDays <= 7) {
           visitStatus = 'week';
         } else {
           visitStatus = 'old';
@@ -348,8 +352,8 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       
       let status = 'Нет отметок';
       if (lastVisit) {
-        const diffDays = (now - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24);
-        if (diffDays < 1) status = 'Сегодня';
+        const diffDays = Math.floor((now - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays <= 0) status = 'Сегодня';
         else if (diffDays <= 7) status = 'Неделя';
         else status = 'Давно';
       }
@@ -2387,8 +2391,8 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
           stats.never++;
         } else {
           // Определяем статус по дате последнего визита
-          const diffDays = (now - lastVisitTime) / (1000 * 60 * 60 * 24);
-          if (diffDays < 1) {
+          const diffDays = Math.floor((now - lastVisitTime) / (1000 * 60 * 60 * 24));
+          if (diffDays <= 0) {
             // Сегодня - свежая отметка
             stats.fresh++;
           } else if (diffDays <= 7) {
