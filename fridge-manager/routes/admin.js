@@ -633,18 +633,35 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     const isAstanaCity =
       cityName === 'Астана' || cityName === 'Astana' ||
       cityName === 'Нур-Султан' || cityName === 'Nur-Sultan';
+    const isKyzylordaCity =
+      cityName === 'Кызылорда' || cityName === 'Kyzylorda';
 
-    // Минимальный формат для Астаны (склад): только "Оборудование" и "Номер" — Контрагент и Адрес не обязательны
-    if (isAstanaCity) {
+    // Минимальный формат для складских файлов:
+    // - Астана: допускается только "Номер" (и опционально "Оборудование")
+    // - Кызылорда: файл с колонками "Оборудование" и "Номер" без "Контрагент"/"Адрес"
+    const isMinimalWarehouseFormat =
+      (isAstanaCity || isKyzylordaCity) &&
+      fridgeNumberIdx !== -1 &&
+      contractorIdx === -1 &&
+      addressIdx === -1;
+
+    if (isMinimalWarehouseFormat) {
       if (fridgeNumberIdx === -1) {
         return res.status(400).json({ 
           error: 'Не найдена колонка "Номер" в Excel файле',
           details: `Найденные заголовки: ${headers.join(', ')}`
         });
       }
-      console.log('[Import] Astana warehouse format: only Номер required (Оборудование optional)');
+      if (!city) {
+        return res.status(400).json({ error: 'Не указан город для импорта. Пожалуйста, выберите город.' });
+      }
+      if (isAstanaCity) {
+        console.log('[Import] Astana warehouse minimal format: only Номер required (Оборудование optional)');
+      } else if (isKyzylordaCity) {
+        console.log('[Import] Kyzylorda warehouse minimal format: only Номер required (Оборудование optional)');
+      }
     } else {
-      // Для админа без cityId — город обязателен
+      // Обычный формат: требуем Контрагент, Адрес и Номер
       if (!city) {
         return res.status(400).json({ error: 'Не указан город для импорта. Пожалуйста, выберите город.' });
       }
@@ -699,7 +716,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       // Получаем контрагента (название) - используем для проверки, что строка не пустая
       const contractor = contractorIdx >= 0 ? String(row[contractorIdx] || '').trim() : '';
       
-      // Определяем, является ли текущий город Талдыкорганом или Астаной (для особой логики склада)
+      // Определяем, является ли текущий город Талдыкорганом, Астаной или Кызылордой (для особой логики склада)
       const cityName = (city && city.name) ? String(city.name) : '';
       const isTaldykorganCity =
         cityName === 'Талдыкорган' ||
@@ -711,11 +728,14 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         cityName === 'Astana' ||
         cityName === 'Нур-Султан' ||
         cityName === 'Nur-Sultan';
+      const isKyzylordaCity =
+        cityName === 'Кызылорда' ||
+        cityName === 'Kyzylorda';
 
-      // Для Талдыкоргана и Астаны: если в файле указаны только номера без контрагента и адреса,
+      // Для Талдыкоргана, Астаны и Кызылорды: если в файле указаны только номера без контрагента и адреса,
       // такие строки считаем "холодильниками на складе" и НЕ пропускаем их.
       const isWarehouseRow =
-        (isTaldykorganCity || isAstanaCity) &&
+        (isTaldykorganCity || isAstanaCity || isKyzylordaCity) &&
         (!address || address === 'null' || address === 'undefined') &&
         (!contractor || contractor === 'null' || contractor === 'undefined');
 
