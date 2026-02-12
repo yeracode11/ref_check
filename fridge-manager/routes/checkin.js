@@ -18,8 +18,11 @@ function parseDate(dateString) {
 // body: { managerId, fridgeId, photos?, location: { lat, lng } | { type:'Point', coordinates:[lng,lat] }, address?, notes?, visitedAt? }
 router.post('/', async (req, res) => {
   try {
-    const { managerId, fridgeId } = req.body;
-    if (!managerId || !fridgeId) {
+    const { managerId } = req.body;
+    const rawFridgeId = req.body?.fridgeId;
+    const normalizedFridgeId = String(rawFridgeId || '').trim().replace(/^#/, '');
+
+    if (!managerId || !normalizedFridgeId) {
       return res.status(400).json({ error: 'managerId and fridgeId are required' });
     }
 
@@ -41,7 +44,7 @@ router.post('/', async (req, res) => {
     const checkin = await Checkin.create({
       id,
       managerId,
-      fridgeId,
+      fridgeId: normalizedFridgeId,
       photos: Array.isArray(req.body.photos) ? req.body.photos : [],
       location,
       address: req.body.address,
@@ -55,13 +58,13 @@ router.post('/', async (req, res) => {
       // Ищем холодильник и по code, и по number, и по ИНН клиента (для ручного создания во всех городах)
       const fridge = await Fridge.findOne({
         $or: [
-          { code: fridgeId },
-          { number: fridgeId },
-          { 'clientInfo.inn': fridgeId } // Для ручного создания во всех городах может быть ИНН
+          { code: normalizedFridgeId },
+          { number: normalizedFridgeId },
+          { 'clientInfo.inn': normalizedFridgeId } // Для ручного создания во всех городах может быть ИНН
         ]
       });
       if (!fridge) {
-        console.warn(`[Checkins] Fridge with code/number/inn ${fridgeId} not found`);
+        console.warn(`[Checkins] Fridge with code/number/inn ${normalizedFridgeId} not found`);
       } else {
         // Получаем все отметки для этого холодильника
         // Используем и code, и number, и ИНН для поиска (на случай, если часть отметок еще не мигрирована)
@@ -133,9 +136,9 @@ router.post('/', async (req, res) => {
         await Fridge.findOneAndUpdate(
           {
             $or: [
-              { code: fridgeId },
-              { number: fridgeId },
-              { 'clientInfo.inn': fridgeId } // Для ручного создания во всех городах может быть ИНН
+              { code: normalizedFridgeId },
+              { number: normalizedFridgeId },
+              { 'clientInfo.inn': normalizedFridgeId } // Для ручного создания во всех городах может быть ИНН
             ]
           },
           {

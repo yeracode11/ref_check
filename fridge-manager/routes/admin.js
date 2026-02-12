@@ -63,10 +63,15 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 
     checkinStats.forEach((s) => {
       if (s && s._id) {
-        statsByFridgeId.set(s._id, {
+        const rawId = String(s._id).trim();
+        const normalizedId = rawId.replace(/^#/, '');
+        const payload = {
           lastVisit: s.lastVisit,
           totalCheckins: s.totalCheckins,
-        });
+        };
+        statsByFridgeId.set(rawId, payload);
+        // Дублируем по нормализованному ключу, чтобы старые/новые форматы id совпадали
+        statsByFridgeId.set(normalizedId, payload);
       }
     });
 
@@ -89,14 +94,14 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     const now = Date.now();
 
     const result = fridges.map((f) => {
-      // Собираем все возможные идентификаторы холодильника
-      const identifiers = [f.code];
-      if (f.number) {
-        identifiers.push(f.number);
-      }
-      if (f.clientInfo?.inn) {
-        identifiers.push(f.clientInfo.inn);
-      }
+      // Собираем все возможные идентификаторы холодильника (в нормализованном виде)
+      // чтобы новые отметки всегда находили холодильник даже при старом формате с '#'.
+      const normalizeId = (v) => String(v || '').trim().replace(/^#/, '');
+      const identifiersSet = new Set();
+      if (f.code) identifiersSet.add(normalizeId(f.code));
+      if (f.number) identifiersSet.add(normalizeId(f.number));
+      if (f.clientInfo?.inn) identifiersSet.add(normalizeId(f.clientInfo.inn));
+      const identifiers = Array.from(identifiersSet).filter(Boolean);
 
       // Находим последнюю дату визита и общее количество отметок
       // Важно: один холодильник может иметь отметки с разными идентификаторами

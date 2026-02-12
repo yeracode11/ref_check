@@ -13,6 +13,7 @@ type AdminFridgeForMap = {
   address?: string;
   status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed';
   warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
+  visitStatus?: 'today' | 'week' | 'old' | 'never';
   location?: { type: 'Point'; coordinates: [number, number] };
 };
 
@@ -138,19 +139,20 @@ export function AdminFridgeMap({ fridges }: Props) {
       const warehouseLabel = f.warehouseStatus === 'warehouse' ? 'На складе' :
                             f.warehouseStatus === 'returned' ? 'Возврат на склад' :
                             'Установлен';
-      // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
-      const visitLabel = f.status === 'location_changed' ? 'Перемещен (временно отключено)' :
-                         f.status === 'today' ? 'Сегодня' :
-                         f.status === 'week' ? 'Неделя' :
-                         f.status === 'old' ? 'Давно' :
-                         f.status === 'warehouse' ? warehouseLabel : 'Нет отметок';
+      // Отметка (давность визита) и складской статус показываем раздельно,
+      // чтобы не было путаницы "синий/зеленый".
+      const visitSource = f.visitStatus || (f.status === 'warehouse' ? 'never' : f.status);
+      const visitLabel = visitSource === 'today' ? 'Сегодня' :
+                         visitSource === 'week' ? 'Неделя' :
+                         visitSource === 'old' ? 'Давно' : 'Нет отметок';
 
       const popupContent = `
         <div style="min-width: 200px;">
           <strong>${f.name}</strong><br/>
           <div>Код: ${f.code}</div>
           ${f.address ? `<div>Адрес: ${f.address}</div>` : ''}
-          <div>Статус: ${visitLabel}</div>
+          <div>Склад: ${warehouseLabel}</div>
+          <div>Отметка: ${visitLabel}</div>
         </div>
       `;
 
