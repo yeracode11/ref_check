@@ -93,7 +93,17 @@ function getStatusColor(status: string) {
 }
 
 // Мини-карта для отображения местоположения
-function MiniMap({ location, name, height = '200px' }: { location: { coordinates: [number, number] }; name: string; height?: string }) {
+function MiniMap({
+  location,
+  name,
+  height = '200px',
+  markerColor = '#3b82f6',
+}: {
+  location: { coordinates: [number, number] };
+  name: string;
+  height?: string;
+  markerColor?: string;
+}) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
@@ -123,7 +133,7 @@ function MiniMap({ location, name, height = '200px' }: { location: { coordinates
       // Маркер
       const icon = L.divIcon({
         className: 'custom-marker',
-        html: `<div style="background-color: #3b82f6; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
+        html: `<div style="background-color: ${markerColor}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       });
@@ -142,7 +152,7 @@ function MiniMap({ location, name, height = '200px' }: { location: { coordinates
         mapInstanceRef.current = null;
       }
     };
-  }, [location, name]);
+  }, [location, name, markerColor]);
 
   const [lng, lat] = location?.coordinates || [0, 0];
   
@@ -311,6 +321,15 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
     );
   }
 
+  const statusMarkerColor =
+    fridge.warehouseStatus === 'installed'
+      ? '#16a34a'
+      : fridge.warehouseStatus === 'returned'
+        ? '#dc2626'
+        : fridge.warehouseStatus === 'moved'
+          ? '#111827'
+          : '#2563eb';
+
   return (
     <div 
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-4" 
@@ -394,7 +413,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     </svg>
                     Местоположение
               </h3>
-              <MiniMap location={fridge.location} name={fridge.name} />
+              <MiniMap location={fridge.location} name={fridge.name} markerColor={statusMarkerColor} />
             </div>
           )}
 

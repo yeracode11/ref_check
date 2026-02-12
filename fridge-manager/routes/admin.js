@@ -350,7 +350,7 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       if (lastVisit) {
         const diffDays = (now - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24);
         if (diffDays < 1) status = 'Сегодня';
-        else if (diffDays < 7) status = 'Неделя';
+        else if (diffDays <= 7) status = 'Неделя';
         else status = 'Давно';
       }
 
@@ -2391,7 +2391,7 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
           if (diffDays < 1) {
             // Сегодня - свежая отметка
             stats.fresh++;
-          } else if (diffDays < 7) {
+          } else if (diffDays <= 7) {
             // В пределах недели - свежая отметка
             stats.fresh++;
           } else {
