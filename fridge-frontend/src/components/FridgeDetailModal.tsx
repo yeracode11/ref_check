@@ -345,13 +345,11 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   }
 
   const statusMarkerColor =
-    fridge.warehouseStatus === 'installed'
+    fridge.visitStatus === 'today' || fridge.visitStatus === 'week'
       ? '#16a34a'
-      : fridge.warehouseStatus === 'returned'
+      : fridge.visitStatus === 'old'
         ? '#dc2626'
-        : fridge.warehouseStatus === 'moved'
-          ? '#111827'
-          : '#2563eb';
+        : '#2563eb';
 
   return (
     <div 
