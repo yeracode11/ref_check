@@ -45,6 +45,8 @@ type FridgeDetail = {
   cityId?: { _id: string; name: string; code: string };
   location?: { type: 'Point'; coordinates: [number, number] };
   warehouseStatus: 'warehouse' | 'installed' | 'returned' | 'moved';
+  visitStatus?: 'today' | 'week' | 'old' | 'never';
+  lastVisit?: string | null;
   clientInfo?: ClientInfo;
   statusHistory?: StatusHistoryItem[];
   active: boolean;
@@ -89,6 +91,27 @@ function getStatusColor(status: string) {
     case 'returned': return 'bg-red-100 text-red-700';
     case 'moved': return 'bg-gray-900 text-white';
     default: return 'bg-slate-100 text-slate-700';
+  }
+}
+
+function getVisitStatusLabel(status?: string) {
+  switch (status) {
+    case 'today': return 'Отметка: Сегодня';
+    case 'week': return 'Отметка: Неделя';
+    case 'old': return 'Отметка: Давно';
+    default: return 'Отметка: Нет';
+  }
+}
+
+function getVisitStatusColor(status?: string) {
+  switch (status) {
+    case 'today':
+    case 'week':
+      return 'bg-green-100 text-green-700';
+    case 'old':
+      return 'bg-red-100 text-red-700';
+    default:
+      return 'bg-blue-100 text-blue-700';
   }
 }
 
@@ -363,7 +386,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge className={getStatusColor(fridge.warehouseStatus)}>
+            <Badge className={getVisitStatusColor(fridge.visitStatus)}>
               {getStatusLabel(fridge.warehouseStatus)}
             </Badge>
             <button

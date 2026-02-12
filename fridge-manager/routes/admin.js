@@ -1156,24 +1156,50 @@ router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req,
 router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const { id } = req.params;
-    const fridge = await Fridge.findById(id)
+    const fridgeDoc = await Fridge.findById(id)
       .populate('cityId', 'name code')
       .populate('statusHistory.changedBy', 'username fullName');
 
-    if (!fridge) {
+    if (!fridgeDoc) {
       return res.status(404).json({ error: 'Холодильник не найден' });
     }
 
     // Для бухгалтеров проверяем, что холодильник из их города
     if (req.user.role === 'accountant' && req.user.cityId) {
-      if (fridge.cityId?._id?.toString() !== req.user.cityId) {
+      if (fridgeDoc.cityId?._id?.toString() !== req.user.cityId) {
         console.log('Accountant access denied - wrong city:', {
           accountantCityId: req.user.cityId,
-          fridgeCityId: fridge.cityId?._id
+          fridgeCityId: fridgeDoc.cityId?._id
         });
         return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
       }
     }
+
+    // Отдаем в detail ту же логику последней отметки, что и на карте:
+    // берем максимум среди code/number/inn и их вариаций с '#'.
+    const normalizeId = (v) => String(v || '').trim().replace(/^#/, '');
+    const idBase = [fridgeDoc.code, fridgeDoc.number, fridgeDoc.clientInfo?.inn]
+      .filter(Boolean)
+      .map(normalizeId);
+    const fridgeIds = [...new Set(idBase.flatMap((v) => [v, `#${v}`]))];
+
+    const latestCheckin = fridgeIds.length
+      ? await Checkin.findOne({ fridgeId: { $in: fridgeIds } }, { visitedAt: 1 }).sort({ visitedAt: -1 }).lean()
+      : null;
+
+    let visitStatus = 'never';
+    let lastVisit = null;
+    if (latestCheckin?.visitedAt) {
+      lastVisit = latestCheckin.visitedAt;
+      const diffDays = Math.floor((Date.now() - new Date(latestCheckin.visitedAt).getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 0) visitStatus = 'today';
+      else if (diffDays <= 7) visitStatus = 'week';
+      else visitStatus = 'old';
+    }
+
+    const fridge = fridgeDoc.toObject();
+    fridge.lastVisit = lastVisit;
+    fridge.visitStatus = visitStatus;
 
     return res.json(fridge);
   } catch (err) {
@@ -1201,13 +1227,11 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
     }
 
     // Получаем чек-ины по коду/номеру/ИНН холодильника (для импорта из Excel может быть number, для ручного создания - ИНН во всех городах)
-    const fridgeIds = [fridge.code];
-    if (fridge.number) {
-      fridgeIds.push(fridge.number);
-    }
-    if (fridge.clientInfo?.inn) {
-      fridgeIds.push(fridge.clientInfo.inn);
-    }
+    const normalizeId = (v) => String(v || '').trim().replace(/^#/, '');
+    const idBase = [fridge.code, fridge.number, fridge.clientInfo?.inn]
+      .filter(Boolean)
+      .map(normalizeId);
+    const fridgeIds = [...new Set(idBase.flatMap((v) => [v, `#${v}`]))];
     const checkins = await Checkin.find({ fridgeId: { $in: fridgeIds } })
       .sort({ visitedAt: -1 })
       .limit(parseInt(limit, 10));
