@@ -558,7 +558,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
 
     // Ищем строку с заголовками
     // Стандартный формат: "Адрес" или "Контрагент"
-    // Минимальный формат (Астана на складе): "Оборудование" и "Номер"
+    // Минимальный складской формат: "Оборудование" и "Номер"
     let headerRow = -1;
     for (let i = 0; i < Math.min(10, rawData.length); i++) {
       const row = rawData[i];
@@ -639,17 +639,11 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
     });
 
     const cityName = (city && city.name) ? String(city.name) : '';
-    const isAstanaCity =
-      cityName === 'Астана' || cityName === 'Astana' ||
-      cityName === 'Нур-Султан' || cityName === 'Nur-Sultan';
-    const isKyzylordaCity =
-      cityName === 'Кызылорда' || cityName === 'Kyzylorda';
 
-    // Минимальный формат для складских файлов:
-    // - Астана: допускается только "Номер" (и опционально "Оборудование")
-    // - Кызылорда: файл с колонками "Оборудование" и "Номер" без "Контрагент"/"Адрес"
+    // Минимальный формат для складских файлов во всех городах:
+    // допускается только "Номер" (и опционально "Оборудование") без "Контрагент"/"Адрес"
     const isMinimalWarehouseFormat =
-      (isAstanaCity || isKyzylordaCity) &&
+      !!city &&
       fridgeNumberIdx !== -1 &&
       contractorIdx === -1 &&
       addressIdx === -1;
@@ -664,11 +658,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       if (!city) {
         return res.status(400).json({ error: 'Не указан город для импорта. Пожалуйста, выберите город.' });
       }
-      if (isAstanaCity) {
-        console.log('[Import] Astana warehouse minimal format: only Номер required (Оборудование optional)');
-      } else if (isKyzylordaCity) {
-        console.log('[Import] Kyzylorda warehouse minimal format: only Номер required (Оборудование optional)');
-      }
+      console.log(`[Import] ${cityName || 'City'} warehouse minimal format: only Номер required (Оборудование optional)`);
     } else {
       // Обычный формат: требуем Контрагент, Адрес и Номер
       if (!city) {
@@ -725,31 +715,14 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       // Получаем контрагента (название) - используем для проверки, что строка не пустая
       const contractor = contractorIdx >= 0 ? String(row[contractorIdx] || '').trim() : '';
       
-      // Определяем, является ли текущий город Талдыкорганом, Астаной или Кызылордой (для особой логики склада)
-      const cityName = (city && city.name) ? String(city.name) : '';
-      const isTaldykorganCity =
-        cityName === 'Талдыкорган' ||
-        cityName === 'Талдыкорған' ||
-        cityName === 'Taldykorgan' ||
-        cityName === 'Taldikorgan';
-      const isAstanaCity =
-        cityName === 'Астана' ||
-        cityName === 'Astana' ||
-        cityName === 'Нур-Султан' ||
-        cityName === 'Nur-Sultan';
-      const isKyzylordaCity =
-        cityName === 'Кызылорда' ||
-        cityName === 'Kyzylorda';
-
-      // Для Талдыкоргана, Астаны и Кызылорды: если в файле указаны только номера без контрагента и адреса,
+      // Для всех городов: если в файле указаны только номера без контрагента и адреса,
       // такие строки считаем "холодильниками на складе" и НЕ пропускаем их.
       const isWarehouseRow =
-        (isTaldykorganCity || isAstanaCity || isKyzylordaCity) &&
         (!address || address === 'null' || address === 'undefined') &&
         (!contractor || contractor === 'null' || contractor === 'undefined');
 
       // Пропускаем строку только если она полностью пустая (нет ни адреса, ни контрагента)
-      // Для Талдыкоргана и Астаны оставляем строки, где есть только номер (warehouse),
+      // Для всех городов оставляем строки, где есть только номер (warehouse),
       // чтобы создать по ним холодильники со статусом "warehouse"
       if (!isWarehouseRow &&
           (!address || address === 'null' || address === 'undefined') && 
@@ -806,7 +779,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
         active: true,
       };
 
-      // Для Талдыкоргана и Астаны: строки без адреса и контрагента (только номер) считаем "на складе"
+      // Для всех городов: строки без адреса и контрагента (только номер) считаем "на складе"
       // и сразу выставляем статус склада = warehouse
       if (isWarehouseRow) {
         record.warehouseStatus = 'warehouse';
@@ -814,7 +787,7 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
           status: 'warehouse',
           changedAt: new Date(),
           changedBy: req.user && req.user.id ? req.user.id : null,
-          notes: isAstanaCity ? 'Импорт со склада (Астана)' : 'Импорт со склада (Талдыкорган)',
+          notes: `Импорт со склада (${cityName || 'Неизвестный город'})`,
         }];
       }
 
