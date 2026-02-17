@@ -244,9 +244,31 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             const tarazQRSize = Math.floor(size * 0.82); // 82% от исходного размера
             
             if (code) {
-              // Высота для кода - увеличиваем размер шрифта для четкости при печати
-              ctx.font = 'bold 24px Arial'; // Увеличено до 24px для четкости
-              bottomTextHeight += 32 + topPadding; // Увеличено для лучшего отображения
+              // Высота для кода: переносим длинные коды на 2 строки
+              ctx.font = 'bold 24px Arial';
+              const displayCode = code.startsWith('#') ? code : `#${code}`;
+              const maxWidth = tarazQRSize - 10;
+              const chars = displayCode.split('');
+              const codeLines: string[] = [];
+              let currentLine = '';
+
+              for (const char of chars) {
+                const testLine = currentLine + char;
+                const metrics = ctx.measureText(testLine);
+                if (metrics.width > maxWidth && currentLine) {
+                  codeLines.push(currentLine);
+                  currentLine = char;
+                  if (codeLines.length >= 2) break;
+                } else {
+                  currentLine = testLine;
+                }
+              }
+              if (currentLine && codeLines.length < 2) {
+                codeLines.push(currentLine);
+              }
+
+              // 30px между строками + небольшой отступ сверху
+              bottomTextHeight += Math.max(codeLines.length, 1) * 30 + topPadding;
             }
             
             // Для Тараза добавляем название контрагента (title)
@@ -484,13 +506,35 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               finalCtx.drawImage(img, qrX, currentY, tarazQRSize, tarazQRSize);
               currentY += tarazQRSize + bottomPadding;
               
-              // Рисуем код СНИЗУ QR кода - увеличиваем размер шрифта для четкости
+              // Рисуем код снизу QR: длинные коды переносим на 2 строки
               if (code) {
-                finalCtx.font = 'bold 24px Arial'; // Увеличено до 24px для четкости
+                finalCtx.font = 'bold 24px Arial';
                 finalCtx.fillStyle = '#000000';
                 const displayCode = code.startsWith('#') ? code : `#${code}`;
-                finalCtx.fillText(displayCode, canvas.width / 2, currentY);
-                currentY += 32; // Увеличено для лучшего отображения
+                const maxWidth = tarazQRSize - 10;
+                const chars = displayCode.split('');
+                const codeLines: string[] = [];
+                let currentLine = '';
+
+                for (const char of chars) {
+                  const testLine = currentLine + char;
+                  const metrics = finalCtx.measureText(testLine);
+                  if (metrics.width > maxWidth && currentLine) {
+                    codeLines.push(currentLine);
+                    currentLine = char;
+                    if (codeLines.length >= 2) break;
+                  } else {
+                    currentLine = testLine;
+                  }
+                }
+                if (currentLine && codeLines.length < 2) {
+                  codeLines.push(currentLine);
+                }
+
+                codeLines.forEach((line, idx) => {
+                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 30));
+                });
+                currentY += Math.max(codeLines.length, 1) * 30;
               }
               
               // Для Тараза добавляем название контрагента (title)
