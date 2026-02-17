@@ -142,6 +142,10 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
           let bottomTextHeight = 0;
           const topPadding = 10;
           const bottomPadding = 10;
+          // Параметры кода для старого формата (Тараз и др.)
+          let tarazCodeLines: string[] = [];
+          let tarazCodeFontSize = 24;
+          let tarazCodeLineHeight = 30;
           
           // Сначала устанавливаем минимальные размеры canvas для вычисления высоты текста
           canvas.width = size + padding * 2;
@@ -244,31 +248,42 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
             const tarazQRSize = Math.floor(size * 0.82); // 82% от исходного размера
             
             if (code) {
-              // Высота для кода: переносим длинные коды на 2 строки
-              ctx.font = 'bold 24px Arial';
+              // Высота для кода: адаптивно уменьшаем шрифт, чтобы весь код влез (приоритет 2 строки)
               const displayCode = code.startsWith('#') ? code : `#${code}`;
               const maxWidth = tarazQRSize - 10;
               const chars = displayCode.split('');
-              const codeLines: string[] = [];
-              let currentLine = '';
 
-              for (const char of chars) {
-                const testLine = currentLine + char;
-                const metrics = ctx.measureText(testLine);
-                if (metrics.width > maxWidth && currentLine) {
-                  codeLines.push(currentLine);
-                  currentLine = char;
-                  if (codeLines.length >= 2) break;
-                } else {
-                  currentLine = testLine;
+              const splitToLines = (fontSize: number) => {
+                ctx.font = `bold ${fontSize}px Arial`;
+                const lines: string[] = [];
+                let currentLine = '';
+                for (const char of chars) {
+                  const testLine = currentLine + char;
+                  const metrics = ctx.measureText(testLine);
+                  if (metrics.width > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = char;
+                  } else {
+                    currentLine = testLine;
+                  }
                 }
+                if (currentLine) lines.push(currentLine);
+                return lines;
+              };
+
+              tarazCodeFontSize = 24;
+              tarazCodeLines = splitToLines(tarazCodeFontSize);
+              while (tarazCodeLines.length > 2 && tarazCodeFontSize > 12) {
+                tarazCodeFontSize -= 1;
+                tarazCodeLines = splitToLines(tarazCodeFontSize);
               }
-              if (currentLine && codeLines.length < 2) {
-                codeLines.push(currentLine);
+              // Если даже при минимальном размере в 2 строки не влезло — разрешаем 3 строки
+              if (tarazCodeLines.length > 3) {
+                tarazCodeLines = [tarazCodeLines[0], tarazCodeLines[1], tarazCodeLines.slice(2).join('')];
               }
 
-              // 30px между строками + небольшой отступ сверху
-              bottomTextHeight += Math.max(codeLines.length, 1) * 30 + topPadding;
+              tarazCodeLineHeight = tarazCodeFontSize + 6;
+              bottomTextHeight += Math.max(tarazCodeLines.length, 1) * tarazCodeLineHeight + topPadding;
             }
             
             // Для Тараза добавляем название контрагента (title)
@@ -508,33 +523,12 @@ export function QRCode({ value, title, code, number, cityName, size = 100, class
               
               // Рисуем код снизу QR: длинные коды переносим на 2 строки
               if (code) {
-                finalCtx.font = 'bold 24px Arial';
+                finalCtx.font = `bold ${tarazCodeFontSize}px Arial`;
                 finalCtx.fillStyle = '#000000';
-                const displayCode = code.startsWith('#') ? code : `#${code}`;
-                const maxWidth = tarazQRSize - 10;
-                const chars = displayCode.split('');
-                const codeLines: string[] = [];
-                let currentLine = '';
-
-                for (const char of chars) {
-                  const testLine = currentLine + char;
-                  const metrics = finalCtx.measureText(testLine);
-                  if (metrics.width > maxWidth && currentLine) {
-                    codeLines.push(currentLine);
-                    currentLine = char;
-                    if (codeLines.length >= 2) break;
-                  } else {
-                    currentLine = testLine;
-                  }
-                }
-                if (currentLine && codeLines.length < 2) {
-                  codeLines.push(currentLine);
-                }
-
-                codeLines.forEach((line, idx) => {
-                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * 30));
+                tarazCodeLines.forEach((line, idx) => {
+                  finalCtx.fillText(line, canvas.width / 2, currentY + (idx * tarazCodeLineHeight));
                 });
-                currentY += Math.max(codeLines.length, 1) * 30;
+                currentY += Math.max(tarazCodeLines.length, 1) * tarazCodeLineHeight;
               }
               
               // Для Тараза добавляем название контрагента (title)
