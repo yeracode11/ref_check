@@ -1,12 +1,18 @@
 import pandas as pd
+import os
+import sys
 from pymongo import MongoClient
 import certifi
 
+MONGODB_URI = os.environ.get("MONGODB_URI")
+if not MONGODB_URI:
+    print("❌ Не задана переменная окружения MONGODB_URI")
+    print("   Пример:")
+    print("   export MONGODB_URI='mongodb+srv://<user>:<password>@cluster.../fridge_manager?retryWrites=true&w=majority&appName=Cluster0'")
+    sys.exit(1)
+
 # Подключение к MongoDB (Atlas)
-client = MongoClient(
-    "mongodb+srv://eracode11:Erasoft04@cluster0.jncxfdw.mongodb.net/fridge_manager?retryWrites=true&w=majority&appName=Cluster0",
-    tlsCAFile=certifi.where(),
-)
+client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
 db = client["fridge_manager"]
 collection = db["fridges"]
 cities_collection = db["cities"]

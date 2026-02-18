@@ -9,17 +9,18 @@ import certifi
 
 # База данных с пользователями
 FRIDGE_MANAGER_URI = os.environ.get(
-    "FRIDGE_MANAGER_URI",
-    "mongodb+srv://eracode11:Erasoft04@cluster0.jncxfdw.mongodb.net/fridge_manager?retryWrites=true&w=majority&appName=Cluster0"
+    "FRIDGE_MANAGER_URI"
 )
 
 # База данных, к которой подключается сервер (refcheck)
 REFCHECK_URI = os.environ.get(
-    "REFCHECK_URI",
-    "mongodb+srv://eracode11:Erasoft04@cluster0.jncxfdw.mongodb.net/refcheck?retryWrites=true&w=majority&appName=Cluster0"
+    "REFCHECK_URI"
 )
 
 def check_database(uri, db_name):
+    if not uri:
+        print(f"❌ Не задан URI для {db_name}")
+        return False
     print(f"\n{'='*80}")
     print(f"Проверка базы данных: {db_name}")
     print(f"{'='*80}")
