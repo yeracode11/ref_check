@@ -34,6 +34,8 @@ const CheckinSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+CheckinSchema.index({ fridgeId: 1, visitedAt: -1 });
+
 // Remove _id from JSON output, use id instead
 CheckinSchema.set('toJSON', {
   transform: function (doc, ret) {

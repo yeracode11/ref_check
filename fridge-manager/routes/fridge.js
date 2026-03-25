@@ -1,8 +1,107 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
+const Checkin = require('../models/Checkin');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
+
+/** Идентификаторы fridgeId в Checkin: с/без #, как в POST /api/checkins и admin fridge-status */
+function buildCheckinFridgeIdCandidates(fridgeLike) {
+  const out = [];
+  const add = (v) => {
+    if (v == null || String(v).trim() === '') return;
+    const t = String(v).trim();
+    const bare = t.replace(/^#+/, '');
+    out.push(t);
+    if (bare) {
+      out.push(bare);
+      out.push(`#${bare}`);
+    }
+  };
+  add(fridgeLike.code);
+  add(fridgeLike.number);
+  if (fridgeLike.clientInfo?.inn) add(fridgeLike.clientInfo.inn);
+  return [...new Set(out)];
+}
+
+function visitStatusFromLastVisit(lastVisit) {
+  if (!lastVisit) return 'never';
+  const t = lastVisit instanceof Date ? lastVisit.getTime() : new Date(lastVisit).getTime();
+  if (Number.isNaN(t)) return 'never';
+  const diffDays = Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
+  if (diffDays <= 0) return 'today';
+  if (diffDays <= 7) return 'week';
+  return 'old';
+}
+
+function leanCheckinForApi(doc) {
+  if (!doc) return null;
+  const o = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
+  if (o._id != null) delete o._id;
+  if (o.__v != null) delete o.__v;
+  return o;
+}
+
+/** Варианты строк fridgeId для $lookup (совпадают с buildCheckinFridgeIdCandidates) */
+function aggCheckinIdVariants(fieldRef) {
+  return {
+    $cond: [
+      {
+        $eq: [
+          {
+            $strLenCP: {
+              $regexReplace: {
+                input: { $trim: { input: { $ifNull: [fieldRef, ''] } } },
+                regex: '^#+',
+                replacement: '',
+              },
+            },
+          },
+          0,
+        ],
+      },
+      [],
+      {
+        $let: {
+          vars: {
+            trim: { $trim: { input: { $ifNull: [fieldRef, ''] } } },
+            bare: {
+              $regexReplace: {
+                input: { $trim: { input: { $ifNull: [fieldRef, ''] } } },
+                regex: '^#+',
+                replacement: '',
+              },
+            },
+          },
+          in: {
+            $filter: {
+              input: ['$$trim', '$$bare', { $concat: ['#', '$$bare'] }],
+              as: 'x',
+              cond: { $ne: ['$$x', ''] },
+            },
+          },
+        },
+      },
+    ],
+  };
+}
+
+function castFridgeMatchForAggregate(filter) {
+  const f = { ...filter };
+  if (f.cityId != null && !(f.cityId instanceof mongoose.Types.ObjectId)) {
+    const s = String(f.cityId);
+    if (mongoose.Types.ObjectId.isValid(s)) f.cityId = new mongoose.Types.ObjectId(s);
+  }
+  return f;
+}
+
+function enrichFridgeDocWithVisit(fridgePlain) {
+  const lastCheckin = fridgePlain.lastCheckin != null ? leanCheckinForApi(fridgePlain.lastCheckin) : null;
+  const lastVisit = lastCheckin && lastCheckin.visitedAt != null ? lastCheckin.visitedAt : null;
+  const visitStatus = visitStatusFromLastVisit(lastVisit);
+  return { ...fridgePlain, lastCheckin, lastVisit, visitStatus };
+}
 
 // GET /api/fridges
 // Для бухгалтеров автоматически фильтрует по их городу
@@ -73,15 +172,90 @@ router.get('/', authenticateToken, async (req, res) => {
     const limitNum = limit ? Math.max(1, Math.min(maxLimit, Number(limit))) : 50;
     const skipNum = skip ? Math.max(0, Number(skip)) : 0;
 
-    // Получаем общее количество для пагинации
     const total = await Fridge.countDocuments(filter);
 
-    // Получаем данные с пагинацией
-    const fridges = await Fridge.find(filter)
-      .populate('cityId', 'name code')
-      .sort({ createdAt: -1 })
-      .limit(limitNum)
-      .skip(skipNum);
+    const matchAgg = castFridgeMatchForAggregate(filter);
+    const pipeline = [
+      { $match: matchAgg },
+      { $sort: { createdAt: -1 } },
+      { $skip: skipNum },
+      { $limit: limitNum },
+      {
+        $lookup: {
+          from: 'cities',
+          localField: 'cityId',
+          foreignField: '_id',
+          pipeline: [{ $project: { _id: 1, name: 1, code: 1 } }],
+          as: '_cityDoc',
+        },
+      },
+      {
+        $set: {
+          cityId: { $arrayElemAt: ['$_cityDoc', 0] },
+        },
+      },
+      { $unset: '_cityDoc' },
+      {
+        $addFields: {
+          _checkinLookupIds: {
+            $concatArrays: [
+              aggCheckinIdVariants('$code'),
+              aggCheckinIdVariants('$number'),
+              aggCheckinIdVariants('$clientInfo.inn'),
+            ],
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'checkins',
+          let: { ids: '$_checkinLookupIds' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $gt: [{ $size: { $ifNull: ['$$ids', []] } }, 0] },
+                    { $in: ['$fridgeId', '$$ids'] },
+                  ],
+                },
+              },
+            },
+            { $sort: { visitedAt: -1 } },
+            { $limit: 1 },
+            {
+              $project: {
+                _id: 0,
+                id: 1,
+                managerId: 1,
+                fridgeId: 1,
+                visitedAt: 1,
+                address: 1,
+                notes: 1,
+                photos: 1,
+                location: 1,
+              },
+            },
+          ],
+          as: '_lastCheckinArr',
+        },
+      },
+      {
+        $addFields: {
+          lastCheckin: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ['$_lastCheckinArr', []] } }, 0] },
+              { $arrayElemAt: ['$_lastCheckinArr', 0] },
+              null,
+            ],
+          },
+        },
+      },
+      { $unset: ['_lastCheckinArr', '_checkinLookupIds'] },
+    ];
+
+    const rawFridges = await Fridge.aggregate(pipeline);
+    const fridges = rawFridges.map((f) => enrichFridgeDocWithVisit(f));
 
     return res.json({
       data: fridges,
@@ -100,9 +274,14 @@ router.get('/', authenticateToken, async (req, res) => {
 // GET /api/fridges/:id
 router.get('/:id', async (req, res) => {
   try {
-    const fridge = await Fridge.findById(req.params.id);
+    const fridge = await Fridge.findById(req.params.id).populate('cityId', 'name code');
     if (!fridge) return res.status(404).json({ error: 'Not found' });
-    return res.json(fridge);
+    const plain = fridge.toObject();
+    const ids = buildCheckinFridgeIdCandidates(plain);
+    const lastCheckin = ids.length
+      ? await Checkin.findOne({ fridgeId: { $in: ids } }).sort({ visitedAt: -1 }).lean()
+      : null;
+    return res.json(enrichFridgeDocWithVisit({ ...plain, lastCheckin }));
   } catch (err) {
     return res.status(400).json({ error: 'Invalid id', details: err.message });
   }

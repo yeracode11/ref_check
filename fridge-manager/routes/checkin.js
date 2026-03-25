@@ -165,7 +165,8 @@ router.post('/', async (req, res) => {
 });
 
 // GET /api/checkins
-// query: managerId?, fridgeId?, from?, to?, nearLat?, nearLng?, nearKm?
+// query: managerId?, fridgeId?, from?, to?, nearLat?, nearLng?, nearKm?, limit?, skip?, meta?
+// meta=1 — ответ { data, total, limit, skip, hasMore } вместо голого массива; для admin ещё distinctManagers
 // Менеджеры видят только свои отметки, бухгалтеры - только из своего города, админы - все
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -221,22 +222,51 @@ router.get('/', authenticateToken, async (req, res) => {
       };
     }
 
-    const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
-    const skip = req.query.skip ? parseInt(req.query.skip, 10) : 0;
+    const limitParsed =
+      req.query.limit != null && req.query.limit !== ''
+        ? parseInt(req.query.limit, 10)
+        : null;
+    const limit = Number.isFinite(limitParsed) ? limitParsed : null;
+    const skipParsed =
+      req.query.skip != null && req.query.skip !== ''
+        ? parseInt(req.query.skip, 10)
+        : 0;
+    const skip = Number.isFinite(skipParsed) ? Math.max(0, skipParsed) : 0;
+    const wantMeta = req.query.meta === '1' || req.query.meta === 'true';
 
     // Для админа по умолчанию возвращаем больше отметок (или все, если limit не указан)
     // Для остальных ролей ограничиваем 300 для производительности
     const defaultLimit = req.user && req.user.role === 'admin' ? null : 300;
     const queryLimit = limit !== null ? limit : defaultLimit;
 
-    let query = Checkin.find(filter).sort({ visitedAt: -1, id: -1 });
+    let itemsQuery = Checkin.find(filter).sort({ visitedAt: -1, id: -1 });
     if (queryLimit !== null) {
-      query = query.limit(queryLimit);
+      itemsQuery = itemsQuery.limit(queryLimit);
     }
     if (skip > 0) {
-      query = query.skip(skip);
+      itemsQuery = itemsQuery.skip(skip);
     }
-    let items = await query;
+
+    let items;
+    let total;
+    let distinctManagers;
+
+    if (wantMeta) {
+      const tasks = [Checkin.countDocuments(filter), itemsQuery.lean().exec()];
+      if (req.user && req.user.role === 'admin') {
+        tasks.push(Checkin.distinct('managerId', filter));
+      }
+      const results = await Promise.all(tasks);
+      total = results[0];
+      items = results[1];
+      if (req.user && req.user.role === 'admin') {
+        distinctManagers = results[2].filter(Boolean).length;
+      }
+    } else {
+      items = await itemsQuery.exec();
+    }
+
+    const toPlain = (item) => (item && typeof item.toObject === 'function' ? item.toObject() : { ...item });
 
     // Для админа обогащаем данными о менеджерах, чтобы показывать логин вместо сырых идентификаторов
     if (req.user && req.user.role === 'admin' && items.length > 0) {
@@ -259,7 +289,7 @@ router.get('/', authenticateToken, async (req, res) => {
       });
 
       items = items.map((item) => {
-        const plain = item.toObject();
+        const plain = toPlain(item);
         const user =
           userMap.get(plain.managerId) ||
           userMap.get(String(plain.managerId));
@@ -269,6 +299,22 @@ router.get('/', authenticateToken, async (req, res) => {
           managerFullName: user && user.fullName ? user.fullName : '',
         };
       });
+    }
+
+    if (wantMeta) {
+      const hasMore =
+        queryLimit !== null ? skip + items.length < total : false;
+      const payload = {
+        data: items,
+        total,
+        limit: queryLimit,
+        skip,
+        hasMore,
+      };
+      if (req.user && req.user.role === 'admin' && distinctManagers !== undefined) {
+        payload.distinctManagers = distinctManagers;
+      }
+      return res.json(payload);
     }
 
     return res.json(items);

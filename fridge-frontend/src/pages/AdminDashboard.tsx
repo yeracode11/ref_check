@@ -54,12 +54,34 @@ function formatDate(dateString: string) {
 }
 
 const ITEMS_PER_PAGE = 50; // Количество холодильников на странице
+/** Сколько последних отметок грузим для блока на дашборде (полное число — в поле total от API) */
+const ADMIN_CHECKINS_PREVIEW_LIMIT = 20;
+
+function parseCheckinsApiResponse(raw: unknown): {
+  list: Checkin[];
+  total: number;
+  distinctManagers: number | null;
+} {
+  if (raw && typeof raw === 'object' && Array.isArray((raw as { data?: unknown }).data)) {
+    const r = raw as { data: Checkin[]; total?: number; distinctManagers?: number };
+    return {
+      list: r.data,
+      total: typeof r.total === 'number' ? r.total : r.data.length,
+      distinctManagers: typeof r.distinctManagers === 'number' ? r.distinctManagers : null,
+    };
+  }
+  const arr = Array.isArray(raw) ? (raw as Checkin[]) : [];
+  return { list: arr, total: arr.length, distinctManagers: null };
+}
 
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [fridges, setFridges] = useState<AdminFridge[]>([]); // Для списка (пагинация)
   const [allFridges, setAllFridges] = useState<AdminFridge[]>([]); // Для карты (все)
   const [checkins, setCheckins] = useState<Checkin[]>([]);
+  /** Реальное число отметок в БД (GET /api/checkins?meta=1), не длина загруженной выборки */
+  const [checkinsTotal, setCheckinsTotal] = useState<number | null>(null);
+  const [checkinsDistinctManagers, setCheckinsDistinctManagers] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,11 +160,14 @@ export default function AdminDashboard() {
         setAllFridges(fridgesData);
         setError(null);
 
-        // Чекины догружаем отдельно, чтобы не задерживать рендер карты.
-        api.get('/api/checkins?limit=10000')
+        // Чекины догружаем отдельно: meta=1 даёт точный total в БД, в теле — только последние N.
+        api.get(`/api/checkins?meta=1&limit=${ADMIN_CHECKINS_PREVIEW_LIMIT}`)
           .then((checkinsRes) => {
             if (!alive) return;
-            setCheckins(checkinsRes.data);
+            const { list, total, distinctManagers } = parseCheckinsApiResponse(checkinsRes.data);
+            setCheckins(list);
+            setCheckinsTotal(total);
+            setCheckinsDistinctManagers(distinctManagers);
           })
           .catch((checkinsErr: any) => {
             if (!alive) return;
@@ -664,10 +689,11 @@ export default function AdminDashboard() {
   const blueFridges = filteredAllFridges.filter((f) => f.status === 'never').length;
   // На складе: для информации
   const warehouseFridges = filteredAllFridges.filter((f) => f.warehouseStatus === 'warehouse' || f.warehouseStatus === 'returned').length;
-  const totalCheckins = checkins.length;
-  const uniqueManagers = new Set(checkins.map((c) => c.managerId)).size;
+  const totalCheckins = checkinsTotal ?? checkins.length;
+  const uniqueManagers =
+    checkinsDistinctManagers ?? new Set(checkins.map((c) => c.managerId)).size;
 
-  const recentCheckins = checkins.slice(0, 20);
+  const recentCheckins = checkins.slice(0, ADMIN_CHECKINS_PREVIEW_LIMIT);
 
   return (
     <div className="space-y-6">
@@ -816,6 +842,11 @@ export default function AdminDashboard() {
         <Card>
           <p className="text-sm text-slate-500">Всего отметок</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{totalCheckins}</p>
+          {checkinsTotal != null && checkinsTotal > checkins.length ? (
+            <p className="text-xs text-slate-400 mt-1">
+              В блоке «Последние отметки» — {checkins.length} из {checkinsTotal}
+            </p>
+          ) : null}
         </Card>
         <Card>
           <p className="text-sm text-slate-500">Менеджеры</p>
@@ -937,7 +968,12 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-slate-900">Последние отметки</h2>
             <div className="flex items-center gap-2">
-              <Badge variant="info">{recentCheckins.length}</Badge>
+              <Badge variant="info">
+                {recentCheckins.length}
+                {checkinsTotal != null && checkinsTotal > recentCheckins.length
+                  ? ` / ${checkinsTotal}`
+                  : ''}
+              </Badge>
             </div>
           </div>
           {recentCheckins.length === 0 ? (
@@ -1174,7 +1210,7 @@ export default function AdminDashboard() {
                 ))}
               </select>
             </div>
-            {checkins.length > 0 && (
+            {(checkinsTotal ?? checkins.length) > 0 && (
               <button
                 onClick={() => setShowDeleteAllCheckins(true)}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium shadow-sm flex items-center gap-2"
@@ -1413,8 +1449,13 @@ export default function AdminDashboard() {
                     setDeletingCheckin(true);
                     await api.delete(`/api/checkins/${deleteCheckinId}`);
                     // Обновляем список отметок
-                    const checkinsRes = await api.get('/api/checkins');
-                    setCheckins(checkinsRes.data);
+                    const checkinsRes = await api.get(
+                      `/api/checkins?meta=1&limit=${ADMIN_CHECKINS_PREVIEW_LIMIT}`,
+                    );
+                    const parsed = parseCheckinsApiResponse(checkinsRes.data);
+                    setCheckins(parsed.list);
+                    setCheckinsTotal(parsed.total);
+                    setCheckinsDistinctManagers(parsed.distinctManagers);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
                     const fridgesData = Array.isArray(fridgeStatusRes.data) 
@@ -1452,7 +1493,8 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-slate-900 mb-2">🗑️ Удалить все отметки?</h3>
             <p className="text-slate-600 mb-4">
-              Вы уверены, что хотите удалить <strong>все {checkins.length} отметок</strong>?
+              Вы уверены, что хотите удалить{' '}
+              <strong>все {checkinsTotal ?? checkins.length} отметок</strong>?
               <br /><br />
               <span className="text-red-600 text-sm font-medium">⚠️ Это действие нельзя отменить.</span>
               <br />
@@ -1464,8 +1506,9 @@ export default function AdminDashboard() {
                   try {
                     setDeletingAllCheckins(true);
                     await api.delete('/api/checkins');
-                    // Обновляем список отметок
                     setCheckins([]);
+                    setCheckinsTotal(0);
+                    setCheckinsDistinctManagers(0);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     // После удаления всех отметок все холодильники должны получить status = 'never'
                     const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
@@ -1670,6 +1713,8 @@ export default function AdminDashboard() {
                     setAllFridges([]);
                     setTotalFridges(0);
                     setCheckins([]);
+                    setCheckinsTotal(0);
+                    setCheckinsDistinctManagers(0);
                     
                     setShowDeleteAllFridges(false);
                     
