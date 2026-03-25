@@ -181,20 +181,32 @@ router.get('/', authenticateToken, async (req, res) => {
       { $skip: skipNum },
       { $limit: limitNum },
       {
+        // Без localField+pipeline (это MongoDB 5.0+); так работает на 4.2/4.4 Atlas
         $lookup: {
           from: 'cities',
-          localField: 'cityId',
-          foreignField: '_id',
-          pipeline: [{ $project: { _id: 1, name: 1, code: 1 } }],
+          let: { cid: '$cityId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $ne: ['$$cid', null] },
+                    { $eq: ['$_id', '$$cid'] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1, name: 1, code: 1 } },
+          ],
           as: '_cityDoc',
         },
       },
       {
-        $set: {
+        $addFields: {
           cityId: { $arrayElemAt: ['$_cityDoc', 0] },
         },
       },
-      { $unset: '_cityDoc' },
+      { $unset: ['_cityDoc'] },
       {
         $addFields: {
           _checkinLookupIds: {
