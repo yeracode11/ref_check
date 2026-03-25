@@ -70,7 +70,7 @@ export default function FridgesList() {
   const [selectedFridgeId, setSelectedFridgeId] = useState<string | null>(null);
   const [citiesLoading, setCitiesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showOnlyActive, setShowOnlyActive] = useState(false);
+  const [warehouseStatusFilter, setWarehouseStatusFilter] = useState<string>('all');
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
   const observerTarget = useRef<HTMLDivElement | null>(null);
@@ -136,7 +136,9 @@ export default function FridgesList() {
 
     try {
       const params = new URLSearchParams();
-      if (showOnlyActive) params.append('active', 'true');
+      if (warehouseStatusFilter !== 'all') {
+        params.append('warehouseStatus', warehouseStatusFilter);
+      }
       // Для бухгалтера/менеджера город добавляется на бэкенде автоматически
       // Для админов - если выбран город, фильтруем по нему, иначе (пустая строка = "Все города") показываем все
       if (!isAccountant && !isManager && selectedCityId && selectedCityId.trim() !== '') {
@@ -172,7 +174,7 @@ export default function FridgesList() {
         setLoadingMore(false);
       }
     }
-  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant, isManager]);
+  }, [selectedCityId, warehouseStatusFilter, searchQuery, isAccountant, isManager]);
 
   // Debounce для поиска - обновляем searchQuery после задержки
   useEffect(() => {
@@ -200,7 +202,7 @@ export default function FridgesList() {
     if (isAccountant || isManager || !citiesLoading) {
       loadFridges(0, true);
     }
-  }, [selectedCityId, showOnlyActive, searchQuery, isAccountant, isManager, citiesLoading]);
+  }, [selectedCityId, warehouseStatusFilter, searchQuery, isAccountant, isManager, citiesLoading]);
 
   // Бесконечный скролл
   useEffect(() => {
@@ -254,9 +256,6 @@ export default function FridgesList() {
     );
   }
 
-  const activeCount = items.filter(f => f.active).length;
-  const inactiveCount = items.filter(f => !f.active).length;
-
   const selectedCity = cities.find(c => c._id === selectedCityId);
 
   return (
@@ -271,7 +270,7 @@ export default function FridgesList() {
             ) : selectedCityId ? (
               <>В городе "{selectedCity?.name || ''}": <span className="font-medium">{items.length}</span> из {total}</>
             ) : (
-              <>Всего холодильников: <span className="font-medium">{items.length}</span> из {total} • Активных: {activeCount} • Неактивных: {inactiveCount}</>
+              <>Всего холодильников: <span className="font-medium">{items.length}</span> из {total}</>
             )}
           </p>
         )}
@@ -369,17 +368,22 @@ export default function FridgesList() {
               </div>
             </div>
 
-            {/* Чекбокс "Только активные" */}
-            <div className="w-full sm:w-auto">
-              <label className="flex items-center gap-2 cursor-pointer h-[42px] px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={showOnlyActive}
-                  onChange={(e) => setShowOnlyActive(e.target.checked)}
-                  className="w-4 h-4 text-slate-600 rounded focus:ring-slate-500"
-                />
-                <span className="text-sm text-slate-700 whitespace-nowrap">Только активные</span>
+            {/* Статус на складе */}
+            <div className="w-full sm:w-auto sm:min-w-[200px]">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Статус на складе
               </label>
+              <select
+                value={warehouseStatusFilter}
+                onChange={(e) => setWarehouseStatusFilter(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 bg-white"
+              >
+                <option value="all">Все статусы</option>
+                <option value="warehouse">На складе</option>
+                <option value="installed">Установлен</option>
+                <option value="returned">Возврат на склад</option>
+                <option value="moved">Перемещён</option>
+              </select>
             </div>
           </div>
         </Card>
@@ -389,7 +393,15 @@ export default function FridgesList() {
         <EmptyState
           icon="🧊"
           title={searchQuery ? "Ничего не найдено" : "Нет холодильников"}
-          description={searchQuery ? "Попробуйте изменить поисковый запрос" : selectedCityId ? `В городе "${selectedCity?.name || ''}" пока нет холодильников.` : "Холодильники не найдены."}
+          description={
+            searchQuery
+              ? 'Попробуйте изменить поисковый запрос'
+              : warehouseStatusFilter !== 'all'
+                ? 'Нет холодильников с выбранным статусом на складе.'
+                : selectedCityId
+                  ? `В городе "${selectedCity?.name || ''}" пока нет холодильников.`
+                  : 'Холодильники не найдены.'
+          }
         />
       ) : (
         <>

@@ -54,6 +54,7 @@ function formatDate(dateString: string) {
 }
 
 const ITEMS_PER_PAGE = 50; // Количество холодильников на странице
+const LIST_SEARCH_DEBOUNCE_MS = 450;
 /** Сколько последних отметок грузим для блока на дашборде (полное число — в поле total от API) */
 const ADMIN_CHECKINS_PREVIEW_LIMIT = 20;
 
@@ -85,7 +86,11 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fridgeFilter, setFridgeFilter] = useState('');
+  /** Фильтр списка «Холодильники» по складскому статусу (серверный) */
+  const [listWarehouseStatus, setListWarehouseStatus] = useState<string>('all');
+  const [listSearchInput, setListSearchInput] = useState('');
+  const [listSearchQuery, setListSearchQuery] = useState('');
+  const listSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedQRFridge, setSelectedQRFridge] = useState<AdminFridge | null>(null);
   const [selectedFridgeId, setSelectedFridgeId] = useState<string | null>(null); // Для детального просмотра
   const [hasMore, setHasMore] = useState(false);
@@ -228,7 +233,13 @@ export default function AdminDashboard() {
       const params = new URLSearchParams();
       params.append('limit', String(ITEMS_PER_PAGE));
       params.append('skip', String(skip));
-      
+      if (listWarehouseStatus !== 'all') {
+        params.append('warehouseStatus', listWarehouseStatus);
+      }
+      if (listSearchQuery.trim()) {
+        params.append('search', listSearchQuery.trim());
+      }
+
       const res = await api.get(`/api/admin/fridge-status?${params.toString()}`);
       if (!alive) return;
 
@@ -252,7 +263,21 @@ export default function AdminDashboard() {
         setLoadingMore(false);
       }
     }
-  }, [user]);
+  }, [user, listWarehouseStatus, listSearchQuery]);
+
+  useEffect(() => {
+    if (listSearchTimeoutRef.current) {
+      clearTimeout(listSearchTimeoutRef.current);
+    }
+    listSearchTimeoutRef.current = setTimeout(() => {
+      setListSearchQuery(listSearchInput.trim());
+    }, LIST_SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (listSearchTimeoutRef.current) {
+        clearTimeout(listSearchTimeoutRef.current);
+      }
+    };
+  }, [listSearchInput]);
 
   // Первоначальная загрузка списка холодильников
   useEffect(() => {
@@ -630,49 +655,31 @@ export default function AdminDashboard() {
     );
   }
 
-  // Статистика на основе всех холодильников (для карты)
-  const filterQuery = fridgeFilter.trim().toLowerCase();
-  
   // Показываем все холодильники с координатами на карте
-  // Теперь не фильтруем по статусу - все холодильники с координатами отображаются
   const fridgesWithCheckins = allFridges;
-  
+
   // Фильтрация по городу для карты
   let fridgesByCity = fridgesWithCheckins;
   if (selectedCityIdForMap !== 'all') {
     fridgesByCity = fridgesWithCheckins.filter((f) => {
-      // Проверяем по _id или по code города
       return f.city?._id === selectedCityIdForMap || f.city?.code === selectedCityIdForMap;
     });
   }
-  
-  // Фильтруем холодильники с координатами для карты
+
   const fridgesWithLocation = fridgesByCity.filter((f) => {
     if (!f.location || !f.location.coordinates) return false;
     if (!Array.isArray(f.location.coordinates) || f.location.coordinates.length !== 2) return false;
     const [lng, lat] = f.location.coordinates;
-    // Проверяем, что координаты валидные (не нули и не NaN)
     if (typeof lng !== 'number' || typeof lat !== 'number') return false;
     if (isNaN(lng) || isNaN(lat)) return false;
     if (lng === 0 && lat === 0) return false;
     return true;
   });
 
-  const fridgesForMap: AdminFridge[] = filterQuery
-    ? fridgesWithLocation.filter((f) => {
-        const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
-        return text.includes(filterQuery);
-      })
-    : fridgesWithLocation;
+  const fridgesForMap: AdminFridge[] = fridgesWithLocation;
   const filteredAllFridges = allFridges;
 
-  // Фильтрация загруженных холодильников для списка
-  const filteredFridges = filterQuery
-    ? fridges.filter((f) => {
-        const text = `${f.name ?? ''} ${f.code ?? ''} ${f.address ?? ''}`.toLowerCase();
-        return text.includes(filterQuery);
-      })
-    : fridges;
+  const filteredFridges = fridges;
 
   // Статистика по статусам
   // Зеленые: свежие отметки (today/week)
@@ -1047,14 +1054,43 @@ export default function AdminDashboard() {
               {filteredFridges.length} {totalFridges > 0 && `из ${totalFridges}`}
             </Badge>
           </div>
-          <div className="mb-3">
-            <input
-              type="text"
-              value={fridgeFilter}
-              onChange={(e) => setFridgeFilter(e.target.value)}
-              placeholder="Фильтр по контрагенту, коду, адресу..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-            />
+          <div className="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Поиск
+              </label>
+              <input
+                type="text"
+                value={listSearchInput}
+                onChange={(e) => setListSearchInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (listSearchTimeoutRef.current) {
+                      clearTimeout(listSearchTimeoutRef.current);
+                    }
+                    setListSearchQuery(listSearchInput.trim());
+                  }
+                }}
+                placeholder="Название, код, адрес, описание…"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Статус на складе
+              </label>
+              <select
+                value={listWarehouseStatus}
+                onChange={(e) => setListWarehouseStatus(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent bg-white"
+              >
+                <option value="all">Все статусы</option>
+                <option value="warehouse">На складе</option>
+                <option value="installed">Установлен</option>
+                <option value="returned">Возврат на склад</option>
+                <option value="moved">Перемещён</option>
+              </select>
+            </div>
           </div>
           {loading && fridges.length === 0 ? (
             <div className="space-y-2">
@@ -1065,8 +1101,14 @@ export default function AdminDashboard() {
           ) : filteredFridges.length === 0 ? (
             <EmptyState
               icon="🧊"
-              title="Нет холодильников"
-              description="Холодильники еще не были импортированы."
+              title={listSearchQuery.trim() ? 'Ничего не найдено' : 'Нет холодильников'}
+              description={
+                listSearchQuery.trim()
+                  ? 'Попробуйте изменить поисковый запрос.'
+                  : listWarehouseStatus !== 'all'
+                    ? 'Нет холодильников с выбранным статусом на складе.'
+                    : 'Холодильники еще не были импортированы.'
+              }
             />
           ) : (
             <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">

@@ -40,11 +40,13 @@ const router = express.Router();
 
 // GET /api/admin/fridge-status
 // Возвращает список холодильников с последней датой посещения и статусом для карты
-// Поддерживает пагинацию через параметры limit и skip
+// query: limit, skip, all=true (все для карты), warehouseStatus, search (как в GET /api/fridges)
 // Для бухгалтеров возвращает только холодильники их города
+const WAREHOUSE_STATUS_ENUM = ['warehouse', 'installed', 'returned', 'moved'];
+
 router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
-    const { limit, skip, all } = req.query;
+    const { limit, skip, all, warehouseStatus, search } = req.query;
     
     // Если all=true, возвращаем все холодильники (для карты)
     const shouldPaginate = all !== 'true';
@@ -82,11 +84,32 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       fridgeQuery.cityId = req.user.cityId;
     }
 
+    if (
+      warehouseStatus &&
+      typeof warehouseStatus === 'string' &&
+      WAREHOUSE_STATUS_ENUM.includes(warehouseStatus)
+    ) {
+      fridgeQuery.warehouseStatus = warehouseStatus;
+    }
+
+    if (search && String(search).trim()) {
+      const searchRegex = new RegExp(String(search).trim(), 'i');
+      fridgeQuery.$or = [
+        { name: searchRegex },
+        { code: searchRegex },
+        { number: searchRegex },
+        { address: searchRegex },
+        { description: searchRegex },
+      ];
+    }
+
     // Получаем общее количество для пагинации
     const total = await Fridge.countDocuments(fridgeQuery);
 
     // Получаем холодильники с пагинацией (если нужно)
-    let query = Fridge.find(fridgeQuery).populate('cityId', 'name code');
+    let query = Fridge.find(fridgeQuery)
+      .populate('cityId', 'name code')
+      .sort({ createdAt: -1 });
     if (shouldPaginate && limitNum) {
       query = query.limit(limitNum).skip(skipNum);
     }
