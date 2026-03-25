@@ -43,37 +43,43 @@ function leanCheckinForApi(doc) {
   return o;
 }
 
-/** Варианты строк fridgeId для $lookup (совпадают с buildCheckinFridgeIdCandidates) */
+/**
+ * Варианты строк fridgeId для $lookup (как buildCheckinFridgeIdCandidates).
+ * Без $regexReplace — на MongoDB 4.2 агрегация с ним падает; здесь только $reduce/$substrCP.
+ */
 function aggCheckinIdVariants(fieldRef) {
-  return {
-    $cond: [
-      {
-        $eq: [
+  const trimmed = { $trim: { input: { $ifNull: [fieldRef, ''] } } };
+  const bare = {
+    $reduce: {
+      input: { $range: [0, 24] },
+      initialValue: trimmed,
+      in: {
+        $cond: [
           {
-            $strLenCP: {
-              $regexReplace: {
-                input: { $trim: { input: { $ifNull: [fieldRef, ''] } } },
-                regex: '^#+',
-                replacement: '',
-              },
-            },
+            $and: [
+              { $gt: [{ $strLenCP: '$$value' }, 0] },
+              { $eq: [{ $substrCP: ['$$value', 0, 1] }, '#'] },
+            ],
           },
-          0,
+          {
+            $substrCP: [
+              '$$value',
+              1,
+              { $subtract: [{ $strLenCP: '$$value' }, 1] },
+            ],
+          },
+          '$$value',
         ],
       },
+    },
+  };
+  return {
+    $cond: [
+      { $eq: [{ $strLenCP: bare }, 0] },
       [],
       {
         $let: {
-          vars: {
-            trim: { $trim: { input: { $ifNull: [fieldRef, ''] } } },
-            bare: {
-              $regexReplace: {
-                input: { $trim: { input: { $ifNull: [fieldRef, ''] } } },
-                regex: '^#+',
-                replacement: '',
-              },
-            },
-          },
+          vars: { trim: trimmed, bare },
           in: {
             $filter: {
               input: ['$$trim', '$$bare', { $concat: ['#', '$$bare'] }],
@@ -85,6 +91,41 @@ function aggCheckinIdVariants(fieldRef) {
       },
     ],
   };
+}
+
+/** Fallback: одна выборка чекинов на страницу, без N+1 (если aggregate по fridges падает) */
+async function enrichFridgeListWithLastCheckins(fridgeLeanDocs) {
+  if (!fridgeLeanDocs.length) return [];
+  const idSet = new Set();
+  for (const f of fridgeLeanDocs) {
+    buildCheckinFridgeIdCandidates(f).forEach((id) => idSet.add(id));
+  }
+  const allIds = [...idSet];
+  if (allIds.length === 0) {
+    return fridgeLeanDocs.map((f) => enrichFridgeDocWithVisit({ ...f, lastCheckin: null }));
+  }
+  const rows = await Checkin.aggregate([
+    { $match: { fridgeId: { $in: allIds } } },
+    { $sort: { visitedAt: -1 } },
+    { $group: { _id: '$fridgeId', doc: { $first: '$$ROOT' } } },
+  ]);
+  const byFridgeId = new Map(rows.map((r) => [r._id, r.doc]));
+  return fridgeLeanDocs.map((f) => {
+    const candidates = buildCheckinFridgeIdCandidates(f);
+    let best = null;
+    let bestT = 0;
+    for (const cid of candidates) {
+      const row = byFridgeId.get(cid);
+      if (row && row.visitedAt) {
+        const t = new Date(row.visitedAt).getTime();
+        if (t > bestT) {
+          bestT = t;
+          best = row;
+        }
+      }
+    }
+    return enrichFridgeDocWithVisit({ ...f, lastCheckin: best || null });
+  });
 }
 
 function castFridgeMatchForAggregate(filter) {
@@ -266,8 +307,20 @@ router.get('/', authenticateToken, async (req, res) => {
       { $unset: ['_lastCheckinArr', '_checkinLookupIds'] },
     ];
 
-    const rawFridges = await Fridge.aggregate(pipeline);
-    const fridges = rawFridges.map((f) => enrichFridgeDocWithVisit(f));
+    let fridges;
+    try {
+      const rawFridges = await Fridge.aggregate(pipeline);
+      fridges = rawFridges.map((f) => enrichFridgeDocWithVisit(f));
+    } catch (aggErr) {
+      console.error('[GET /api/fridges] aggregate failed:', aggErr.message);
+      const leanList = await Fridge.find(filter)
+        .populate('cityId', 'name code')
+        .sort({ createdAt: -1 })
+        .skip(skipNum)
+        .limit(limitNum)
+        .lean();
+      fridges = await enrichFridgeListWithLastCheckins(leanList);
+    }
 
     return res.json({
       data: fridges,
