@@ -3,37 +3,12 @@ const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
 const { authenticateToken } = require('../middleware/auth');
+const {
+  buildCheckinFridgeIdCandidates,
+  visitStatusFromLastVisit,
+} = require('../lib/fridgeVisitHelpers');
 
 const router = express.Router();
-
-/** Идентификаторы fridgeId в Checkin: с/без #, как в POST /api/checkins и admin fridge-status */
-function buildCheckinFridgeIdCandidates(fridgeLike) {
-  const out = [];
-  const add = (v) => {
-    if (v == null || String(v).trim() === '') return;
-    const t = String(v).trim();
-    const bare = t.replace(/^#+/, '');
-    out.push(t);
-    if (bare) {
-      out.push(bare);
-      out.push(`#${bare}`);
-    }
-  };
-  add(fridgeLike.code);
-  add(fridgeLike.number);
-  if (fridgeLike.clientInfo?.inn) add(fridgeLike.clientInfo.inn);
-  return [...new Set(out)];
-}
-
-function visitStatusFromLastVisit(lastVisit) {
-  if (!lastVisit) return 'never';
-  const t = lastVisit instanceof Date ? lastVisit.getTime() : new Date(lastVisit).getTime();
-  if (Number.isNaN(t)) return 'never';
-  const diffDays = Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
-  if (diffDays <= 0) return 'today';
-  if (diffDays <= 7) return 'week';
-  return 'old';
-}
 
 function leanCheckinForApi(doc) {
   if (!doc) return null;

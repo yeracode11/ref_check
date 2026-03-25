@@ -7,6 +7,11 @@ const Checkin = require('../models/Checkin');
 const City = require('../models/City');
 const User = require('../models/User');
 const { authenticateToken, requireAdmin, requireAdminOrAccountant } = require('../middleware/auth');
+const {
+  buildCheckinFridgeIdCandidates,
+  visitStatusFromLastVisit,
+  getLastVisitFromStatsMap,
+} = require('../lib/fridgeVisitHelpers');
 const XLSX = require('xlsx');
 
 // Настройка multer для загрузки файлов в память
@@ -62,9 +67,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     ]);
 
     checkinStats.forEach((s) => {
-      if (s && s._id) {
-        // Храним только реальный ключ из checkins (trim, без принудительной нормализации),
-        // чтобы не перетирать свежую дату более старой при коллизии '1341' и '#1341'.
+      if (s && s._id != null && s._id !== '') {
         const rawId = String(s._id).trim();
         statsByFridgeId.set(rawId, {
           lastVisit: s.lastVisit,
@@ -92,70 +95,14 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     const now = Date.now();
 
     const result = fridges.map((f) => {
-      // Собираем все возможные идентификаторы холодильника (в нормализованном виде)
-      // чтобы новые отметки всегда находили холодильник даже при старом формате с '#'.
-      const normalizeId = (v) => String(v || '').trim().replace(/^#/, '');
-      const identifiersSet = new Set();
-      if (f.code) identifiersSet.add(normalizeId(f.code));
-      if (f.number) identifiersSet.add(normalizeId(f.number));
-      if (f.clientInfo?.inn) identifiersSet.add(normalizeId(f.clientInfo.inn));
-      const identifiers = Array.from(identifiersSet).filter(Boolean);
+      const { lastVisit, lastVisitTime } = getLastVisitFromStatsMap(statsByFridgeId, f);
 
-      // Находим последнюю дату визита и общее количество отметок
-      // Важно: один холодильник может иметь отметки с разными идентификаторами
-      // (code, number, ИНН), поэтому нужно проверить все и взять самую свежую дату
-      let lastVisit = null;
-      let lastVisitTime = null;
-      let totalCheckins = 0;
-      const candidateIds = new Set();
-      identifiers.forEach((id) => {
-        candidateIds.add(id);
-        candidateIds.add(`#${id}`);
-      });
+      const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: now });
 
-      candidateIds.forEach((id) => {
-        const stats = statsByFridgeId.get(id);
-        if (stats && stats.lastVisit) {
-          // Преобразуем lastVisit в timestamp для надежного сравнения
-          // MongoDB может вернуть Date объект или строку, поэтому проверяем оба случая
-          let visitTime;
-          if (stats.lastVisit instanceof Date) {
-            visitTime = stats.lastVisit.getTime();
-          } else if (typeof stats.lastVisit === 'string') {
-            visitTime = new Date(stats.lastVisit).getTime();
-          } else if (stats.lastVisit && typeof stats.lastVisit.getTime === 'function') {
-            visitTime = stats.lastVisit.getTime();
-          } else {
-            // Fallback: пытаемся преобразовать любым способом
-            visitTime = new Date(stats.lastVisit).getTime();
-          }
-          
-          // Проверяем, что visitTime валидный (не NaN)
-          if (!isNaN(visitTime) && (!lastVisitTime || visitTime > lastVisitTime)) {
-            lastVisitTime = visitTime;
-            lastVisit = stats.lastVisit;
-          }
-          totalCheckins += stats.totalCheckins || 0;
-        }
-      });
-
-      // Определяем статус визита
-      let visitStatus = 'never';
-      if (lastVisitTime) {
-        // Используем уже вычисленный timestamp для точного расчета
-        const diffDays = Math.floor((now - lastVisitTime) / (1000 * 60 * 60 * 24));
-        if (diffDays <= 0) {
-          visitStatus = 'today';
-        } else if (diffDays <= 7) {
-          visitStatus = 'week';
-        } else {
-          visitStatus = 'old';
-        }
-        
-        // Логирование для отладки (можно убрать после проверки)
-        if (diffDays < 0) {
-          console.warn(`[Admin] Negative diffDays for fridge ${f.code}: ${diffDays} days (now: ${new Date(now).toISOString()}, lastVisit: ${new Date(lastVisitTime).toISOString()})`);
-        }
+      if (lastVisitTime != null && lastVisitTime > now) {
+        console.warn(
+          `[Admin] lastVisit in future for fridge ${f.code}: now=${new Date(now).toISOString()} last=${new Date(lastVisitTime).toISOString()}`,
+        );
       }
 
       // Определяем статус для отображения на карте.
@@ -244,8 +191,8 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
 
     const lastByFridgeId = new Map();
     lastCheckins.forEach((c) => {
-      if (c && c._id) {
-        lastByFridgeId.set(c._id, c.lastVisit);
+      if (c && c._id != null && c._id !== '') {
+        lastByFridgeId.set(String(c._id).trim(), c.lastVisit);
       }
     });
 
@@ -346,17 +293,22 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       if (i % 100 === 0 && i > 0) {
         console.log(`[Export] Progress: ${i}/${totalFridges} (${Math.round(i / totalFridges * 100)}%)`);
       }
-      // Для Шымкента и Кызылорды check-ins могут быть привязаны к number, для остальных - к code
-      // Ищем последнюю отметку и по code, и по number
-      const lastVisit = lastByFridgeId.get(f.code) || (f.number ? lastByFridgeId.get(f.number) : null) || null;
-      
-      let status = 'Нет отметок';
-      if (lastVisit) {
-        const diffDays = Math.floor((now - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays <= 0) status = 'Сегодня';
-        else if (diffDays <= 7) status = 'Неделя';
-        else status = 'Давно';
+      let lastVisit = null;
+      let bestT = 0;
+      for (const id of buildCheckinFridgeIdCandidates(f)) {
+        const lv = lastByFridgeId.get(id);
+        if (lv) {
+          const t = new Date(lv).getTime();
+          if (!Number.isNaN(t) && t > bestT) {
+            bestT = t;
+            lastVisit = lv;
+          }
+        }
       }
+
+      const vs = visitStatusFromLastVisit(lastVisit, { nowMs: now });
+      const status =
+        vs === 'today' ? 'Сегодня' : vs === 'week' ? 'Неделя' : vs === 'old' ? 'Давно' : 'Нет отметок';
 
       // Определяем статус склада и флаг возврата для экспорта
       let warehouseStatusLabel = '';
@@ -1148,27 +1100,14 @@ router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (r
       }
     }
 
-    // Отдаем в detail ту же логику последней отметки, что и на карте:
-    // берем максимум среди code/number/inn и их вариаций с '#'.
-    const normalizeId = (v) => String(v || '').trim().replace(/^#/, '');
-    const idBase = [fridgeDoc.code, fridgeDoc.number, fridgeDoc.clientInfo?.inn]
-      .filter(Boolean)
-      .map(normalizeId);
-    const fridgeIds = [...new Set(idBase.flatMap((v) => [v, `#${v}`]))];
+    const fridgeIds = buildCheckinFridgeIdCandidates(fridgeDoc);
 
     const latestCheckin = fridgeIds.length
       ? await Checkin.findOne({ fridgeId: { $in: fridgeIds } }, { visitedAt: 1 }).sort({ visitedAt: -1 }).lean()
       : null;
 
-    let visitStatus = 'never';
-    let lastVisit = null;
-    if (latestCheckin?.visitedAt) {
-      lastVisit = latestCheckin.visitedAt;
-      const diffDays = Math.floor((Date.now() - new Date(latestCheckin.visitedAt).getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays <= 0) visitStatus = 'today';
-      else if (diffDays <= 7) visitStatus = 'week';
-      else visitStatus = 'old';
-    }
+    const lastVisit = latestCheckin?.visitedAt || null;
+    const visitStatus = visitStatusFromLastVisit(lastVisit);
 
     const fridge = fridgeDoc.toObject();
     fridge.lastVisit = lastVisit;
@@ -1199,12 +1138,7 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
       }
     }
 
-    // Получаем чек-ины по коду/номеру/ИНН холодильника (для импорта из Excel может быть number, для ручного создания - ИНН во всех городах)
-    const normalizeId = (v) => String(v || '').trim().replace(/^#/, '');
-    const idBase = [fridge.code, fridge.number, fridge.clientInfo?.inn]
-      .filter(Boolean)
-      .map(normalizeId);
-    const fridgeIds = [...new Set(idBase.flatMap((v) => [v, `#${v}`]))];
+    const fridgeIds = buildCheckinFridgeIdCandidates(fridge);
     const checkins = await Checkin.find({ fridgeId: { $in: fridgeIds } })
       .sort({ visitedAt: -1 })
       .limit(parseInt(limit, 10));
@@ -2310,8 +2244,8 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
     ]);
 
     checkinStats.forEach((s) => {
-      if (s && s._id) {
-        statsByFridgeId.set(s._id, {
+      if (s && s._id != null && s._id !== '') {
+        statsByFridgeId.set(String(s._id).trim(), {
           lastVisit: s.lastVisit,
           totalCheckins: s.totalCheckins,
         });
@@ -2347,58 +2281,20 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
       const stats = cityStatsMap.get(cityId);
       stats.total++;
 
-      // Определяем статус визита
-      const identifiers = [f.code];
-      if (f.number) identifiers.push(f.number);
-      if (f.clientInfo?.inn) identifiers.push(f.clientInfo.inn);
+      const { lastVisit, lastVisitTime } = getLastVisitFromStatsMap(statsByFridgeId, f);
 
-      let lastVisitTime = null;
-      identifiers.forEach((id) => {
-        const checkinStats = statsByFridgeId.get(id);
-        if (checkinStats && checkinStats.lastVisit) {
-          let visitTime;
-          if (checkinStats.lastVisit instanceof Date) {
-            visitTime = checkinStats.lastVisit.getTime();
-          } else if (typeof checkinStats.lastVisit === 'string') {
-            visitTime = new Date(checkinStats.lastVisit).getTime();
-          } else if (checkinStats.lastVisit && typeof checkinStats.lastVisit.getTime === 'function') {
-            visitTime = checkinStats.lastVisit.getTime();
-          } else {
-            visitTime = new Date(checkinStats.lastVisit).getTime();
-          }
-          if (!isNaN(visitTime) && (!lastVisitTime || visitTime > lastVisitTime)) {
-            lastVisitTime = visitTime;
-          }
-        }
-      });
-
-      // Определяем статус визита (логика должна совпадать с /fridge-status)
-      // В /fridge-status логика такая:
-      // - Если нет визитов ИЛИ warehouseStatus === 'returned' -> 'never' (синий)
-      // - Иначе используем visitStatus (today/week/old)
       const warehouseStatus = f.warehouseStatus || 'warehouse';
-      
+
       if (!lastVisitTime) {
-        // Нет визитов - на складе
+        stats.never++;
+      } else if (warehouseStatus === 'returned') {
         stats.never++;
       } else {
-        // Есть визиты
-        if (warehouseStatus === 'returned') {
-          // Возвращен на склад - считается как "never" (синий)
-          stats.never++;
+        const vs = visitStatusFromLastVisit(lastVisit, { nowMs: now });
+        if (vs === 'today' || vs === 'week') {
+          stats.fresh++;
         } else {
-          // Определяем статус по дате последнего визита
-          const diffDays = Math.floor((now - lastVisitTime) / (1000 * 60 * 60 * 24));
-          if (diffDays <= 0) {
-            // Сегодня - свежая отметка
-            stats.fresh++;
-          } else if (diffDays <= 7) {
-            // В пределах недели - свежая отметка
-            stats.fresh++;
-          } else {
-            // Больше недели - старая отметка
-            stats.old++;
-          }
+          stats.old++;
         }
       }
 
