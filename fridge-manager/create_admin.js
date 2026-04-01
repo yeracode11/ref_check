@@ -20,13 +20,14 @@ async function main() {
     process.exit(1);
   }
 
-  const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fridge_manager';
+  const uri = process.env.MONGODB_URI;
   console.log('Подключение:', uri.replace(/\/\/[^:]+:[^@]+@/, '//***@'));
   await mongoose.connect(uri);
 
   let user = await User.findOne({ username });
   if (user) {
     user.password = password;
+    user.markModified('password');
     user.role = 'admin';
     user.active = true;
     await user.save();

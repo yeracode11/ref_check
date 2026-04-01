@@ -23,15 +23,16 @@ router.post('/login', async (req, res) => {
     const normalizedUsername = String(username).trim();
     console.log(`[Auth] Normalized username: "${normalizedUsername}" (original: "${username}")`);
 
-    // Try to find user - first exact match, then case-insensitive
-    let user = await User.findOne({ username: normalizedUsername });
+    // Явно запрашиваем password (на случай select: false в схеме / плагинов)
+    const loginSelect = 'username password role active email cityId fullName';
+    let user = await User.findOne({ username: normalizedUsername }).select(loginSelect);
     if (!user) {
-      // Try case-insensitive search
-      user = await User.findOne({ 
-        username: { $regex: new RegExp(`^${normalizedUsername}$`, 'i') }
-      });
+      const escaped = normalizedUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      user = await User.findOne({
+        username: { $regex: new RegExp(`^${escaped}$`, 'i') },
+      }).select(loginSelect);
     }
-    
+
     if (!user) {
       // Log all usernames for debugging
       const allUsers = await User.find({}, 'username').limit(10);
@@ -41,6 +42,10 @@ router.post('/login', async (req, res) => {
     }
     
     console.log(`[Auth] User found: ${user.username} (ID: ${user._id}, Role: ${user.role})`);
+    const hashOk = typeof user.password === 'string' && user.password.startsWith('$2');
+    if (!hashOk) {
+      console.error('[Auth] Stored password is not a bcrypt hash — reset via node create_admin.js');
+    }
 
     if (!user.active) {
       console.log(`[Auth] Account disabled for user: ${username}`);
