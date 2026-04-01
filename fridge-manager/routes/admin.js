@@ -9,6 +9,7 @@ const User = require('../models/User');
 const { authenticateToken, requireAdmin, requireAdminOrAccountant } = require('../middleware/auth');
 const {
   buildCheckinFridgeIdCandidates,
+  buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
   getLastVisitFromStatsMap,
 } = require('../lib/fridgeVisitHelpers');
@@ -1123,14 +1124,14 @@ router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (r
       }
     }
 
-    const fridgeIds = buildCheckinFridgeIdCandidates(fridgeDoc);
+    const idMatch = buildCheckinFridgeIdMatchCondition(fridgeDoc);
 
-    const latestCheckin = fridgeIds.length
-      ? await Checkin.findOne({ fridgeId: { $in: fridgeIds } }, { visitedAt: 1 }).sort({ visitedAt: -1 }).lean()
+    const latestCheckin = idMatch
+      ? await Checkin.findOne(idMatch, { visitedAt: 1 }).sort({ visitedAt: -1 }).lean()
       : null;
 
     const lastVisit = latestCheckin?.visitedAt || null;
-    const visitStatus = visitStatusFromLastVisit(lastVisit);
+    const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: Date.now() });
 
     const fridge = fridgeDoc.toObject();
     fridge.lastVisit = lastVisit;
@@ -1161,10 +1162,10 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
       }
     }
 
-    const fridgeIds = buildCheckinFridgeIdCandidates(fridge);
-    const checkins = await Checkin.find({ fridgeId: { $in: fridgeIds } })
-      .sort({ visitedAt: -1 })
-      .limit(parseInt(limit, 10));
+    const idMatch = buildCheckinFridgeIdMatchCondition(fridge);
+    const checkins = idMatch
+      ? await Checkin.find(idMatch).sort({ visitedAt: -1 }).limit(parseInt(limit, 10))
+      : [];
 
     return res.json(checkins);
   } catch (err) {

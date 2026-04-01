@@ -14,7 +14,7 @@ function haversineMeters(lng1, lat1, lng2, lat2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
-
+  BACKUP_DIR=/backups /path/to/mongodb_daily_backup.sh
 /**
  * Ищет недавнюю отметку того же менеджера по тому же холодильнику с близкими координатами (идемпотентность).
  *

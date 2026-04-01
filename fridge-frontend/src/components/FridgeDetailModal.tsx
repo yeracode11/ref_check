@@ -383,9 +383,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge className={getVisitStatusColor(fridge.visitStatus)}>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Badge className={getStatusColor(fridge.warehouseStatus)}>
               {getStatusLabel(fridge.warehouseStatus)}
+            </Badge>
+            <Badge className={getVisitStatusColor(fridge.visitStatus)}>
+              {getVisitStatusLabel(fridge.visitStatus)}
             </Badge>
             <button
               onClick={onClose}
@@ -435,6 +438,10 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     Местоположение
               </h3>
               <MiniMap location={fridge.location} name={fridge.name} markerColor={statusMarkerColor} />
+              <p className="text-xs text-slate-500 mt-1.5">
+                Цвет метки — давность последней отметки (как на общей карте): зелёный — сегодня или на этой
+                неделе, красный — более недели без визита, синий — отметок не было.
+              </p>
             </div>
           )}
 

@@ -32,6 +32,24 @@ function buildCheckinFridgeIdCandidates(fridgeLike) {
   return [...new Set(out)];
 }
 
+/**
+ * Условие для find/$match: в MongoDB fridgeId в чекинах может быть строкой или числом (старые данные).
+ * Только строковый $in не находит документы с числовым fridgeId — из‑за этого lastVisit в деталях
+ * мог отличаться от агрегата на /fridge-status (другая «последняя» отметка → другой цвет маркера).
+ */
+function buildCheckinFridgeIdMatchCondition(fridgeLike) {
+  const candidates = buildCheckinFridgeIdCandidates(fridgeLike);
+  const or = [];
+  for (const id of candidates) {
+    or.push({ fridgeId: id });
+    const n = Number(id);
+    if (Number.isFinite(n)) {
+      or.push({ fridgeId: n });
+    }
+  }
+  return or.length ? { $or: or } : null;
+}
+
 function parseVisitTimeMs(lastVisit) {
   if (lastVisit == null) return null;
   if (lastVisit instanceof Date) {
@@ -114,6 +132,7 @@ function getLastVisitFromStatsMap(statsByFridgeId, fridgeLike) {
 
 module.exports = {
   buildCheckinFridgeIdCandidates,
+  buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
   getLastVisitFromStatsMap,
   parseVisitTimeMs,
