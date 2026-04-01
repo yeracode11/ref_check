@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
@@ -38,7 +38,13 @@ export default function CheckinPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [locationStatus, setLocationStatus] = useState<'idle' | 'getting' | 'success' | 'error'>('idle');
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const locationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [geoRefreshWarning, setGeoRefreshWarning] = useState<string | null>(null);
   const [address, setAddress] = useState('');
+
+  useEffect(() => {
+    locationRef.current = currentLocation;
+  }, [currentLocation]);
 
   useEffect(() => {
     if (!code) {
@@ -108,10 +114,20 @@ export default function CheckinPage() {
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setCurrentLocation(loc);
           setLocationStatus('success');
+          setGeoRefreshWarning(null);
           resolve(loc);
         },
         () => {
-          setLocationStatus('error');
+          // Повторный запрос геолокации не должен показывать «ошибку», если уже есть валидная точка
+          if (locationRef.current) {
+            setLocationStatus('success');
+            setGeoRefreshWarning(
+              'Обновить координаты не удалось; при отправке будет использована ранее определённая точка.'
+            );
+          } else {
+            setLocationStatus('error');
+            setGeoRefreshWarning(null);
+          }
           resolve(null);
         },
         { enableHighAccuracy: true, timeout: 7000 }
@@ -133,6 +149,7 @@ export default function CheckinPage() {
     setSubmitting(true);
     setError(null);
     setSuccess(null);
+    setGeoRefreshWarning(null);
 
     try {
       let geo = currentLocation;
@@ -143,7 +160,7 @@ export default function CheckinPage() {
         }
       }
 
-      await api.post('/api/checkins', {
+      const res = await api.post('/api/checkins', {
         // Сохраняем managerId = username (код менеджера), а при его отсутствии используем _id
         managerId: user.username || user._id,
         fridgeId: code,
@@ -151,7 +168,11 @@ export default function CheckinPage() {
         location: geo,
       });
 
-      setSuccess('Отметка успешно сохранена!');
+      setSuccess(
+        res.data?.idempotentReplay
+          ? 'Отметка уже сохранена (повторный запрос не создал дубликат).'
+          : 'Отметка успешно сохранена!'
+      );
       setTimeout(() => {
         navigate('/'); // после отметки возвращаем на список
       }, 1500);
@@ -291,6 +312,12 @@ export default function CheckinPage() {
               </span>
             </div>
           </div>
+
+          {geoRefreshWarning && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg text-sm">
+              {geoRefreshWarning}
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">

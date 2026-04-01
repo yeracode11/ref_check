@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,12 +24,20 @@ export default function NewCheckin() {
   const [success, setSuccess] = useState<string | null>(null);
   const [locationStatus, setLocationStatus] = useState<'idle' | 'getting' | 'success' | 'error'>('idle');
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const locationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [geoRefreshWarning, setGeoRefreshWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    locationRef.current = currentLocation;
+  }, [currentLocation]);
 
   useEffect(() => {
     (async () => {
       try {
         const res = await api.get('/api/fridges?active=true');
-        setFridges(res.data);
+        const raw = res.data;
+        const list = Array.isArray(raw) ? raw : (raw?.data ?? []);
+        setFridges(list);
       } catch (e: any) {
         console.error('Failed to load fridges', e);
       }
@@ -48,10 +56,19 @@ export default function NewCheckin() {
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setCurrentLocation(loc);
           setLocationStatus('success');
+          setGeoRefreshWarning(null);
           resolve(loc);
         },
         () => {
-          setLocationStatus('error');
+          if (locationRef.current) {
+            setLocationStatus('success');
+            setGeoRefreshWarning(
+              'Обновить координаты не удалось; при отправке будет использована ранее определённая точка.'
+            );
+          } else {
+            setLocationStatus('error');
+            setGeoRefreshWarning(null);
+          }
           resolve(null);
         },
         { enableHighAccuracy: true, timeout: 7000 }
@@ -64,7 +81,8 @@ export default function NewCheckin() {
     setSubmitting(true);
     setError(null);
     setSuccess(null);
-    
+    setGeoRefreshWarning(null);
+
     try {
       let geo = currentLocation;
       if (!geo) {
@@ -79,8 +97,12 @@ export default function NewCheckin() {
         address: address || undefined,
         location: geo,
       });
-      
-      setSuccess('Отметка успешно создана!');
+
+      setSuccess(
+        res.data?.idempotentReplay
+          ? 'Отметка уже сохранена (повторный запрос не создал дубликат).'
+          : 'Отметка успешно создана!'
+      );
       setTimeout(() => {
         navigate('/');
       }, 1500);
@@ -172,7 +194,7 @@ export default function NewCheckin() {
               {locationStatus === 'success' && currentLocation && (
                 <span className="text-xs text-green-600">✓ Получена</span>
               )}
-              {locationStatus === 'error' && (
+              {locationStatus === 'error' && !currentLocation && (
                 <span className="text-xs text-red-600">✗ Ошибка</span>
               )}
             </div>
@@ -195,6 +217,12 @@ export default function NewCheckin() {
               </button>
             )}
           </div>
+
+          {geoRefreshWarning && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg text-sm">
+              {geoRefreshWarning}
+            </div>
+          )}
 
           {/* Error/Success Messages */}
           {error && (

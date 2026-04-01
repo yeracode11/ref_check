@@ -5,8 +5,13 @@ const Fridge = require('../models/Fridge');
 const User = require('../models/User');
 const { getNextSequence } = require('../models/Counter');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { findRecentDuplicateCheckin } = require('../utils/checkinGeodesic');
 
 const router = express.Router();
+
+/** Окно идемпотентности: повторная отправка с теми же координатами не создаёт вторую запись */
+const CHECKIN_IDEMPOTENCY_WINDOW_MS = 120 * 1000;
+const CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M = 40;
 
 function parseDate(dateString) {
   if (!dateString) return undefined;
@@ -38,6 +43,36 @@ router.post('/', async (req, res) => {
 
     if (!location.type || !Array.isArray(location.coordinates) || location.coordinates.length !== 2) {
       return res.status(400).json({ error: 'location must be GeoJSON Point or {lat,lng}' });
+    }
+
+    const [reqLng, reqLat] = location.coordinates;
+    const dupWindowStart = new Date(Date.now() - CHECKIN_IDEMPOTENCY_WINDOW_MS);
+    const recentForDedupe = await Checkin.find({
+      fridgeId: normalizedFridgeId,
+      visitedAt: { $gte: dupWindowStart },
+    })
+      .sort({ visitedAt: -1 })
+      .limit(30)
+      .lean();
+
+    const duplicate = findRecentDuplicateCheckin(recentForDedupe, {
+      managerId: String(managerId),
+      fridgeId: normalizedFridgeId,
+      lng: reqLng,
+      lat: reqLat,
+      now: Date.now(),
+      windowMs: CHECKIN_IDEMPOTENCY_WINDOW_MS,
+      maxDistanceM: CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M,
+    });
+
+    if (duplicate && duplicate._id) {
+      const existing = await Checkin.findById(duplicate._id);
+      if (existing) {
+        return res.status(200).json({
+          ...existing.toJSON(),
+          idempotentReplay: true,
+        });
+      }
     }
 
     const id = await getNextSequence('checkin');
