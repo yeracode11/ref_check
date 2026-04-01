@@ -97,9 +97,20 @@ async function start() {
     console.log('[Server] Connecting to MongoDB...');
     console.log('[Server] MongoDB URI:', mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')); // Hide credentials
     
-    await mongoose.connect(mongoUri, {
-      autoIndex: true,
-    });
+    const mongooseOpts = { autoIndex: true };
+    const parseMs = (v, min, max) => {
+      const n = parseInt(v, 10);
+      if (!Number.isFinite(n)) return null;
+      return Math.min(max, Math.max(min, n));
+    };
+    const sel = parseMs(process.env.MONGOOSE_SERVER_SELECTION_TIMEOUT_MS, 2000, 120000);
+    const conn = parseMs(process.env.MONGOOSE_CONNECT_TIMEOUT_MS, 2000, 120000);
+    const sock = parseMs(process.env.MONGOOSE_SOCKET_TIMEOUT_MS, 10000, 360000);
+    if (sel != null) mongooseOpts.serverSelectionTimeoutMS = sel;
+    if (conn != null) mongooseOpts.connectTimeoutMS = conn;
+    if (sock != null) mongooseOpts.socketTimeoutMS = sock;
+
+    await mongoose.connect(mongoUri, mongooseOpts);
     
     console.log('[Server] ✅ Connected to MongoDB');
     console.log('[Server] Database:', mongoose.connection.db.databaseName);
