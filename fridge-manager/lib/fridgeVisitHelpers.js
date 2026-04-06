@@ -109,6 +109,24 @@ function visitStatusFromLastVisit(lastVisit, opts = {}) {
 }
 
 /**
+ * Итоговый статус отметки для карты, списка и Excel — как поле status в GET /admin/fridge-status.
+ * При возврате на склад не показываем давность старых отметок (всегда never).
+ */
+function combinedVisitMapStatus(lastVisit, warehouseStatus, opts = {}) {
+  const nowMs = opts.nowMs != null ? opts.nowMs : Date.now();
+  const ws = warehouseStatus || 'warehouse';
+  const visitTimeliness = visitStatusFromLastVisit(lastVisit, { nowMs });
+
+  if (!lastVisit) {
+    return 'never';
+  }
+  if (ws === 'returned') {
+    return 'never';
+  }
+  return visitTimeliness;
+}
+
+/**
  * statsMap: ключ — точное значение checkins.fridgeId (после trim), значение — { lastVisit, totalCheckins? }
  */
 function getLastVisitFromStatsMap(statsByFridgeId, fridgeLike) {
@@ -134,6 +152,7 @@ module.exports = {
   buildCheckinFridgeIdCandidates,
   buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
+  combinedVisitMapStatus,
   getLastVisitFromStatsMap,
   parseVisitTimeMs,
   calendarDaysFromVisitToNow,

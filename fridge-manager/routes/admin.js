@@ -11,6 +11,7 @@ const {
   buildCheckinFridgeIdCandidates,
   buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
+  combinedVisitMapStatus,
   getLastVisitFromStatsMap,
 } = require('../lib/fridgeVisitHelpers');
 const XLSX = require('xlsx');
@@ -202,21 +203,24 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const enableGeocoding = req.query.geocode !== 'false'; // По умолчанию включено, но можно отключить
-    // Агрегируем последние отметки по каждому холодильнику
-    const lastCheckins = await Checkin.aggregate([
-      { $sort: { fridgeId: 1, visitedAt: -1 } },
+    // Та же агрегация, что для GET /admin/fridge-status (последний визит по каждому fridgeId в чекинах)
+    const checkinStatsForExport = await Checkin.aggregate([
       {
         $group: {
           _id: '$fridgeId',
-          lastVisit: { $first: '$visitedAt' },
+          lastVisit: { $max: '$visitedAt' },
+          totalCheckins: { $sum: 1 },
         },
       },
     ]);
 
-    const lastByFridgeId = new Map();
-    lastCheckins.forEach((c) => {
-      if (c && c._id != null && c._id !== '') {
-        lastByFridgeId.set(String(c._id).trim(), c.lastVisit);
+    const statsByFridgeIdForExport = new Map();
+    checkinStatsForExport.forEach((s) => {
+      if (s && s._id != null && s._id !== '') {
+        statsByFridgeIdForExport.set(String(s._id).trim(), {
+          lastVisit: s.lastVisit,
+          totalCheckins: s.totalCheckins,
+        });
       }
     });
 
@@ -317,22 +321,18 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       if (i % 100 === 0 && i > 0) {
         console.log(`[Export] Progress: ${i}/${totalFridges} (${Math.round(i / totalFridges * 100)}%)`);
       }
-      let lastVisit = null;
-      let bestT = 0;
-      for (const id of buildCheckinFridgeIdCandidates(f)) {
-        const lv = lastByFridgeId.get(id);
-        if (lv) {
-          const t = new Date(lv).getTime();
-          if (!Number.isNaN(t) && t > bestT) {
-            bestT = t;
-            lastVisit = lv;
-          }
-        }
-      }
+      const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeIdForExport, f);
 
-      const vs = visitStatusFromLastVisit(lastVisit, { nowMs: now });
+      // Статус визита в Excel = как на карте/в списке (в т.ч. возврат → «Нет отметок»)
+      const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, { nowMs: now });
       const status =
-        vs === 'today' ? 'Сегодня' : vs === 'week' ? 'Неделя' : vs === 'old' ? 'Давно' : 'Нет отметок';
+        mapSt === 'today'
+          ? 'Сегодня'
+          : mapSt === 'week'
+            ? 'Неделя'
+            : mapSt === 'old'
+              ? 'Давно'
+              : 'Нет отметок';
 
       // Определяем статус склада и флаг возврата для экспорта
       let warehouseStatusLabel = '';
