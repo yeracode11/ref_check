@@ -420,9 +420,9 @@ export default function CitiesManagement() {
         </div>
       )}
 
-      {/* Подтверждение удаления всех холодильников города */}
+      {/* Подтверждение удаления всех холодильников города — z выше модалки списка (z-50), иначе список перекрывает и удаление не срабатывает */}
       {showDeleteCityFridgesConfirm && selectedCityForFridges && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteCityFridgesConfirm(false)}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4" onClick={() => setShowDeleteCityFridgesConfirm(false)}>
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-slate-900 mb-2">⚠️ Удалить все холодильники?</h3>
             <p className="text-slate-600 mb-4">
