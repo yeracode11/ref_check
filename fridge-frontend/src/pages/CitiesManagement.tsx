@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
@@ -420,37 +421,58 @@ export default function CitiesManagement() {
         </div>
       )}
 
-      {/* Подтверждение удаления всех холодильников города — z выше модалки списка (z-50), иначе список перекрывает и удаление не срабатывает */}
-      {showDeleteCityFridgesConfirm && selectedCityForFridges && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4" onClick={() => setShowDeleteCityFridgesConfirm(false)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">⚠️ Удалить все холодильники?</h3>
-            <p className="text-slate-600 mb-4">
-              Вы уверены, что хотите удалить <strong>все {fridges.length} холодильников</strong> из города <strong>{selectedCityForFridges.name}</strong>?
-              <br /><br />
-              <span className="text-red-600 text-sm font-semibold">⚠️ Это действие необратимо!</span>
-              <br />
-              <span className="text-slate-500 text-sm">Будут удалены все холодильники и связанные с ними отметки посещений.</span>
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={handleDeleteCityFridges}
-                disabled={deletingCityFridges}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium"
-              >
-                {deletingCityFridges ? 'Удаление...' : '🗑️ Удалить все'}
-              </button>
-              <button
-                onClick={() => setShowDeleteCityFridgesConfirm(false)}
-                disabled={deletingCityFridges}
-                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 disabled:opacity-50 transition-colors"
-              >
-                Отмена
-              </button>
+      {/* Подтверждение — портал в document.body + z-index 10000: модалка списка даёт свой stacking context, z-[100] внутри main всё равно оказывался ниже */}
+      {showDeleteCityFridgesConfirm &&
+        selectedCityForFridges &&
+        createPortal(
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
+            style={{ zIndex: 10000 }}
+            role="presentation"
+            onClick={() => setShowDeleteCityFridgesConfirm(false)}
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-city-fridges-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="delete-city-fridges-title" className="text-lg font-semibold text-slate-900 mb-2">
+                ⚠️ Удалить все холодильники?
+              </h3>
+              <p className="text-slate-600 mb-4">
+                Вы уверены, что хотите удалить <strong>все {fridges.length} холодильников</strong> из города{' '}
+                <strong>{selectedCityForFridges.name}</strong>?
+                <br /><br />
+                <span className="text-red-600 text-sm font-semibold">⚠️ Это действие необратимо!</span>
+                <br />
+                <span className="text-slate-500 text-sm">
+                  Будут удалены все холодильники и связанные с ними отметки посещений.
+                </span>
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleDeleteCityFridges}
+                  disabled={deletingCityFridges}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium"
+                >
+                  {deletingCityFridges ? 'Удаление...' : '🗑️ Удалить все'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteCityFridgesConfirm(false)}
+                  disabled={deletingCityFridges}
+                  className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 disabled:opacity-50 transition-colors"
+                >
+                  Отмена
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
 
       {/* Модальное окно со списком холодильников города */}
       {showFridgesModal && selectedCityForFridges && (
