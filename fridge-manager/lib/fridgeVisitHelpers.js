@@ -127,6 +127,49 @@ function combinedVisitMapStatus(lastVisit, warehouseStatus, opts = {}) {
 }
 
 /**
+ * Сливает строки $group по fridgeId в одну Map по нормализованному ключу.
+ * В MongoDB у части чекинов fridgeId строка "1133", у части — число 1133: это две группы агрегации,
+ * но String(_id) совпадает — без слияния по max(lastVisit) остаётся случайная дата (часто старая).
+ *
+ * @param {Array<{ _id: unknown, lastVisit?: Date, totalCheckins?: number }>} rows
+ * @returns {Map<string, { lastVisit: Date|null, totalCheckins: number }>}
+ */
+function mergeCheckinStatsAggregationIntoMap(rows) {
+  const statsByFridgeId = new Map();
+  if (!Array.isArray(rows)) return statsByFridgeId;
+
+  for (const s of rows) {
+    if (!s || s._id == null || s._id === '') continue;
+    const key = String(s._id).trim();
+    if (!key) continue;
+
+    const visitMs = parseVisitTimeMs(s.lastVisit);
+    const addCount = Number(s.totalCheckins) || 0;
+    const existing = statsByFridgeId.get(key);
+
+    if (!existing) {
+      statsByFridgeId.set(key, {
+        lastVisit: s.lastVisit ?? null,
+        totalCheckins: addCount,
+      });
+      continue;
+    }
+
+    const exMs = parseVisitTimeMs(existing.lastVisit);
+    let nextVisit = existing.lastVisit;
+    if (visitMs != null && (exMs == null || visitMs > exMs)) {
+      nextVisit = s.lastVisit;
+    }
+    statsByFridgeId.set(key, {
+      lastVisit: nextVisit,
+      totalCheckins: (existing.totalCheckins || 0) + addCount,
+    });
+  }
+
+  return statsByFridgeId;
+}
+
+/**
  * statsMap: ключ — точное значение checkins.fridgeId (после trim), значение — { lastVisit, totalCheckins? }
  */
 function getLastVisitFromStatsMap(statsByFridgeId, fridgeLike) {
@@ -153,6 +196,7 @@ module.exports = {
   buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
   combinedVisitMapStatus,
+  mergeCheckinStatsAggregationIntoMap,
   getLastVisitFromStatsMap,
   parseVisitTimeMs,
   calendarDaysFromVisitToNow,

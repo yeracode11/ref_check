@@ -157,8 +157,11 @@ export default function CitiesManagement() {
     setFridgesError(null);
     
     try {
-      // Загружаем все холодильники города (до 10000 для админа)
-      const res = await api.get(`/api/fridges?cityId=${city._id}&limit=10000`);
+      // simple=1 — без тяжёлого join к отметкам (иначе nginx 504 на больших городах)
+      const res = await api.get(
+        `/api/fridges?cityId=${city._id}&limit=10000&simple=1`,
+        { timeout: 120000 },
+      );
       const fridgesData = res.data.data || res.data;
       setFridges(Array.isArray(fridgesData) ? fridgesData : []);
       setFridgesError(null);

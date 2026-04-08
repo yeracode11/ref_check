@@ -12,6 +12,7 @@ const {
   buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
   combinedVisitMapStatus,
+  mergeCheckinStatsAggregationIntoMap,
   getLastVisitFromStatsMap,
 } = require('../lib/fridgeVisitHelpers');
 const XLSX = require('xlsx');
@@ -59,7 +60,6 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     // только последняя дата визита и количество отметок.
     // Убрали тяжелое хранение всех локаций и сложную геометрию,
     // т.к. черные метки по перемещению сейчас отключены.
-    const statsByFridgeId = new Map();
     const checkinStats = await Checkin.aggregate([
       {
         $group: {
@@ -70,15 +70,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       },
     ]);
 
-    checkinStats.forEach((s) => {
-      if (s && s._id != null && s._id !== '') {
-        const rawId = String(s._id).trim();
-        statsByFridgeId.set(rawId, {
-          lastVisit: s.lastVisit,
-          totalCheckins: s.totalCheckins,
-        });
-      }
-    });
+    const statsByFridgeId = mergeCheckinStatsAggregationIntoMap(checkinStats);
 
     // Для бухгалтера фильтруем по городу
     let fridgeQuery = {};
@@ -214,15 +206,7 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       },
     ]);
 
-    const statsByFridgeIdForExport = new Map();
-    checkinStatsForExport.forEach((s) => {
-      if (s && s._id != null && s._id !== '') {
-        statsByFridgeIdForExport.set(String(s._id).trim(), {
-          lastVisit: s.lastVisit,
-          totalCheckins: s.totalCheckins,
-        });
-      }
-    });
+    const statsByFridgeIdForExport = mergeCheckinStatsAggregationIntoMap(checkinStatsForExport);
 
     // Если пользователь бухгалтер — экспортируем только холодильники его города
     const fridgeFilter = {};
@@ -2255,8 +2239,6 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
     // Получаем все холодильники
     const fridges = await Fridge.find(fridgeQuery).populate('cityId', 'name code').lean();
 
-    // Агрегируем статистику по каждому холодильнику
-    const statsByFridgeId = new Map();
     const checkinStats = await Checkin.aggregate([
       {
         $group: {
@@ -2267,14 +2249,7 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
       },
     ]);
 
-    checkinStats.forEach((s) => {
-      if (s && s._id != null && s._id !== '') {
-        statsByFridgeId.set(String(s._id).trim(), {
-          lastVisit: s.lastVisit,
-          totalCheckins: s.totalCheckins,
-        });
-      }
-    });
+    const statsByFridgeId = mergeCheckinStatsAggregationIntoMap(checkinStats);
 
     const now = Date.now();
 
