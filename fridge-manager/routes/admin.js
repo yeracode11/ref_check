@@ -8,13 +8,12 @@ const City = require('../models/City');
 const User = require('../models/User');
 const { authenticateToken, requireAdmin, requireAdminOrAccountant } = require('../middleware/auth');
 const {
-  buildCheckinFridgeIdCandidates,
   buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
   combinedVisitMapStatus,
-  mergeCheckinStatsAggregationIntoMap,
   getLastVisitFromStatsMap,
 } = require('../lib/fridgeVisitHelpers');
+const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
 const XLSX = require('xlsx');
 
 // Настройка multer для загрузки файлов в память
@@ -56,22 +55,6 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     const limitNum = shouldPaginate && limit ? Math.max(1, Math.min(100, Number(limit))) : undefined;
     const skipNum = shouldPaginate && skip ? Math.max(0, Number(skip)) : 0;
 
-    // Агрегируем статистику по каждому холодильнику:
-    // только последняя дата визита и количество отметок.
-    // Убрали тяжелое хранение всех локаций и сложную геометрию,
-    // т.к. черные метки по перемещению сейчас отключены.
-    const checkinStats = await Checkin.aggregate([
-      {
-        $group: {
-          _id: '$fridgeId',
-          lastVisit: { $max: '$visitedAt' },
-          totalCheckins: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const statsByFridgeId = mergeCheckinStatsAggregationIntoMap(checkinStats);
-
     // Для бухгалтера фильтруем по городу
     let fridgeQuery = {};
     if (req.user.role === 'accountant' && req.user.cityId) {
@@ -97,17 +80,22 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
       ];
     }
 
-    // Получаем общее количество для пагинации
-    const total = await Fridge.countDocuments(fridgeQuery);
-
-    // Получаем холодильники с пагинацией (если нужно)
     let query = Fridge.find(fridgeQuery)
       .populate('cityId', 'name code')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
     if (shouldPaginate && limitNum) {
       query = query.limit(limitNum).skip(skipNum);
     }
-    const fridges = await query;
+
+    const cacheScopeKey = JSON.stringify(fridgeQuery);
+    const [total, fridges] = await Promise.all([
+      Fridge.countDocuments(fridgeQuery),
+      query.exec(),
+    ]);
+    const statsByFridgeId = await getCheckinStatsForFridges(fridges, cacheScopeKey, {
+      useCache: !shouldPaginate,
+    });
 
     const now = Date.now();
 
@@ -195,18 +183,6 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
 router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const enableGeocoding = req.query.geocode !== 'false'; // По умолчанию включено, но можно отключить
-    // Та же агрегация, что для GET /admin/fridge-status (последний визит по каждому fridgeId в чекинах)
-    const checkinStatsForExport = await Checkin.aggregate([
-      {
-        $group: {
-          _id: '$fridgeId',
-          lastVisit: { $max: '$visitedAt' },
-          totalCheckins: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const statsByFridgeIdForExport = mergeCheckinStatsAggregationIntoMap(checkinStatsForExport);
 
     // Если пользователь бухгалтер — экспортируем только холодильники его города
     const fridgeFilter = {};
@@ -215,7 +191,11 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
     }
 
     // Получаем холодильники и сортируем: для Шымкента и Кызылорды по number, для остальных по code
-    const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code');
+    const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').lean();
+    const statsByFridgeIdForExport = await getCheckinStatsForFridges(
+      fridges,
+      JSON.stringify(fridgeFilter),
+    );
     console.log(`[Export] Found ${fridges.length} fridges to export`);
     
     // Сортируем: для Шымкента, Кызылорды и Талдыкоргана по number, для остальных по code
@@ -862,6 +842,39 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       console.log('[Import] Duplicate details (first 10):', duplicateDetails);
     }
 
+    const geocodeOnImport =
+      req.body?.geocodeAddresses === '1' ||
+      req.body?.geocodeAddresses === 'true' ||
+      String(req.body?.geocodeAddresses || '').toLowerCase() === 'on';
+
+    let importGeocodeOk = 0;
+    let importGeocodeFail = 0;
+    let importGeocodeSkipped = 0;
+
+    if (geocodeOnImport && recordsToInsert.length > 0) {
+      const { forwardGeocodeQuery } = require('../lib/nominatimGeocode');
+      console.log(
+        '[Import] Geocoding addresses (OpenStreetMap Nominatim, ~1 req/s) for',
+        recordsToInsert.length,
+        'rows...',
+      );
+      for (const record of recordsToInsert) {
+        if (!record.address || !String(record.address).trim()) {
+          importGeocodeSkipped += 1;
+          continue;
+        }
+        const query = `${record.address}, ${city.name}, Казахстан`;
+        const coords = await forwardGeocodeQuery(query);
+        if (coords) {
+          record.location = { type: 'Point', coordinates: coords };
+          importGeocodeOk += 1;
+        } else {
+          importGeocodeFail += 1;
+        }
+      }
+      console.log('[Import] Geocode summary:', { importGeocodeOk, importGeocodeFail, importGeocodeSkipped });
+    }
+
     console.log('[Import] Starting bulk insert for', recordsToInsert.length, 'records (skipped', duplicates, 'duplicates)');
 
     let imported = 0;
@@ -940,8 +953,12 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       errors,
       total: records.length,
       duplicateDetails: duplicateDetails.slice(0, 10), // Возвращаем детали первых 10 дубликатов
+      geocodeOnImport,
+      importGeocodeOk,
+      importGeocodeFail,
+      importGeocodeSkipped,
     };
-    
+
     console.log('[Import] Import complete:', result);
     
     return res.json(result);
@@ -1084,6 +1101,79 @@ router.post('/fridges', authenticateToken, requireAdminOrAccountant, async (req,
   }
 });
 
+// POST /api/admin/fridges/geocode-locations
+// Координаты по тексту адреса (Nominatim). Роут до GET /fridges/:id не обязателен, но оставляем явным именем.
+router.post('/fridges/geocode-locations', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  try {
+    const { cityId, mode } = req.body || {};
+    if (!cityId) {
+      return res.status(400).json({ error: 'Укажите cityId' });
+    }
+    if (req.user.role === 'accountant' && req.user.cityId && String(cityId) !== String(req.user.cityId)) {
+      return res.status(403).json({ error: 'Можно обрабатывать только свой город' });
+    }
+
+    const city = await City.findById(cityId).lean();
+    if (!city) {
+      return res.status(404).json({ error: 'Город не найден' });
+    }
+
+    const fullMode = mode === 'all_with_address' ? 'all_with_address' : 'zero_only';
+
+    const fridges = await Fridge.find({ cityId })
+      .select('_id address location code')
+      .lean();
+
+    const { forwardGeocodeQuery } = require('../lib/nominatimGeocode');
+
+    let updated = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const f of fridges) {
+      if (!f.address || !String(f.address).trim()) {
+        skipped += 1;
+        continue;
+      }
+      const c = f.location && f.location.coordinates;
+      const isZero =
+        !c ||
+        !Array.isArray(c) ||
+        c.length < 2 ||
+        (Number(c[0]) === 0 && Number(c[1]) === 0);
+      if (fullMode === 'zero_only' && !isZero) {
+        skipped += 1;
+        continue;
+      }
+
+      const query = `${f.address}, ${city.name}, Казахстан`;
+      const coords = await forwardGeocodeQuery(query);
+      if (!coords) {
+        failed += 1;
+        continue;
+      }
+
+      await Fridge.updateOne(
+        { _id: f._id },
+        { $set: { location: { type: 'Point', coordinates: coords } } },
+      );
+      updated += 1;
+    }
+
+    return res.json({
+      success: true,
+      updated,
+      failed,
+      skipped,
+      mode: fullMode,
+      cityName: city.name,
+    });
+  } catch (err) {
+    console.error('[Admin] geocode-locations:', err);
+    return res.status(500).json({ error: 'Ошибка геокодирования', details: err.message });
+  }
+});
+
 // GET /api/admin/fridges/:id
 // Получить детальную информацию о холодильнике
 router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
@@ -1167,29 +1257,19 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
     startDate.setDate(startDate.getDate() - daysNum);
     startDate.setHours(0, 0, 0, 0);
 
-    // Если выбран город, получаем список кодов холодильников этого города
-    let fridgeFilter = {};
-    let fridgeCodes = [];
+    const fridgeQuery = { active: true };
     if (cityId && cityId !== 'all') {
-      const cityFridges = await Fridge.find({ 
-        cityId: cityId,
-        active: true 
-      }).select('code number clientInfo');
-      
-      // Для Шымкента и Кызылорды нужно учитывать и code, и number
-      // Для Кызылорды также учитываем ИНН клиента
-      cityFridges.forEach((f) => {
-        fridgeCodes.push(f.code);
-        if (f.number) {
-          fridgeCodes.push(f.number);
-        }
-        if (f.clientInfo?.inn) {
-          fridgeCodes.push(f.clientInfo.inn);
-        }
-      });
-      
-      if (fridgeCodes.length === 0) {
-        // Если в городе нет холодильников, возвращаем пустые данные
+      fridgeQuery.cityId = cityId;
+    }
+
+    const allFridges = await Fridge.find(fridgeQuery)
+      .select('code number name address cityId clientInfo')
+      .populate('cityId', 'name')
+      .lean();
+
+    let fridgeFilter = {};
+    if (cityId && cityId !== 'all') {
+      if (allFridges.length === 0) {
         return res.json({
           dailyCheckins: [],
           managerStats: [],
@@ -1203,48 +1283,84 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
           },
         });
       }
-      
+
+      const fridgeCodes = [];
+      allFridges.forEach((f) => {
+        fridgeCodes.push(f.code);
+        if (f.number) fridgeCodes.push(f.number);
+        if (f.clientInfo?.inn) fridgeCodes.push(f.clientInfo.inn);
+      });
       fridgeFilter = { fridgeId: { $in: fridgeCodes } };
     }
 
-    // 1. Посещения по дням
-    const checkinsByDay = await Checkin.aggregate([
-      { $match: { visitedAt: { $gte: startDate }, ...fridgeFilter } },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$visitedAt' },
-            month: { $month: '$visitedAt' },
-            day: { $dayOfMonth: '$visitedAt' },
+    const periodMatch = { visitedAt: { $gte: startDate }, ...fridgeFilter };
+
+    const [
+      checkinsByDay,
+      managerStats,
+      lastCheckins,
+      totalFridges,
+      uniqueFridgeIds,
+      uniqueManagers,
+      fridgesByStatus,
+    ] = await Promise.all([
+      Checkin.aggregate([
+        { $match: periodMatch },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$visitedAt' },
+              month: { $month: '$visitedAt' },
+              day: { $dayOfMonth: '$visitedAt' },
+            },
+            count: { $sum: 1 },
           },
-          count: { $sum: 1 },
         },
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+        { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+      ]),
+      Checkin.aggregate([
+        { $match: periodMatch },
+        {
+          $group: {
+            _id: '$managerId',
+            count: { $sum: 1 },
+            lastVisit: { $max: '$visitedAt' },
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: 20 },
+      ]),
+      Checkin.aggregate([
+        { $match: fridgeFilter },
+        { $sort: { visitedAt: -1 } },
+        {
+          $group: {
+            _id: '$fridgeId',
+            lastVisit: { $first: '$visitedAt' },
+          },
+        },
+      ]),
+      Fridge.countDocuments(fridgeQuery),
+      Checkin.distinct('fridgeId', periodMatch),
+      Checkin.distinct('managerId', periodMatch),
+      Fridge.aggregate([
+        { $match: fridgeQuery },
+        {
+          $group: {
+            _id: '$warehouseStatus',
+            count: { $sum: 1 },
+          },
+        },
+      ]),
     ]);
 
-    // Преобразуем в удобный формат
     const dailyCheckins = checkinsByDay.map((item) => ({
       date: `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${String(item._id.day).padStart(2, '0')}`,
       count: item.count,
     }));
 
-    // 2. Статистика по менеджерам
-    let managerStats = await Checkin.aggregate([
-      { $match: { visitedAt: { $gte: startDate }, ...fridgeFilter } },
-      {
-        $group: {
-          _id: '$managerId',
-          count: { $sum: 1 },
-          lastVisit: { $max: '$visitedAt' },
-        },
-      },
-      { $sort: { count: -1 } },
-      { $limit: 20 },
-    ]);
-
-    // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые идентификаторы
-    // и объединяем случаи, когда у одного менеджера есть чек-ины как по ObjectId, так и по username
+    // Обогащаем статистику данными о менеджерах
+    let enrichedManagerStats = managerStats;
     if (managerStats.length > 0) {
       const managerIds = managerStats.map((m) => m._id);
       const objectIdStrings = managerIds.filter((id) => mongoose.isValidObjectId(id));
@@ -1274,7 +1390,6 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         };
       });
 
-      // Объединяем по username: если у одного менеджера были разные managerId, складываем count
       const mergedMap = new Map();
       detailed.forEach((m) => {
         const key = m.username || String(m._id);
@@ -1289,25 +1404,8 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         }
       });
 
-      managerStats = Array.from(mergedMap.values());
+      enrichedManagerStats = Array.from(mergedMap.values());
     }
-
-    // 3. Топ непосещаемых холодильников
-    const fridgeQuery = { active: true };
-    if (cityId && cityId !== 'all') {
-      fridgeQuery.cityId = cityId;
-    }
-    const allFridges = await Fridge.find(fridgeQuery).select('code number name address cityId clientInfo').populate('cityId', 'name');
-    const lastCheckins = await Checkin.aggregate([
-      { $match: fridgeFilter },
-      { $sort: { visitedAt: -1 } },
-      {
-        $group: {
-          _id: '$fridgeId',
-          lastVisit: { $first: '$visitedAt' },
-        },
-      },
-    ]);
 
     const lastVisitMap = new Map();
     lastCheckins.forEach((c) => lastVisitMap.set(c._id, c.lastVisit));
@@ -1344,23 +1442,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       })
       .slice(0, 20);
 
-    // 4. Общая статистика
-    const totalFridges = await Fridge.countDocuments(fridgeQuery);
-    // Считаем количество холодильников, по которым были отметки за период (каждый холодильник только один раз)
-    const uniqueFridgeIds = await Checkin.distinct('fridgeId', { visitedAt: { $gte: startDate }, ...fridgeFilter });
     const totalCheckins = uniqueFridgeIds.length;
-    const uniqueManagers = await Checkin.distinct('managerId', { visitedAt: { $gte: startDate }, ...fridgeFilter });
-    
-    // Холодильники по статусам
-    const fridgesByStatus = await Fridge.aggregate([
-      { $match: fridgeQuery },
-      {
-        $group: {
-          _id: '$warehouseStatus',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
 
     const statusCounts = {
       warehouse: 0,
@@ -1376,7 +1458,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
 
     return res.json({
       dailyCheckins,
-      managerStats,
+      managerStats: enrichedManagerStats,
       topUnvisited,
       summary: {
         totalFridges,
@@ -1440,25 +1522,56 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
       });
     }
 
-    // 1. Посещения по дням (только для холодильников из города)
-    const checkinsByDay = await Checkin.aggregate([
-      {
-        $match: {
-          fridgeId: { $in: fridgeCodes },
-          visitedAt: { $gte: startDate },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$visitedAt' },
-            month: { $month: '$visitedAt' },
-            day: { $dayOfMonth: '$visitedAt' },
+    const periodMatch = {
+      fridgeId: { $in: fridgeCodes },
+      visitedAt: { $gte: startDate },
+    };
+
+    const [
+      checkinsByDay,
+      managerStats,
+      lastCheckins,
+      uniqueFridgeIds,
+      uniqueManagers,
+    ] = await Promise.all([
+      Checkin.aggregate([
+        { $match: periodMatch },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$visitedAt' },
+              month: { $month: '$visitedAt' },
+              day: { $dayOfMonth: '$visitedAt' },
+            },
+            count: { $sum: 1 },
           },
-          count: { $sum: 1 },
         },
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+        { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+      ]),
+      Checkin.aggregate([
+        { $match: periodMatch },
+        {
+          $group: {
+            _id: '$managerId',
+            count: { $sum: 1 },
+            lastVisit: { $max: '$visitedAt' },
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: 20 },
+      ]),
+      Checkin.aggregate([
+        { $match: { fridgeId: { $in: fridgeCodes } } },
+        { $sort: { visitedAt: -1 } },
+        {
+          $group: {
+            _id: '$fridgeId',
+            lastVisit: { $first: '$visitedAt' },
+          },
+        },
+      ]),
+      Checkin.distinct('fridgeId', periodMatch),
+      Checkin.distinct('managerId', periodMatch),
     ]);
 
     const dailyCheckins = checkinsByDay.map((item) => ({
@@ -1466,27 +1579,8 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
       count: item.count,
     }));
 
-    // 2. Статистика по менеджерам (только для холодильников из города)
-    let managerStats = await Checkin.aggregate([
-      {
-        $match: {
-          fridgeId: { $in: fridgeCodes },
-          visitedAt: { $gte: startDate },
-        },
-      },
-      {
-        $group: {
-          _id: '$managerId',
-          count: { $sum: 1 },
-          lastVisit: { $max: '$visitedAt' },
-        },
-      },
-      { $sort: { count: -1 } },
-      { $limit: 20 },
-    ]);
-
-    // Обогащаем статистику данными о менеджерах (логин/ФИО), чтобы не показывать сырые идентификаторы
-    // и объединяем случаи, когда у одного менеджера есть чек-ины как по ObjectId, так и по username
+    // Обогащаем статистику данными о менеджерах
+    let enrichedManagerStats = managerStats;
     if (managerStats.length > 0) {
       const managerIds = managerStats.map((m) => m._id);
       const objectIdStrings = managerIds.filter((id) => mongoose.isValidObjectId(id));
@@ -1531,35 +1625,8 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
         }
       });
 
-      managerStats = Array.from(mergedMap.values());
+      enrichedManagerStats = Array.from(mergedMap.values());
     }
-
-    // 3. Топ непосещаемых холодильников (только из города)
-    // Для Шымкента нужно учитывать и code, и number
-    // Для Кызылорды также учитываем ИНН клиента
-    const fridgeIds = [];
-    cityFridges.forEach((f) => {
-      fridgeIds.push(f.code);
-      if (f.number) {
-        fridgeIds.push(f.number);
-      }
-      if (f.clientInfo?.inn) {
-        fridgeIds.push(f.clientInfo.inn);
-      }
-    });
-    
-    const lastCheckins = await Checkin.aggregate([
-      {
-        $match: { fridgeId: { $in: fridgeIds } },
-      },
-      { $sort: { visitedAt: -1 } },
-      {
-        $group: {
-          _id: '$fridgeId',
-          lastVisit: { $first: '$visitedAt' },
-        },
-      },
-    ]);
 
     const lastVisitMap = new Map();
     lastCheckins.forEach((c) => lastVisitMap.set(c._id, c.lastVisit));
@@ -1591,18 +1658,8 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
       })
       .slice(0, 20);
 
-    // 4. Общая статистика (только для города)
     const totalFridges = cityFridges.length;
-    // Считаем количество холодильников, по которым были отметки за период (каждый холодильник только один раз)
-    const uniqueFridgeIds = await Checkin.distinct('fridgeId', {
-      fridgeId: { $in: fridgeCodes },
-      visitedAt: { $gte: startDate },
-    });
     const totalCheckins = uniqueFridgeIds.length;
-    const uniqueManagers = await Checkin.distinct('managerId', {
-      fridgeId: { $in: fridgeCodes },
-      visitedAt: { $gte: startDate },
-    });
 
     // Холодильники по статусам
     const statusCounts = {
@@ -1619,7 +1676,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
 
     return res.json({
       dailyCheckins,
-      managerStats,
+      managerStats: enrichedManagerStats,
       topUnvisited,
       summary: {
         totalFridges,
@@ -2236,20 +2293,9 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
       fridgeQuery.cityId = req.user.cityId;
     }
 
-    // Получаем все холодильники
+    const cacheScopeKey = JSON.stringify(fridgeQuery);
     const fridges = await Fridge.find(fridgeQuery).populate('cityId', 'name code').lean();
-
-    const checkinStats = await Checkin.aggregate([
-      {
-        $group: {
-          _id: '$fridgeId',
-          lastVisit: { $max: '$visitedAt' },
-          totalCheckins: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const statsByFridgeId = mergeCheckinStatsAggregationIntoMap(checkinStats);
+    const statsByFridgeId = await getCheckinStatsForFridges(fridges, cacheScopeKey);
 
     const now = Date.now();
 
@@ -2340,16 +2386,14 @@ router.get('/backup', authenticateToken, requireAdmin, async (req, res) => {
     console.log('[Admin] Starting backup creation...');
     console.log('[Admin] User:', req.user?.username, req.user?.role);
 
-    // Получаем все холодильники с полной информацией
-    const fridges = await Fridge.find({}).populate('cityId', 'name code').lean();
+    // Получаем все холодильники с полной информацией параллельно
+    const [fridges, checkins, cities] = await Promise.all([
+      Fridge.find({}).populate('cityId', 'name code').lean(),
+      Checkin.find({}).lean(),
+      City.find({}).lean(),
+    ]);
     console.log(`[Admin] Found ${fridges.length} fridges`);
-
-    // Получаем все отметки
-    const checkins = await Checkin.find({}).lean();
     console.log(`[Admin] Found ${checkins.length} checkins`);
-
-    // Получаем все города для полноты данных
-    const cities = await City.find({}).lean();
     console.log(`[Admin] Found ${cities.length} cities`);
 
     // Формируем объект резервной копии

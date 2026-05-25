@@ -109,7 +109,18 @@ export default function AdminDashboard() {
   const [loadingCityStats, setLoadingCityStats] = useState(false);
   const [importCityId, setImportCityId] = useState<string>(''); // Выбранный город для импорта
   const [showImportModal, setShowImportModal] = useState(false); // Модальное окно выбора города
-  const [importResult, setImportResult] = useState<{ imported: number; duplicates: number; errors: number; total: number } | null>(null);
+  const [importResult, setImportResult] = useState<{
+    imported: number;
+    duplicates: number;
+    errors: number;
+    total: number;
+    geocodeOnImport?: boolean;
+    importGeocodeOk?: number;
+    importGeocodeFail?: number;
+    importGeocodeSkipped?: number;
+  } | null>(null);
+  const [importGeocodeAddresses, setImportGeocodeAddresses] = useState(true);
+  const [geocodingMap, setGeocodingMap] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingProgress, setProcessingProgress] = useState<string>(''); // Прогресс обработки на сервере
   const [showAddFridgeModal, setShowAddFridgeModal] = useState(false);
@@ -423,6 +434,7 @@ export default function AdminDashboard() {
       const formData = new FormData();
       formData.append('file', importFile);
       formData.append('cityId', importCityId); // Добавляем выбранный город
+      formData.append('geocodeAddresses', importGeocodeAddresses ? '1' : '0');
 
       // Явно создаем конфигурацию для axios, чтобы убедиться, что FormData обрабатывается правильно
       // Важно: не устанавливаем Content-Type - axios должен автоматически установить multipart/form-data
@@ -430,7 +442,7 @@ export default function AdminDashboard() {
         headers: {
           // НЕ устанавливаем Content-Type - axios сделает это автоматически для FormData
         },
-        timeout: 600000, // 10 минут (увеличено для больших файлов)
+        timeout: importGeocodeAddresses ? 7200000 : 600000, // при геокодинге ~1 с/строка с адресом
         // Явно указываем, что это FormData, чтобы axios не пытался сериализовать как JSON
         transformRequest: [(data: any) => data],
         onUploadProgress: (progressEvent: any) => {
@@ -463,7 +475,11 @@ export default function AdminDashboard() {
         loadFridges(0, true);
       }
 
-      alert(`Импорт завершен!\nИмпортировано: ${response.data.imported}\nДубликаты: ${response.data.duplicates}\nОшибки: ${response.data.errors}`);
+      let msg = `Импорт завершен!\nИмпортировано: ${response.data.imported}\nДубликаты: ${response.data.duplicates}\nОшибки: ${response.data.errors}`;
+      if (response.data.geocodeOnImport) {
+        msg += `\n\nГеокодинг адресов:\nуспешно: ${response.data.importGeocodeOk ?? 0}\nне найдено: ${response.data.importGeocodeFail ?? 0}\nбез адреса в строке: ${response.data.importGeocodeSkipped ?? 0}`;
+      }
+      alert(msg);
       
       // Очищаем файл и закрываем модальное окно после успешного импорта
       setImportFile(null);
@@ -519,6 +535,32 @@ export default function AdminDashboard() {
           setUploadProgress(0);
         }
       }, 2000);
+    }
+  };
+
+  /** Координаты по полю «адрес» через OpenStreetMap Nominatim (~1 запрос/с). */
+  const runGeocodeForCity = async (mode: 'zero_only' | 'all_with_address') => {
+    if (selectedCityIdForMap === 'all') return;
+    const label =
+      mode === 'zero_only'
+        ? 'Проставить координаты по адресу только для холодильников с точкой (0, 0)?'
+        : 'Перезаписать координаты по адресу для ВСЕХ холодильников выбранного города с заполненным адресом? Текущие координаты с отметок будут заменены.';
+    if (!window.confirm(label)) return;
+    try {
+      setGeocodingMap(true);
+      const res = await api.post(
+        '/api/admin/fridges/geocode-locations',
+        { cityId: selectedCityIdForMap, mode },
+        { timeout: 7200000 },
+      );
+      alert(
+        `Город: ${res.data.cityName}\nОбновлено: ${res.data.updated}\nНе найдено по адресу: ${res.data.failed}\nПропущено: ${res.data.skipped}`,
+      );
+      window.location.reload();
+    } catch (e: any) {
+      alert('Ошибка: ' + (e?.response?.data?.error || e?.message));
+    } finally {
+      setGeocodingMap(false);
     }
   };
 
@@ -1236,7 +1278,7 @@ export default function AdminDashboard() {
               </span>
             )}
           </h2>
-          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Фильтр по городу:</label>
               <select
@@ -1252,6 +1294,28 @@ export default function AdminDashboard() {
                 ))}
               </select>
             </div>
+            {selectedCityIdForMap !== 'all' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={geocodingMap}
+                  onClick={() => runGeocodeForCity('zero_only')}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                  title="Только точки с координатами 0,0"
+                >
+                  {geocodingMap ? '…' : 'Координаты по адресу (только 0,0)'}
+                </button>
+                <button
+                  type="button"
+                  disabled={geocodingMap}
+                  onClick={() => runGeocodeForCity('all_with_address')}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-500 bg-amber-100 text-amber-950 hover:bg-amber-200 disabled:opacity-50"
+                  title="Перезаписать координаты по адресу для всех с заполненным адресом"
+                >
+                  {geocodingMap ? '…' : 'Перезаписать все по адресу'}
+                </button>
+              </div>
+            )}
             {(checkinsTotal ?? checkins.length) > 0 && (
               <button
                 onClick={() => setShowDeleteAllCheckins(true)}
@@ -1649,6 +1713,19 @@ export default function AdminDashboard() {
                 )}
               </div>
 
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 rounded border-slate-300"
+                  checked={importGeocodeAddresses}
+                  onChange={(e) => setImportGeocodeAddresses(e.target.checked)}
+                  disabled={importing}
+                />
+                <span className="text-sm text-slate-700">
+                  Поставить координаты по адресу (OpenStreetMap). Медленно: ~1 с на строку с адресом; для больших файлов можно снять галочку.
+                </span>
+              </label>
+
               {/* Прогресс загрузки */}
               {importing && uploadProgress > 0 && (
                 <div>
@@ -1688,6 +1765,13 @@ export default function AdminDashboard() {
                     <p>Дубликаты: <strong>{importResult.duplicates}</strong></p>
                     {importResult.errors > 0 && (
                       <p className="text-red-600">Ошибки: <strong>{importResult.errors}</strong></p>
+                    )}
+                    {importResult.geocodeOnImport && (
+                      <p className="text-slate-700 text-xs pt-1 border-t border-green-200 mt-2">
+                        Геокодинг: найдено координат <strong>{importResult.importGeocodeOk ?? 0}</strong>, не найдено{' '}
+                        <strong>{importResult.importGeocodeFail ?? 0}</strong>, без адреса в строке{' '}
+                        <strong>{importResult.importGeocodeSkipped ?? 0}</strong>
+                      </p>
                     )}
                   </div>
                 </div>

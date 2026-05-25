@@ -6,6 +6,7 @@ const User = require('../models/User');
 const { getNextSequence } = require('../models/Counter');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { findRecentDuplicateCheckin } = require('../utils/checkinGeodesic');
+const { invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
 
 const router = express.Router();
 
@@ -110,10 +111,10 @@ router.post('/', async (req, res) => {
         if (fridge.clientInfo?.inn) {
           fridgeIdentifiers.push(fridge.clientInfo.inn);
         }
-        const allCheckins = await Checkin.find({
+        const recentCheckins = await Checkin.find({
           fridgeId: { $in: fridgeIdentifiers }
-        }).sort({ visitedAt: 1 });
-        const totalCheckins = allCheckins.length;
+        }).sort({ visitedAt: -1 }).limit(2).lean();
+        const totalCheckins = recentCheckins.length;
         
         let newWarehouseStatus = fridge.warehouseStatus;
         
@@ -145,8 +146,8 @@ router.post('/', async (req, res) => {
           // Вторая и последующие отметки - проверяем, изменилось ли местоположение
           // НОВАЯ ЛОГИКА: сравниваем ПОСЛЕДНИЕ ДВЕ координаты, а не первую и последнюю
           // Это позволяет показать зеленый, если после перемещения холодильник снова отмечен в стабильном месте
-          const secondLastLocation = allCheckins[allCheckins.length - 2].location;
-          const lastLocation = allCheckins[allCheckins.length - 1].location;
+          const secondLastLocation = recentCheckins[1].location;
+          const lastLocation = recentCheckins[0].location;
           
           if (secondLastLocation && lastLocation) {
             const distance = calculateDistance(secondLastLocation, lastLocation);
@@ -193,6 +194,7 @@ router.post('/', async (req, res) => {
       console.error('Failed to update fridge location from checkin:', updateErr);
     }
 
+    invalidateCheckinStatsCache();
     return res.status(201).json(checkin);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to create checkin', details: err.message });
@@ -405,6 +407,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     await Checkin.deleteOne({ id });
+    invalidateCheckinStatsCache();
 
     return res.json({ message: 'Отметка удалена', id });
   } catch (err) {
@@ -417,7 +420,8 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
 router.delete('/', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const result = await Checkin.deleteMany({});
-    return res.json({ 
+    invalidateCheckinStatsCache();
+    return res.json({
       message: 'Все отметки удалены', 
       deletedCount: result.deletedCount 
     });
