@@ -6,7 +6,13 @@ const Repair = require('../models/Repair');
 const City = require('../models/City');
 const User = require('../models/User');
 const { authenticateToken, requireSalesHead } = require('../middleware/auth');
-const { buildCheckinFridgeIdCandidates } = require('../lib/fridgeVisitHelpers');
+const {
+  buildCheckinFridgeIdCandidates,
+  visitStatusFromLastVisit,
+  getLastVisitFromStatsMap,
+  resolveEquipmentStatus,
+} = require('../lib/fridgeVisitHelpers');
+const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
 const {
   estimateRepairCostRecord,
   isComplexRepairRecord,
@@ -15,8 +21,10 @@ const {
 const {
   resolveCityFilter,
   getCheckinFridgeIdsForCity,
+  getFridgeObjectIdsForCity,
   getAssignedCityId,
 } = require('../lib/cityScope');
+const { labelsFromCompletedWorks } = require('../lib/mxoRepairWorks');
 
 const router = express.Router();
 
@@ -98,6 +106,70 @@ router.get('/fridges', authenticateToken, requireSalesHead, async (req, res) => 
   }
 });
 
+// GET /api/sales/map — холодильники для карты (только город НОП / выбранный город у админа)
+router.get('/map', authenticateToken, requireSalesHead, async (req, res) => {
+  try {
+    if (!ensureSalesCityScope(req, res)) return;
+    const scopedCityId = resolveCityFilter(req.user, req.query.cityId);
+    const fridgeQuery = { active: true };
+    if (scopedCityId) {
+      fridgeQuery.cityId = scopedCityId;
+    }
+
+    const fridges = await Fridge.find(fridgeQuery)
+      .populate('cityId', 'name code')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const cacheScopeKey = JSON.stringify({ ...fridgeQuery, route: 'sales-map' });
+    const statsByFridgeId = await getCheckinStatsForFridges(fridges, cacheScopeKey, { useCache: true });
+    const now = Date.now();
+
+    const result = fridges.map((f) => {
+      const { lastVisit, lastVisitTime, lastFridgeCondition } = getLastVisitFromStatsMap(statsByFridgeId, f);
+      const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: now });
+
+      if (lastVisitTime != null && lastVisitTime > now) {
+        console.warn(
+          `[Sales] lastVisit in future for fridge ${f.code}: now=${new Date(now).toISOString()} last=${new Date(lastVisitTime).toISOString()}`,
+        );
+      }
+
+      let status;
+      const warehouseStatus = f.warehouseStatus || 'warehouse';
+
+      if (!lastVisit) {
+        status = 'never';
+      } else if (warehouseStatus === 'returned') {
+        status = 'never';
+      } else {
+        status = visitStatus;
+      }
+
+      const finalStatus = status === 'location_changed' ? (visitStatus || 'never') : status;
+
+      return {
+        id: f._id,
+        code: f.code,
+        name: f.name,
+        address: f.address,
+        city: f.cityId || null,
+        location: f.location,
+        lastVisit,
+        status: finalStatus,
+        warehouseStatus,
+        visitStatus,
+        equipmentStatus: resolveEquipmentStatus(f.status, lastFridgeCondition),
+        clientInfo: f.clientInfo || null,
+      };
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch map data for sales', details: err.message });
+  }
+});
+
 // GET /api/sales/checkins — история отметок для НОП
 router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) => {
   try {
@@ -157,6 +229,110 @@ router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) =>
     return res.json({ data, total, limit: limitNum, skip: skipNum });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch checkins for sales', details: err.message });
+  }
+});
+
+// GET /api/sales/activity — объединённая лента отметок ТП и ремонтов МХО
+router.get('/activity', authenticateToken, requireSalesHead, async (req, res) => {
+  try {
+    if (!ensureSalesCityScope(req, res)) return;
+    const { cityId, limit } = req.query;
+    const limitNum = limit ? Math.max(1, Math.min(100, Number(limit))) : 50;
+    const scopedCityId = resolveCityFilter(req.user, cityId);
+
+    const fridgeFilter = { active: true };
+    if (scopedCityId) {
+      fridgeFilter.cityId = scopedCityId;
+    }
+
+    const fridges = await Fridge.find(fridgeFilter)
+      .select('_id code number name')
+      .lean();
+    const fridgeIds = fridges.map((f) => f._id);
+    const fridgeById = new Map(fridges.map((f) => [String(f._id), f]));
+
+    const checkinFilter = {};
+    if (scopedCityId) {
+      const ids = await getCheckinFridgeIdsForCity(scopedCityId);
+      checkinFilter.fridgeId = { $in: ids.length ? ids : ['__none__'] };
+    }
+
+    const fetchLimit = Math.min(limitNum * 3, 150);
+    const [checkinItems, repairItems] = await Promise.all([
+      Checkin.find(checkinFilter).sort({ visitedAt: -1 }).limit(fetchLimit).lean(),
+      Repair.find({ fridgeId: { $in: fridgeIds.length ? fridgeIds : [null] } })
+        .sort({ repairDate: -1 })
+        .limit(fetchLimit)
+        .lean(),
+    ]);
+
+    const managerIds = [...new Set(checkinItems.map((i) => i.managerId).filter(Boolean))];
+    const technicianIds = [...new Set(repairItems.map((r) => String(r.technicianId)).filter(Boolean))];
+    const objectIds = [...new Set([...managerIds, ...technicianIds])]
+      .filter((id) => mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    const users = await User.find({
+      $or: [
+        { username: { $in: [...managerIds, ...technicianIds] } },
+        { _id: { $in: objectIds } },
+      ],
+    }).select('username fullName role').lean();
+
+    const userMap = new Map();
+    users.forEach((u) => {
+      if (u.username) userMap.set(u.username, u);
+      userMap.set(String(u._id), u);
+    });
+
+    const checkinRows = checkinItems.map((item) => {
+      const user = userMap.get(item.managerId) || userMap.get(String(item.managerId));
+      return {
+        type: 'checkin',
+        id: item.id,
+        at: item.visitedAt,
+        actorFullName: user?.fullName || '',
+        actorUsername: user?.username || item.managerId,
+        actorRole: user?.role || 'manager',
+        fridgeId: item.fridgeId,
+        fridgeCondition: item.fridgeCondition,
+        isSeasonalClosure: item.isSeasonalClosure,
+        notes: item.notes,
+      };
+    });
+
+    const repairRows = repairItems.map((r) => {
+      const tech = userMap.get(String(r.technicianId));
+      const fridge = fridgeById.get(String(r.fridgeId));
+      const workLabels = labelsFromCompletedWorks(r.completedWorks);
+      return {
+        type: 'repair',
+        id: String(r._id),
+        at: r.repairDate,
+        actorFullName: tech?.fullName || '',
+        actorUsername: tech?.username || '',
+        actorRole: tech?.role || 'service_manager',
+        fridgeId: fridge?.number || fridge?.code || String(r.fridgeId),
+        fridgeCode: fridge?.code,
+        fridgeName: fridge?.name,
+        completedWorks: r.completedWorks || [],
+        workLabels,
+        workType: r.workType,
+        comment: r.comment,
+        status: r.status,
+        completedAt: r.completedAt,
+        isComplexRepair: isComplexRepairRecord(r),
+        estimatedCostKzt: estimateRepairCostRecord(r),
+      };
+    });
+
+    const merged = [...checkinRows, ...repairRows]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, limitNum);
+
+    return res.json({ data: merged, total: merged.length, limit: limitNum });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch activity for sales', details: err.message });
   }
 });
 

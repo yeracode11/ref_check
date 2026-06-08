@@ -239,7 +239,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const isAccountant = user?.role === 'accountant';
   const isServiceManager = user?.role === 'service_manager';
   const isPrivileged = isAdmin || isAccountant;
-  const canManageRepairs = isAdmin || isServiceManager;
+  const canManageRepairs = isServiceManager;
   const useAdminApi = isAdmin || isAccountant;
   
   const [fridge, setFridge] = useState<FridgeDetail | null>(null);

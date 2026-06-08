@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell, Legend,
@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingSpinner } from '../components/ui/Loading';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
+import { RepairWorksList } from '../components/RepairWorksList';
+import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
 import {
   getEquipmentIndicator,
   getEquipmentStatusLabel,
@@ -29,16 +31,49 @@ type SalesFridge = {
   isComplexRepair?: boolean;
 };
 
-type CheckinRow = {
+type ActivityCheckin = {
+  type: 'checkin';
   id: number;
-  managerUsername?: string;
-  managerFullName?: string;
-  managerRole?: string;
+  at: string;
+  actorUsername?: string;
+  actorFullName?: string;
+  actorRole?: string;
   fridgeId: string;
-  visitedAt: string;
   fridgeCondition?: string;
   isSeasonalClosure?: boolean;
   notes?: string;
+};
+
+type ActivityRepair = {
+  type: 'repair';
+  id: string;
+  at: string;
+  actorUsername?: string;
+  actorFullName?: string;
+  actorRole?: string;
+  fridgeId: string;
+  fridgeCode?: string;
+  fridgeName?: string;
+  completedWorks?: string[];
+  workLabels?: string[];
+  workType?: string;
+  comment?: string;
+  status: 'in_progress' | 'completed';
+  isComplexRepair?: boolean;
+};
+
+type ActivityRow = ActivityCheckin | ActivityRepair;
+
+type MapFridge = {
+  id: string;
+  code: string;
+  name: string;
+  address?: string;
+  status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed';
+  warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
+  visitStatus?: 'today' | 'week' | 'old' | 'never';
+  equipmentStatus?: EquipmentStatus;
+  location?: { type: 'Point'; coordinates: [number, number] };
 };
 
 type AnalyticsData = {
@@ -82,11 +117,13 @@ export default function SalesHeadDashboard() {
   const [equipmentFilter, setEquipmentFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [fridges, setFridges] = useState<SalesFridge[]>([]);
-  const [checkins, setCheckins] = useState<CheckinRow[]>([]);
+  const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loadingFridges, setLoadingFridges] = useState(true);
-  const [loadingCheckins, setLoadingCheckins] = useState(true);
+  const [loadingActivity, setLoadingActivity] = useState(true);
   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
+  const [mapFridges, setMapFridges] = useState<MapFridge[]>([]);
+  const [loadingMap, setLoadingMap] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFridgeId, setSelectedFridgeId] = useState<string | null>(null);
   const [days, setDays] = useState(90);
@@ -132,16 +169,16 @@ export default function SalesHeadDashboard() {
     let alive = true;
     (async () => {
       try {
-        setLoadingCheckins(true);
+        setLoadingActivity(true);
         const params = new URLSearchParams({ limit: '50' });
         if (selectedCityId !== 'all') params.append('cityId', selectedCityId);
-        const res = await api.get(`/api/sales/checkins?${params.toString()}`);
+        const res = await api.get(`/api/sales/activity?${params.toString()}`);
         if (!alive) return;
-        setCheckins(res.data?.data || []);
+        setActivity(res.data?.data || []);
       } catch (e: any) {
         if (alive) setError(e?.response?.data?.error || e.message);
       } finally {
-        if (alive) setLoadingCheckins(false);
+        if (alive) setLoadingActivity(false);
       }
     })();
     return () => { alive = false; };
@@ -165,6 +202,31 @@ export default function SalesHeadDashboard() {
     })();
     return () => { alive = false; };
   }, [selectedCityId, days]);
+
+  const loadMapData = useCallback(async () => {
+    try {
+      setLoadingMap(true);
+      const params = new URLSearchParams();
+      if (selectedCityId !== 'all') params.append('cityId', selectedCityId);
+      const res = await api.get(`/api/sales/map?${params.toString()}`);
+      const raw = Array.isArray(res.data) ? res.data : [];
+      const withLocation = raw.filter((f: MapFridge) => {
+        if (!f.location?.coordinates || f.location.coordinates.length !== 2) return false;
+        const [lng, lat] = f.location.coordinates;
+        return lng !== 0 || lat !== 0;
+      });
+      setMapFridges(withLocation);
+    } catch (e: any) {
+      console.error('Ошибка загрузки карты НОП:', e);
+      setMapFridges([]);
+    } finally {
+      setLoadingMap(false);
+    }
+  }, [selectedCityId]);
+
+  useEffect(() => {
+    loadMapData();
+  }, [loadMapData]);
 
   const statusPie = analytics
     ? [
@@ -375,27 +437,82 @@ export default function SalesHeadDashboard() {
 
       <Card>
         <h2 className="font-semibold text-slate-900 mb-4">Последние отметки ТП и МХО</h2>
-        {loadingCheckins ? (
+        {loadingActivity ? (
           <div className="flex justify-center py-8"><LoadingSpinner /></div>
-        ) : checkins.length === 0 ? (
-          <p className="text-sm text-slate-500">Нет отметок</p>
+        ) : activity.length === 0 ? (
+          <p className="text-sm text-slate-500">Нет отметок и ремонтов</p>
         ) : (
-          <div className="space-y-2 max-h-[400px] overflow-y-auto">
-            {checkins.map((c) => (
-              <div key={c.id} className="flex flex-wrap gap-2 justify-between text-sm border-b border-slate-100 pb-2">
-                <div>
-                  <span className="font-medium">{c.managerFullName || c.managerUsername}</span>
-                  {c.managerRole && <span className="text-slate-400 ml-1">({c.managerRole})</span>}
-                  <span className="text-slate-400 ml-2">{formatDate(c.visitedAt)}</span>
+          <div className="space-y-3 max-h-[500px] overflow-y-auto">
+            {activity.map((row) => (
+              row.type === 'checkin' ? (
+                <div key={`checkin-${row.id}`} className="text-sm border-b border-slate-100 pb-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="bg-blue-100 text-blue-800">ТП</Badge>
+                    <span className="font-medium">{row.actorFullName || row.actorUsername}</span>
+                    <span className="text-slate-400">{formatDate(row.at)}</span>
+                  </div>
+                  <div className="mt-1 text-slate-600">
+                    Холодильник: {row.fridgeId}
+                    {row.fridgeCondition === 'broken' && (
+                      <Badge className="ml-2 bg-purple-100 text-purple-700">Сломан</Badge>
+                    )}
+                    {row.isSeasonalClosure && (
+                      <Badge className="ml-2 bg-amber-100 text-amber-800">Закрыт</Badge>
+                    )}
+                  </div>
+                  {row.notes && <p className="text-xs text-slate-500 mt-1 italic">{row.notes}</p>}
                 </div>
-                <div className="text-slate-600">
-                  Холодильник: {c.fridgeId}
-                  {c.fridgeCondition === 'broken' && <Badge className="ml-2 bg-purple-100 text-purple-700">Сломан</Badge>}
-                  {c.isSeasonalClosure && <Badge className="ml-2 bg-amber-100 text-amber-800">Закрыт</Badge>}
+              ) : (
+                <div key={`repair-${row.id}`} className="text-sm border-b border-slate-100 pb-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="bg-orange-100 text-orange-800">МХО · Ремонт</Badge>
+                    <span className="font-medium">{row.actorFullName || row.actorUsername}</span>
+                    <span className="text-slate-400">{formatDate(row.at)}</span>
+                    <Badge className={row.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}>
+                      {row.status === 'completed' ? 'Завершён' : 'В работе'}
+                    </Badge>
+                    {row.isComplexRepair && (
+                      <Badge className="bg-orange-200 text-orange-900">Сложный</Badge>
+                    )}
+                  </div>
+                  <div className="mt-1 text-slate-600">
+                    Холодильник: {row.fridgeId}
+                    {row.fridgeName && <span className="text-slate-400 ml-1">· {row.fridgeName}</span>}
+                  </div>
+                  <RepairWorksList
+                    completedWorks={row.completedWorks}
+                    workType={row.workType}
+                    compact
+                  />
+                  {row.comment && (
+                    <p className="text-xs text-slate-500 mt-1 italic">Комментарий: {row.comment}</p>
+                  )}
                 </div>
-              </div>
+              )
             ))}
           </div>
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="font-semibold text-slate-900 mb-4">
+          Карта холодильников
+          {(isSalesHead && cityName) || (isAdmin && selectedCityId !== 'all') ? (
+            <span className="text-blue-600 ml-2 font-normal">
+              ({isSalesHead ? cityName : cities.find((c) => c._id === selectedCityId)?.name})
+            </span>
+          ) : null}
+        </h2>
+        {loadingMap ? (
+          <div className="h-[480px] flex items-center justify-center">
+            <LoadingSpinner />
+          </div>
+        ) : mapFridges.length === 0 ? (
+          <div className="h-[480px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200 text-slate-500 text-sm">
+            Нет холодильников с координатами для отображения на карте
+          </div>
+        ) : (
+          <AdminFridgeMap fridges={mapFridges} />
         )}
       </Card>
 
