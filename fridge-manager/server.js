@@ -1,4 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+
+// Всегда грузим .env из папки fridge-manager (не зависим от cwd PM2)
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -60,14 +64,23 @@ app.use((req, res, next) => {
 
 app.use(morgan('dev'));
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({
+function healthPayload() {
+  return {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    memory: process.memoryUsage()
-  });
+    memory: process.memoryUsage(),
+    mongoReady: mongoose.connection.readyState === 1,
+  };
+}
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json(healthPayload());
+});
+
+app.get('/api/health', (req, res) => {
+  res.json(healthPayload());
 });
 
 // Routes
@@ -144,9 +157,21 @@ async function start() {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[Server] Failed to start server:', err);
+    console.error('[Server] cwd:', process.cwd());
+    console.error('[Server] __dirname:', __dirname);
+    console.error('[Server] MONGODB_URI set:', Boolean(process.env.MONGODB_URI));
     process.exit(1);
   }
 }
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server] Unhandled rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Server] Uncaught exception:', err);
+  process.exit(1);
+});
 
 start();
 
