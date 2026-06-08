@@ -10,6 +10,8 @@ const RepairSchema = new mongoose.Schema(
     },
     repairDate: { type: Date, required: true, default: Date.now },
     workType: { type: String, required: true },
+    /** Ключи отмеченных работ из чеклиста МХО */
+    completedWorks: { type: [String], default: [] },
     replacedParts: { type: [String], default: [] },
     technicianId: {
       type: mongoose.Schema.Types.ObjectId,

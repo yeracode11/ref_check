@@ -50,10 +50,12 @@ async function getCheckinStatsForFridges(fridgeLikeDocs, cacheScopeKey, opts = {
 
   const rows = await Checkin.aggregate([
     { $match: { fridgeId: { $in: ids } } },
+    { $sort: { visitedAt: -1 } },
     {
       $group: {
         _id: '$fridgeId',
-        lastVisit: { $max: '$visitedAt' },
+        lastVisit: { $first: '$visitedAt' },
+        lastFridgeCondition: { $first: '$fridgeCondition' },
         totalCheckins: { $sum: 1 },
       },
     },

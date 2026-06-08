@@ -155,6 +155,17 @@ export default function AdminDashboard() {
     return () => { alive = false; };
   }, [user]);
 
+  const loadAllFridgesForMap = useCallback(async () => {
+    if (!user || user.role !== 'admin') return;
+
+    const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
+    const fridgesData = Array.isArray(fridgeStatusRes.data)
+      ? fridgeStatusRes.data
+      : (fridgeStatusRes.data?.data || []);
+    setAllFridges(fridgesData);
+    setError(null);
+  }, [user]);
+
   // Загрузка всех холодильников для карты и статистики
   // ВАЖНО: грузим это в фоне, не блокируя первый рендер и список
   useEffect(() => {
@@ -165,17 +176,8 @@ export default function AdminDashboard() {
     let alive = true;
     (async () => {
       try {
-        // Сначала грузим холодильники: это критично для карты.
-        const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
+        await loadAllFridgesForMap();
         if (!alive) return;
-
-        // При all=true эндпоинт возвращает массив напрямую
-        const fridgesData = Array.isArray(fridgeStatusRes.data)
-          ? fridgeStatusRes.data
-          : (fridgeStatusRes.data?.data || []);
-        console.log('[AdminDashboard] Loaded fridges:', fridgesData.length);
-        setAllFridges(fridgesData);
-        setError(null);
 
         // Чекины догружаем отдельно: meta=1 даёт точный total в БД, в теле — только последние N.
         api.get(`/api/checkins?meta=1&limit=${ADMIN_CHECKINS_PREVIEW_LIMIT}`)
@@ -193,16 +195,21 @@ export default function AdminDashboard() {
       } catch (e: any) {
         if (!alive) return;
         setError(e?.message || 'Ошибка загрузки данных');
-      } finally {
-        // Ничего не делаем с основным состоянием загрузки,
-        // чтобы не блокировать первый рендер списка
       }
     })();
 
+    const onFocus = () => {
+      loadAllFridgesForMap().catch((e) => {
+        console.error('[AdminDashboard] Map refresh failed:', e);
+      });
+    };
+    window.addEventListener('focus', onFocus);
+
     return () => {
       alive = false;
+      window.removeEventListener('focus', onFocus);
     };
-  }, [user]);
+  }, [user, loadAllFridgesForMap]);
 
   // Загрузка статистики по городам
   useEffect(() => {

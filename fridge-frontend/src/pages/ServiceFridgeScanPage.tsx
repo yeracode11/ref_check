@@ -12,6 +12,9 @@ import {
 } from '../utils/fridgeUtils';
 import { Card, Button, Badge } from '../components/ui/Card';
 import { LoadingSpinner } from '../components/ui/Loading';
+import { RepairWorkChecklist } from '../components/RepairWorkChecklist';
+import { RepairWorksList } from '../components/RepairWorksList';
+import { MxoRepairWorkKey } from '../constants/mxoRepairWorks';
 
 type FridgeBrief = {
   _id: string;
@@ -30,6 +33,7 @@ type RepairRow = {
   _id: string;
   repairDate: string;
   workType: string;
+  completedWorks?: string[];
   replacedParts: string[];
   comment?: string;
   status: 'in_progress' | 'completed';
@@ -73,9 +77,12 @@ export default function ServiceFridgeScanPage({ fridge: initialFridge }: Props) 
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
-  const [repairForm, setRepairForm] = useState({
-    workType: '',
-    replacedParts: '',
+  const [repairForm, setRepairForm] = useState<{
+    completedWorks: MxoRepairWorkKey[];
+    comment: string;
+    completeImmediately: boolean;
+  }>({
+    completedWorks: [],
     comment: '',
     completeImmediately: false,
   });
@@ -106,8 +113,16 @@ export default function ServiceFridgeScanPage({ fridge: initialFridge }: Props) 
   }, [initialFridge._id]);
 
   const activeRepair = summary?.activeRepair || repairs.find((r) => r.status === 'in_progress') || null;
-  const indicator = getEquipmentIndicator(fridge.status, activeRepair?.replacedParts);
-  const indicatorLabel = getEquipmentIndicatorLabel(fridge.status, activeRepair?.replacedParts);
+  const indicator = getEquipmentIndicator(
+    fridge.status,
+    activeRepair?.replacedParts,
+    activeRepair?.completedWorks,
+  );
+  const indicatorLabel = getEquipmentIndicatorLabel(
+    fridge.status,
+    activeRepair?.replacedParts,
+    activeRepair?.completedWorks,
+  );
   const markerColor = getEquipmentMarkerColor(indicator);
 
   const displayId = getDisplayIdentifier(
@@ -116,22 +131,20 @@ export default function ServiceFridgeScanPage({ fridge: initialFridge }: Props) 
   );
 
   const handleSaveRepair = async () => {
-    if (!repairForm.workType.trim()) {
-      alert('Укажите вид выполненных работ');
+    if (repairForm.completedWorks.length === 0) {
+      alert('Отметьте хотя бы одну выполненную работу в чеклисте');
       return;
     }
     try {
       setSaving(true);
-      const parts = repairForm.replacedParts.split(',').map((p) => p.trim()).filter(Boolean);
       await api.post('/api/repairs', {
         fridgeId: fridge._id,
-        workType: repairForm.workType.trim(),
-        replacedParts: parts,
+        completedWorks: repairForm.completedWorks,
         comment: repairForm.comment.trim() || undefined,
         completeImmediately: repairForm.completeImmediately,
       });
       setShowForm(false);
-      setRepairForm({ workType: '', replacedParts: '', comment: '', completeImmediately: false });
+      setRepairForm({ completedWorks: [], comment: '', completeImmediately: false });
       await loadData();
     } catch (e: any) {
       alert(e?.response?.data?.error || e.message);
@@ -255,26 +268,10 @@ export default function ServiceFridgeScanPage({ fridge: initialFridge }: Props) 
 
         {showForm && (
           <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Вид выполненных работ *</label>
-              <input
-                type="text"
-                value={repairForm.workType}
-                onChange={(e) => setRepairForm({ ...repairForm, workType: e.target.value })}
-                placeholder="Замена компрессора, диагностика..."
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Перечень заменённых деталей</label>
-              <input
-                type="text"
-                value={repairForm.replacedParts}
-                onChange={(e) => setRepairForm({ ...repairForm, replacedParts: e.target.value })}
-                placeholder="компрессор, мотор вентилятора, дверь (через запятую)"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </div>
+            <RepairWorkChecklist
+              selected={repairForm.completedWorks}
+              onChange={(completedWorks) => setRepairForm({ ...repairForm, completedWorks })}
+            />
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Комментарии по ремонту</label>
               <textarea
@@ -306,8 +303,7 @@ export default function ServiceFridgeScanPage({ fridge: initialFridge }: Props) 
               <thead>
                 <tr className="text-left text-slate-500 border-b">
                   <th className="py-2 pr-3">Дата</th>
-                  <th className="py-2 pr-3">Вид работ</th>
-                  <th className="py-2 pr-3">Запчасти</th>
+                  <th className="py-2 pr-3">Выполненные работы</th>
                   <th className="py-2 pr-3">Сотрудник</th>
                   <th className="py-2 pr-3">Комментарий</th>
                   <th className="py-2">Затраты</th>
@@ -325,9 +321,13 @@ export default function ServiceFridgeScanPage({ fridge: initialFridge }: Props) 
                         <div className="text-xs text-orange-600 mt-1">Сложный</div>
                       )}
                     </td>
-                    <td className="py-3 pr-3 font-medium">{r.workType}</td>
-                    <td className="py-3 pr-3 text-slate-600">
-                      {r.replacedParts?.length ? r.replacedParts.join(', ') : '—'}
+                    <td className="py-3 pr-3">
+                      <RepairWorksList
+                        completedWorks={r.completedWorks}
+                        replacedParts={r.replacedParts}
+                        workType={r.workType}
+                        compact
+                      />
                     </td>
                     <td className="py-3 pr-3">
                       {r.technicianId?.fullName || r.technicianId?.username || '—'}

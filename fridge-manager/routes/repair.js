@@ -6,7 +6,14 @@ const {
   authenticateToken,
   requireAdminOrServiceManager,
 } = require('../middleware/auth');
-const { isComplexRepair, estimateRepairCostKzt } = require('../lib/repairHelpers');
+const {
+  isComplexRepairRecord,
+  estimateRepairCostRecord,
+} = require('../lib/repairHelpers');
+const {
+  sanitizeCompletedWorks,
+  workTypeFromCompletedWorks,
+} = require('../lib/mxoRepairWorks');
 const { getAssignedCityId, getFridgeObjectIdsForCity, userCanAccessCity } = require('../lib/cityScope');
 
 const router = express.Router();
@@ -23,6 +30,7 @@ router.post('/', authenticateToken, requireAdminOrServiceManager, async (req, re
       fridgeId,
       repairDate,
       workType,
+      completedWorks,
       replacedParts,
       comment,
       completeImmediately,
@@ -32,8 +40,13 @@ router.post('/', authenticateToken, requireAdminOrServiceManager, async (req, re
     if (!fridgeOid) {
       return res.status(400).json({ error: 'Valid fridgeId is required' });
     }
-    if (!workType || !String(workType).trim()) {
-      return res.status(400).json({ error: 'workType is required' });
+
+    const works = sanitizeCompletedWorks(completedWorks);
+    const derivedWorkType = works.length
+      ? workTypeFromCompletedWorks(works)
+      : (workType ? String(workType).trim() : '');
+    if (!derivedWorkType) {
+      return res.status(400).json({ error: 'Отметьте хотя бы одну выполненную работу в чеклисте' });
     }
 
     const fridge = await Fridge.findById(fridgeOid);
@@ -58,7 +71,8 @@ router.post('/', authenticateToken, requireAdminOrServiceManager, async (req, re
     const repair = await Repair.create({
       fridgeId: fridgeOid,
       repairDate: parsedDate,
-      workType: String(workType).trim(),
+      workType: derivedWorkType,
+      completedWorks: works,
       replacedParts: parts,
       technicianId: req.user.id,
       comment: comment ? String(comment).trim() : undefined,
@@ -82,10 +96,11 @@ router.post('/', authenticateToken, requireAdminOrServiceManager, async (req, re
       .populate('technicianId', 'username fullName')
       .populate('fridgeId', 'code name number status');
 
+    const repairObj = populated.toObject();
     return res.status(201).json({
-      ...populated.toObject(),
-      isComplexRepair: isComplexRepair(parts),
-      estimatedCostKzt: estimateRepairCostKzt(parts),
+      ...repairObj,
+      isComplexRepair: isComplexRepairRecord(repairObj),
+      estimatedCostKzt: estimateRepairCostRecord(repairObj),
     });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to create repair', details: err.message });
@@ -174,8 +189,8 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const data = items.map((r) => ({
       ...r,
-      isComplexRepair: isComplexRepair(r.replacedParts),
-      estimatedCostKzt: estimateRepairCostKzt(r.replacedParts),
+      isComplexRepair: isComplexRepairRecord(r),
+      estimatedCostKzt: estimateRepairCostRecord(r),
     }));
 
     return res.json({ data, total, limit: limitNum, skip: skipNum });

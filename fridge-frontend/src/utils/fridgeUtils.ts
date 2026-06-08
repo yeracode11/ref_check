@@ -86,17 +86,28 @@ function isComplexRepairParts(parts?: string[] | null): boolean {
   });
 }
 
-export function isComplexRepair(replacedParts?: string[] | null): boolean {
+const COMPLEX_MXO_WORK_KEYS = new Set([
+  'compressor_replace',
+  'fan_motor_replace',
+  'door_replace',
+]);
+
+export function isComplexRepair(
+  replacedParts?: string[] | null,
+  completedWorks?: string[] | null,
+): boolean {
+  if (completedWorks?.some((k) => COMPLEX_MXO_WORK_KEYS.has(k))) return true;
   return isComplexRepairParts(replacedParts);
 }
 
 export function getEquipmentIndicator(
   status?: EquipmentStatus | null,
   replacedParts?: string[] | null,
+  completedWorks?: string[] | null,
 ): EquipmentIndicator {
   if (status === 'broken') return 'purple';
   if (status === 'under_repair') {
-    return isComplexRepairParts(replacedParts) ? 'orange' : 'blue';
+    return isComplexRepair(replacedParts, completedWorks) ? 'orange' : 'blue';
   }
   return 'blue';
 }
@@ -104,10 +115,11 @@ export function getEquipmentIndicator(
 export function getEquipmentIndicatorLabel(
   status?: EquipmentStatus | null,
   replacedParts?: string[] | null,
+  completedWorks?: string[] | null,
 ): string {
   if (status === 'broken') return 'Сломанный (отмечен ТП)';
   if (status === 'under_repair') {
-    return isComplexRepairParts(replacedParts) ? 'Сложный ремонт' : 'На ремонте';
+    return isComplexRepair(replacedParts, completedWorks) ? 'Сложный ремонт' : 'На ремонте';
   }
   return 'Исправен';
 }

@@ -145,7 +145,11 @@ export function AdminFridgeMap({ fridges }: Props) {
       bounds.push(position);
 
       const equipmentStatus = f.equipmentStatus || 'working';
-      const icon = getMarkerIcon(f.status, equipmentStatus);
+      // Сломанный / на ремонте — всегда приоритетнее цвета свежей отметки
+      const icon = getMarkerIcon(
+        equipmentStatus === 'broken' || equipmentStatus === 'under_repair' ? 'never' : f.status,
+        equipmentStatus,
+      );
       const marker = L.marker(position, {
         icon,
         status: f.status,

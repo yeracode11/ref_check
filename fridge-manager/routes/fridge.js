@@ -4,7 +4,7 @@ const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
 const Repair = require('../models/Repair');
 const { authenticateToken } = require('../middleware/auth');
-const { isComplexRepair, estimateRepairCostKzt } = require('../lib/repairHelpers');
+const { isComplexRepairRecord, estimateRepairCostRecord } = require('../lib/repairHelpers');
 const { isCityScopedRole, userCanAccessCity } = require('../lib/cityScope');
 const {
   buildCheckinFridgeIdCandidates,
@@ -374,8 +374,8 @@ router.get('/:id/history', authenticateToken, async (req, res) => {
 
     const data = repairs.map((r) => ({
       ...r,
-      isComplexRepair: isComplexRepair(r.replacedParts),
-      estimatedCostKzt: estimateRepairCostKzt(r.replacedParts),
+      isComplexRepair: isComplexRepairRecord(r),
+      estimatedCostKzt: estimateRepairCostRecord(r),
     }));
 
     const activeRepair = data.find((r) => r.status === 'in_progress') || null;

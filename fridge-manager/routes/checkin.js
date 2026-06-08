@@ -19,6 +19,106 @@ const router = express.Router();
 const CHECKIN_IDEMPOTENCY_WINDOW_MS = 120 * 1000;
 const CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M = 40;
 
+function calculateDistanceMeters(loc1, loc2) {
+  if (!loc1 || !loc2 || !loc1.coordinates || !loc2.coordinates) {
+    return null;
+  }
+  const [lng1, lat1] = loc1.coordinates;
+  const [lng2, lat2] = loc2.coordinates;
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+async function syncFridgeFromCheckin({
+  normalizedFridgeId,
+  location,
+  fridgeCondition,
+  isSeasonalClosure,
+  address,
+}) {
+  const fridge = await Fridge.findOne({
+    $or: [
+      { code: normalizedFridgeId },
+      { number: normalizedFridgeId },
+      { 'clientInfo.inn': normalizedFridgeId },
+    ],
+  });
+  if (!fridge) {
+    console.warn(`[Checkins] Fridge with code/number/inn ${normalizedFridgeId} not found`);
+    return;
+  }
+
+  const fridgeIdentifiers = [fridge.code];
+  if (fridge.number) fridgeIdentifiers.push(fridge.number);
+  if (fridge.clientInfo?.inn) fridgeIdentifiers.push(fridge.clientInfo.inn);
+
+  const recentCheckins = await Checkin.find({
+    fridgeId: { $in: fridgeIdentifiers },
+  }).sort({ visitedAt: -1 }).limit(2).lean();
+
+  let newWarehouseStatus = fridge.warehouseStatus;
+  if (recentCheckins.length === 1) {
+    if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
+      newWarehouseStatus = 'installed';
+    }
+  } else if (recentCheckins.length >= 2) {
+    const secondLastLocation = recentCheckins[1].location;
+    const lastLocation = recentCheckins[0].location;
+    if (secondLastLocation && lastLocation) {
+      const distance = calculateDistanceMeters(secondLastLocation, lastLocation);
+      if (distance !== null && distance > 50) {
+        newWarehouseStatus = 'moved';
+      } else if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
+        newWarehouseStatus = 'installed';
+      } else if (fridge.warehouseStatus === 'moved') {
+        newWarehouseStatus = 'installed';
+      }
+    }
+  }
+
+  const fridgeStatusUpdate = {};
+  if (fridgeCondition === 'broken') {
+    fridgeStatusUpdate.status = 'broken';
+    if (!fridge.brokenSince) {
+      fridgeStatusUpdate.brokenSince = new Date();
+    }
+  } else if (fridge.status !== 'under_repair') {
+    fridgeStatusUpdate.status = 'working';
+    fridgeStatusUpdate.brokenSince = null;
+  }
+
+  const seasonalTypes = ['school', 'restricted'];
+  if (seasonalTypes.includes(fridge.type)) {
+    fridgeStatusUpdate.isSeasonalClosure = isSeasonalClosure;
+  }
+
+  await Fridge.findOneAndUpdate(
+    {
+      $or: [
+        { code: normalizedFridgeId },
+        { number: normalizedFridgeId },
+        { 'clientInfo.inn': normalizedFridgeId },
+      ],
+    },
+    {
+      $set: {
+        location,
+        warehouseStatus: newWarehouseStatus,
+        ...(address ? { address } : {}),
+        ...fridgeStatusUpdate,
+      },
+    },
+    { new: true },
+  );
+}
+
 function parseDate(dateString) {
   if (!dateString) return undefined;
   const d = new Date(dateString);
@@ -51,6 +151,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'location must be GeoJSON Point or {lat,lng}' });
     }
 
+    const fridgeCondition =
+      req.body.fridgeCondition === 'broken' ? 'broken' : 'working';
+    const isSeasonalClosure = req.body.isSeasonalClosure === true
+      || req.body.isSeasonalClosure === 'true';
+
     const [reqLng, reqLat] = location.coordinates;
     const dupWindowStart = new Date(Date.now() - CHECKIN_IDEMPOTENCY_WINDOW_MS);
     const recentForDedupe = await Checkin.find({
@@ -74,17 +179,29 @@ router.post('/', async (req, res) => {
     if (duplicate && duplicate._id) {
       const existing = await Checkin.findById(duplicate._id);
       if (existing) {
+        if (existing.fridgeCondition !== fridgeCondition || existing.isSeasonalClosure !== isSeasonalClosure) {
+          existing.fridgeCondition = fridgeCondition;
+          existing.isSeasonalClosure = isSeasonalClosure;
+          await existing.save();
+        }
+        try {
+          await syncFridgeFromCheckin({
+            normalizedFridgeId,
+            location,
+            fridgeCondition,
+            isSeasonalClosure,
+            address: req.body.address,
+          });
+        } catch (updateErr) {
+          console.error('Failed to update fridge on idempotent checkin:', updateErr);
+        }
+        invalidateCheckinStatsCache();
         return res.status(200).json({
           ...existing.toJSON(),
           idempotentReplay: true,
         });
       }
     }
-
-    const fridgeCondition =
-      req.body.fridgeCondition === 'broken' ? 'broken' : 'working';
-    const isSeasonalClosure = req.body.isSeasonalClosure === true
-      || req.body.isSeasonalClosure === 'true';
 
     const id = await getNextSequence('checkin');
     const checkin = await Checkin.create({
@@ -100,126 +217,15 @@ router.post('/', async (req, res) => {
       isSeasonalClosure,
     });
     
-    // Обновляем местоположение, адрес и статус холодильника по последней отметке
-    // fridgeId в чек-ине может быть как code, так и number (для импорта из Excel), так и ИНН (для ручного создания)
     try {
-      // Ищем холодильник и по code, и по number, и по ИНН клиента (для ручного создания во всех городах)
-      const fridge = await Fridge.findOne({
-        $or: [
-          { code: normalizedFridgeId },
-          { number: normalizedFridgeId },
-          { 'clientInfo.inn': normalizedFridgeId } // Для ручного создания во всех городах может быть ИНН
-        ]
+      await syncFridgeFromCheckin({
+        normalizedFridgeId,
+        location,
+        fridgeCondition,
+        isSeasonalClosure,
+        address: req.body.address,
       });
-      if (!fridge) {
-        console.warn(`[Checkins] Fridge with code/number/inn ${normalizedFridgeId} not found`);
-      } else {
-        // Получаем все отметки для этого холодильника
-        // Используем и code, и number, и ИНН для поиска (на случай, если часть отметок еще не мигрирована)
-        const fridgeIdentifiers = [fridge.code];
-        if (fridge.number) {
-          fridgeIdentifiers.push(fridge.number);
-        }
-        if (fridge.clientInfo?.inn) {
-          fridgeIdentifiers.push(fridge.clientInfo.inn);
-        }
-        const recentCheckins = await Checkin.find({
-          fridgeId: { $in: fridgeIdentifiers }
-        }).sort({ visitedAt: -1 }).limit(2).lean();
-        const totalCheckins = recentCheckins.length;
-        
-        let newWarehouseStatus = fridge.warehouseStatus;
-        
-        // Функция для вычисления расстояния между двумя точками (в метрах)
-        function calculateDistance(loc1, loc2) {
-          if (!loc1 || !loc2 || !loc1.coordinates || !loc2.coordinates) {
-            return null;
-          }
-          const [lng1, lat1] = loc1.coordinates;
-          const [lng2, lat2] = loc2.coordinates;
-          
-          const R = 6371000; // Радиус Земли в метрах
-          const dLat = (lat2 - lat1) * Math.PI / 180;
-          const dLng = (lng2 - lng1) * Math.PI / 180;
-          const a = 
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          return R * c;
-        }
-        
-        if (totalCheckins === 1) {
-          // Первая отметка - меняем статус с "warehouse" или "returned" на "installed"
-          if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
-            newWarehouseStatus = 'installed';
-          }
-        } else if (totalCheckins >= 2) {
-          // Вторая и последующие отметки - проверяем, изменилось ли местоположение
-          // НОВАЯ ЛОГИКА: сравниваем ПОСЛЕДНИЕ ДВЕ координаты, а не первую и последнюю
-          // Это позволяет показать зеленый, если после перемещения холодильник снова отмечен в стабильном месте
-          const secondLastLocation = recentCheckins[1].location;
-          const lastLocation = recentCheckins[0].location;
-          
-          if (secondLastLocation && lastLocation) {
-            const distance = calculateDistance(secondLastLocation, lastLocation);
-            if (distance !== null && distance > 50) {
-              // Последние 2 отметки далеко друг от друга - холодильник перемещается - статус "moved"
-              newWarehouseStatus = 'moved';
-            } else {
-              // Последние 2 отметки близко - местоположение стабилизировалось
-              if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
-                // Если еще не установлен, устанавливаем
-                newWarehouseStatus = 'installed';
-              } else if (fridge.warehouseStatus === 'moved') {
-                // Если был перемещен, но теперь координаты стабилизировались - возвращаем к установленному
-                newWarehouseStatus = 'installed';
-              }
-              // Если уже установлен и координаты стабильны - оставляем "installed"
-            }
-          }
-        }
-        
-        const fridgeStatusUpdate = {};
-        if (fridgeCondition === 'broken') {
-          fridgeStatusUpdate.status = 'broken';
-          if (!fridge.brokenSince) {
-            fridgeStatusUpdate.brokenSince = new Date();
-          }
-        } else if (fridge.status !== 'under_repair') {
-          fridgeStatusUpdate.status = 'working';
-          fridgeStatusUpdate.brokenSince = null;
-        }
-
-        const seasonalTypes = ['school', 'restricted'];
-        if (seasonalTypes.includes(fridge.type)) {
-          fridgeStatusUpdate.isSeasonalClosure = isSeasonalClosure;
-        }
-
-        // Обновляем холодильник (ищем и по code, и по number, и по ИНН)
-        await Fridge.findOneAndUpdate(
-          {
-            $or: [
-              { code: normalizedFridgeId },
-              { number: normalizedFridgeId },
-              { 'clientInfo.inn': normalizedFridgeId } // Для ручного создания во всех городах может быть ИНН
-            ]
-          },
-          {
-            $set: {
-              location,
-              warehouseStatus: newWarehouseStatus,
-              // Если менеджер передал новый адрес — обновим его; иначе не трогаем старый
-              ...(req.body.address ? { address: req.body.address } : {}),
-              ...fridgeStatusUpdate,
-            },
-          },
-          { new: true }
-        );
-      }
     } catch (updateErr) {
-      // Не падаем, если не нашли холодильник или ошибка обновления, просто логируем
-      // eslint-disable-next-line no-console
       console.error('Failed to update fridge location from checkin:', updateErr);
     }
 

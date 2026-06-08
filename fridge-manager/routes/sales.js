@@ -8,8 +8,8 @@ const User = require('../models/User');
 const { authenticateToken, requireSalesHead } = require('../middleware/auth');
 const { buildCheckinFridgeIdCandidates } = require('../lib/fridgeVisitHelpers');
 const {
-  estimateRepairCostKzt,
-  isComplexRepair,
+  estimateRepairCostRecord,
+  isComplexRepairRecord,
   getEquipmentIndicator,
 } = require('../lib/repairHelpers');
 const {
@@ -87,7 +87,7 @@ router.get('/fridges', authenticateToken, requireSalesHead, async (req, res) => 
       return {
         ...f,
         equipmentIndicator: getEquipmentIndicator(f, activeRepair),
-        isComplexRepair: activeRepair ? isComplexRepair(activeRepair.replacedParts) : false,
+        isComplexRepair: activeRepair ? isComplexRepairRecord(activeRepair) : false,
         activeRepair,
       };
     });
@@ -218,7 +218,7 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       const key = new Date(r.repairDate).toISOString().slice(0, 10);
       if (breakdownsByDay[key]) {
         breakdownsByDay[key].repairs += 1;
-        breakdownsByDay[key].costKzt += estimateRepairCostKzt(r.replacedParts);
+        breakdownsByDay[key].costKzt += estimateRepairCostRecord(r);
       }
     });
 
@@ -231,8 +231,11 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
     };
 
     const partsCost = {};
+    const { labelsFromCompletedWorks } = require('../lib/mxoRepairWorks');
     repairs.forEach((r) => {
-      (r.replacedParts || []).forEach((part) => {
+      const labels = labelsFromCompletedWorks(r.completedWorks);
+      const items = labels.length ? labels : (r.replacedParts || []);
+      items.forEach((part) => {
         const p = String(part).trim();
         if (!p) return;
         partsCost[p] = (partsCost[p] || 0) + 1;
@@ -242,13 +245,13 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       .map(([part, count]) => ({
         part,
         count,
-        estimatedCostKzt: estimateRepairCostKzt([part]) * count,
+        estimatedCostKzt: Math.round((estimateRepairCostRecord({ completedWorks: [], replacedParts: [part] }) || 10000) * count),
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
     const totalRepairCostKzt = repairs.reduce(
-      (sum, r) => sum + estimateRepairCostKzt(r.replacedParts),
+      (sum, r) => sum + estimateRepairCostRecord(r),
       0,
     );
 

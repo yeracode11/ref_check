@@ -1,3 +1,9 @@
+const {
+  isComplexMxoWorks,
+  estimateMxoWorksCostKzt,
+  labelsFromCompletedWorks,
+} = require('./mxoRepairWorks');
+
 /** Детали, при замене которых ремонт считается «сложным» */
 const COMPLEX_PART_KEYWORDS = [
   'компрессор',
@@ -30,15 +36,30 @@ function normalizePartName(part) {
   return String(part || '').trim().toLowerCase();
 }
 
-function isComplexRepair(replacedParts) {
-  if (!Array.isArray(replacedParts) || replacedParts.length === 0) return false;
-  return replacedParts.some((part) => {
+function repairWorkLabels(repairLike) {
+  const fromChecklist = labelsFromCompletedWorks(repairLike?.completedWorks);
+  if (fromChecklist.length) return fromChecklist;
+  return Array.isArray(repairLike?.replacedParts) ? repairLike.replacedParts : [];
+}
+
+function isComplexRepair(replacedParts, completedWorks) {
+  if (isComplexMxoWorks(completedWorks)) return true;
+  const parts = Array.isArray(replacedParts) ? replacedParts : [];
+  if (parts.length === 0) return false;
+  return parts.some((part) => {
     const p = normalizePartName(part);
     return COMPLEX_PART_KEYWORDS.some((kw) => p.includes(kw));
   });
 }
 
-function estimateRepairCostKzt(replacedParts) {
+function isComplexRepairRecord(repairLike) {
+  return isComplexRepair(repairLike?.replacedParts, repairLike?.completedWorks);
+}
+
+function estimateRepairCostKzt(replacedParts, completedWorks) {
+  const checklistCost = estimateMxoWorksCostKzt(completedWorks);
+  if (checklistCost > 0) return checklistCost;
+
   if (!Array.isArray(replacedParts)) return 0;
   let total = 0;
   for (const part of replacedParts) {
@@ -58,14 +79,18 @@ function estimateRepairCostKzt(replacedParts) {
   return total;
 }
 
+function estimateRepairCostRecord(repairLike) {
+  return estimateRepairCostKzt(repairLike?.replacedParts, repairLike?.completedWorks);
+}
+
 function getEquipmentIndicator(fridge, activeRepair) {
   if (!fridge) return 'blue';
   if (fridge.status === 'broken') return 'purple';
   if (fridge.status === 'under_repair') {
-    if (activeRepair && isComplexRepair(activeRepair.replacedParts)) {
+    if (activeRepair && isComplexRepairRecord(activeRepair)) {
       return 'orange';
     }
-    return 'orange';
+    return 'blue';
   }
   return 'blue';
 }
@@ -74,6 +99,9 @@ module.exports = {
   COMPLEX_PART_KEYWORDS,
   PART_COST_ESTIMATES_KZT,
   isComplexRepair,
+  isComplexRepairRecord,
   estimateRepairCostKzt,
+  estimateRepairCostRecord,
+  repairWorkLabels,
   getEquipmentIndicator,
 };

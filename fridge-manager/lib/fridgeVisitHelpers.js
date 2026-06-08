@@ -132,7 +132,7 @@ function combinedVisitMapStatus(lastVisit, warehouseStatus, opts = {}) {
  * но String(_id) совпадает — без слияния по max(lastVisit) остаётся случайная дата (часто старая).
  *
  * @param {Array<{ _id: unknown, lastVisit?: Date, totalCheckins?: number }>} rows
- * @returns {Map<string, { lastVisit: Date|null, totalCheckins: number }>}
+ * @returns {Map<string, { lastVisit: Date|null, lastFridgeCondition?: string|null, totalCheckins: number }>}
  */
 function mergeCheckinStatsAggregationIntoMap(rows) {
   const statsByFridgeId = new Map();
@@ -150,6 +150,7 @@ function mergeCheckinStatsAggregationIntoMap(rows) {
     if (!existing) {
       statsByFridgeId.set(key, {
         lastVisit: s.lastVisit ?? null,
+        lastFridgeCondition: s.lastFridgeCondition ?? null,
         totalCheckins: addCount,
       });
       continue;
@@ -157,11 +158,14 @@ function mergeCheckinStatsAggregationIntoMap(rows) {
 
     const exMs = parseVisitTimeMs(existing.lastVisit);
     let nextVisit = existing.lastVisit;
+    let nextCondition = existing.lastFridgeCondition ?? null;
     if (visitMs != null && (exMs == null || visitMs > exMs)) {
       nextVisit = s.lastVisit;
+      nextCondition = s.lastFridgeCondition ?? null;
     }
     statsByFridgeId.set(key, {
       lastVisit: nextVisit,
+      lastFridgeCondition: nextCondition,
       totalCheckins: (existing.totalCheckins || 0) + addCount,
     });
   }
@@ -176,6 +180,7 @@ function getLastVisitFromStatsMap(statsByFridgeId, fridgeLike) {
   const candidateIds = buildCheckinFridgeIdCandidates(fridgeLike);
   let lastVisit = null;
   let lastVisitTime = null;
+  let lastFridgeCondition = null;
   let totalCheckins = 0;
   for (const id of candidateIds) {
     const stats = statsByFridgeId.get(id);
@@ -184,11 +189,23 @@ function getLastVisitFromStatsMap(statsByFridgeId, fridgeLike) {
       if (visitTime != null && (!lastVisitTime || visitTime > lastVisitTime)) {
         lastVisitTime = visitTime;
         lastVisit = stats.lastVisit;
+        lastFridgeCondition = stats.lastFridgeCondition ?? null;
       }
       totalCheckins += stats.totalCheckins || 0;
     }
   }
-  return { lastVisit, lastVisitTime, totalCheckins };
+  return { lastVisit, lastVisitTime, lastFridgeCondition, totalCheckins };
+}
+
+/**
+ * Состояние оборудования для карты: приоритет — поле Fridge.status,
+ * запасной вариант — последняя отметка ТП (если в БД ещё не синхронизировали).
+ */
+function resolveEquipmentStatus(fridgeStatus, lastFridgeCondition) {
+  const status = fridgeStatus || 'working';
+  if (status === 'under_repair' || status === 'broken') return status;
+  if (lastFridgeCondition === 'broken') return 'broken';
+  return status;
 }
 
 module.exports = {
@@ -198,6 +215,7 @@ module.exports = {
   combinedVisitMapStatus,
   mergeCheckinStatsAggregationIntoMap,
   getLastVisitFromStatsMap,
+  resolveEquipmentStatus,
   parseVisitTimeMs,
   calendarDaysFromVisitToNow,
   DEFAULT_VISIT_TIMEZONE,

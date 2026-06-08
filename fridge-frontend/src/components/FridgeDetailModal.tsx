@@ -15,6 +15,9 @@ import {
   getEquipmentMarkerColor,
   EquipmentStatus,
 } from '../utils/fridgeUtils';
+import { RepairWorkChecklist } from './RepairWorkChecklist';
+import { RepairWorksList } from './RepairWorksList';
+import { MxoRepairWorkKey } from '../constants/mxoRepairWorks';
 
 type ClientInfo = {
   name?: string;
@@ -47,6 +50,7 @@ type RepairItem = {
   _id: string;
   repairDate: string;
   workType: string;
+  completedWorks?: string[];
   replacedParts: string[];
   comment?: string;
   status: 'in_progress' | 'completed';
@@ -248,9 +252,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const [showQR, setShowQR] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'history' | 'repairs'>('info');
   const [showRepairForm, setShowRepairForm] = useState(false);
-  const [repairForm, setRepairForm] = useState({
-    workType: '',
-    replacedParts: '',
+  const [repairForm, setRepairForm] = useState<{
+    completedWorks: MxoRepairWorkKey[];
+    comment: string;
+    completeImmediately: boolean;
+  }>({
+    completedWorks: [],
     comment: '',
     completeImmediately: false,
   });
@@ -411,6 +418,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const equipmentIndicator = getEquipmentIndicator(
     fridge.status,
     activeRepair?.replacedParts,
+    activeRepair?.completedWorks,
   );
   const statusMarkerColor = getEquipmentMarkerColor(equipmentIndicator);
 
@@ -451,7 +459,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               {getStatusLabel(fridge.warehouseStatus)}
             </Badge>
             <Badge className={getEquipmentIndicatorClasses(equipmentIndicator)}>
-              {getEquipmentIndicatorLabel(fridge.status, activeRepair?.replacedParts)}
+              {getEquipmentIndicatorLabel(fridge.status, activeRepair?.replacedParts, activeRepair?.completedWorks)}
             </Badge>
             <Badge className={getVisitStatusColor(fridge.visitStatus)}>
               {getVisitStatusLabel(fridge.visitStatus)}
@@ -770,18 +778,17 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     <div key={r._id} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="font-medium text-slate-900">{r.workType}</div>
-                          <div className="text-xs text-slate-500 mt-0.5">{formatDate(r.repairDate)}</div>
+                          <div className="text-xs text-slate-500">{formatDate(r.repairDate)}</div>
                         </div>
                         <Badge className={r.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}>
                           {r.status === 'completed' ? 'Завершён' : 'В работе'}
                         </Badge>
                       </div>
-                      {r.replacedParts?.length > 0 && (
-                        <p className="text-sm text-slate-600 mt-2">
-                          <span className="text-slate-400">Запчасти:</span> {r.replacedParts.join(', ')}
-                        </p>
-                      )}
+                      <RepairWorksList
+                        completedWorks={r.completedWorks}
+                        replacedParts={r.replacedParts}
+                        workType={r.workType}
+                      />
                       {r.technicianId && (
                         <p className="text-xs text-slate-500 mt-1">
                           МХО: {r.technicianId.fullName || r.technicianId.username}
@@ -1268,29 +1275,14 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
         {/* Форма записи ремонта (МХО / админ) */}
         {showRepairForm && (
           <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4 z-[1200]" style={{ zIndex: 1200 }}>
-            <div className="bg-white rounded-lg p-6 max-w-md w-full relative z-[1201]" style={{ zIndex: 1201 }}>
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Запись о ремонте</h3>
+            <div className="bg-white rounded-lg p-6 max-w-lg w-full relative z-[1201]" style={{ zIndex: 1201 }}>
+              <h3 className="text-lg font-semibold text-slate-900 mb-1">Запись о ремонте (МХО)</h3>
+              <p className="text-xs text-slate-500 mb-4">Отметьте галочками все выполненные работы</p>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Вид работ *</label>
-                  <input
-                    type="text"
-                    value={repairForm.workType}
-                    onChange={(e) => setRepairForm({ ...repairForm, workType: e.target.value })}
-                    placeholder="Например: замена компрессора"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Заменённые детали</label>
-                  <input
-                    type="text"
-                    value={repairForm.replacedParts}
-                    onChange={(e) => setRepairForm({ ...repairForm, replacedParts: e.target.value })}
-                    placeholder="компрессор, мотор вентилятора (через запятую)"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
+                <RepairWorkChecklist
+                  selected={repairForm.completedWorks}
+                  onChange={(completedWorks) => setRepairForm({ ...repairForm, completedWorks })}
+                />
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Комментарий</label>
                   <textarea
@@ -1314,25 +1306,20 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     type="button"
                     disabled={savingRepair}
                     onClick={async () => {
-                      if (!repairForm.workType.trim()) {
-                        alert('Укажите вид работ');
+                      if (repairForm.completedWorks.length === 0) {
+                        alert('Отметьте хотя бы одну выполненную работу в чеклисте');
                         return;
                       }
                       try {
                         setSavingRepair(true);
-                        const parts = repairForm.replacedParts
-                          .split(',')
-                          .map((p) => p.trim())
-                          .filter(Boolean);
                         await api.post('/api/repairs', {
                           fridgeId: fridge._id,
-                          workType: repairForm.workType.trim(),
-                          replacedParts: parts,
+                          completedWorks: repairForm.completedWorks,
                           comment: repairForm.comment.trim() || undefined,
                           completeImmediately: repairForm.completeImmediately,
                         });
                         setShowRepairForm(false);
-                        setRepairForm({ workType: '', replacedParts: '', comment: '', completeImmediately: false });
+                        setRepairForm({ completedWorks: [], comment: '', completeImmediately: false });
                         setRepairs([]);
                         await loadRepairs();
                         const res = useAdminApi

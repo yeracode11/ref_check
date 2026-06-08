@@ -12,6 +12,7 @@ const {
   visitStatusFromLastVisit,
   combinedVisitMapStatus,
   getLastVisitFromStatsMap,
+  resolveEquipmentStatus,
 } = require('../lib/fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
 const XLSX = require('xlsx');
@@ -101,7 +102,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     const now = Date.now();
 
     const result = fridges.map((f) => {
-      const { lastVisit, lastVisitTime } = getLastVisitFromStatsMap(statsByFridgeId, f);
+      const { lastVisit, lastVisitTime, lastFridgeCondition } = getLastVisitFromStatsMap(statsByFridgeId, f);
 
       const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: now });
 
@@ -151,7 +152,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
         status: finalStatus, // комбинированный статус для цвета (гарантированно не location_changed)
         warehouseStatus, // статус склада
         visitStatus, // статус последнего визита
-        equipmentStatus: f.status || 'working', // состояние оборудования: working / broken / under_repair
+        equipmentStatus: resolveEquipmentStatus(f.status, lastFridgeCondition),
         clientInfo: f.clientInfo || null,
       };
     });
