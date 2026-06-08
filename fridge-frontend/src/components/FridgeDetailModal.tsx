@@ -10,6 +10,7 @@ import {
   getDisplayIdentifier,
   getEquipmentIndicator,
   getEquipmentStatusLabel,
+  getEquipmentIndicatorLabel,
   getEquipmentIndicatorClasses,
   getEquipmentMarkerColor,
   EquipmentStatus,
@@ -450,7 +451,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               {getStatusLabel(fridge.warehouseStatus)}
             </Badge>
             <Badge className={getEquipmentIndicatorClasses(equipmentIndicator)}>
-              {getEquipmentStatusLabel(fridge.status)}
+              {getEquipmentIndicatorLabel(fridge.status, activeRepair?.replacedParts)}
             </Badge>
             <Badge className={getVisitStatusColor(fridge.visitStatus)}>
               {getVisitStatusLabel(fridge.visitStatus)}

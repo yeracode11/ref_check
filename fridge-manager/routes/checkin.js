@@ -7,6 +7,11 @@ const { getNextSequence } = require('../models/Counter');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { findRecentDuplicateCheckin } = require('../utils/checkinGeodesic');
 const { invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
+const {
+  getCheckinFridgeIdsForCity,
+  getAssignedCityId,
+  userCanAccessCity,
+} = require('../lib/cityScope');
 
 const router = express.Router();
 
@@ -253,12 +258,12 @@ router.get('/', authenticateToken, async (req, res) => {
         username: req.user.username,
         filterManagerId: managerIds 
       });
-    } else if (req.user.role === 'accountant' && req.user.cityId) {
-      // Бухгалтеры видят отметки только из своего города
-      // Нужно найти все холодильники из их города
-      const fridgesInCity = await Fridge.find({ cityId: req.user.cityId }, { code: 1 });
-      const fridgeCodes = fridgesInCity.map(f => f.code);
-      filter.fridgeId = { $in: fridgeCodes };
+    } else if (['accountant', 'service_manager', 'sales_head'].includes(req.user.role)) {
+      const cityId = getAssignedCityId(req.user);
+      if (cityId) {
+        const fridgeCodes = await getCheckinFridgeIdsForCity(cityId);
+        filter.fridgeId = { $in: fridgeCodes.length ? fridgeCodes : ['__none__'] };
+      }
     } else {
       // Для админов и других ролей можно использовать query параметры
       if (managerId) filter.managerId = managerId;
@@ -401,10 +406,15 @@ router.get('/:id', authenticateToken, async (req, res) => {
       if (item.managerId !== req.user.id && item.managerId !== req.user.username) {
         return res.status(403).json({ error: 'Access denied' });
       }
-    } else if (req.user.role === 'accountant' && req.user.cityId) {
-      // Проверить, что холодильник из города бухгалтера
-      const fridge = await Fridge.findOne({ code: item.fridgeId });
-      if (!fridge || fridge.cityId?.toString() !== req.user.cityId) {
+    } else if (['accountant', 'service_manager', 'sales_head'].includes(req.user.role)) {
+      const fridge = await Fridge.findOne({
+        $or: [
+          { code: item.fridgeId },
+          { number: item.fridgeId },
+          { 'clientInfo.inn': item.fridgeId },
+        ],
+      });
+      if (!fridge || !userCanAccessCity(req.user, fridge.cityId)) {
         return res.status(403).json({ error: 'Access denied' });
       }
     }

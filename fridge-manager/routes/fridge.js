@@ -5,6 +5,7 @@ const Checkin = require('../models/Checkin');
 const Repair = require('../models/Repair');
 const { authenticateToken } = require('../middleware/auth');
 const { isComplexRepair, estimateRepairCostKzt } = require('../lib/repairHelpers');
+const { isCityScopedRole, userCanAccessCity } = require('../lib/cityScope');
 const {
   buildCheckinFridgeIdCandidates,
   visitStatusFromLastVisit,
@@ -132,8 +133,8 @@ router.get('/', authenticateToken, async (req, res) => {
     const filter = {};
     if (active !== undefined) filter.active = active === 'true';
     
-    // Для бухгалтера и менеджера - показываем только их город (если указан)
-    if ((req.user.role === 'accountant' || req.user.role === 'manager') && req.user.cityId) {
+    // Для ролей, привязанных к городу — только их город
+    if (isCityScopedRole(req.user.role) && req.user.cityId) {
       filter.cityId = req.user.cityId;
     } else if (cityId) {
       filter.cityId = cityId;
@@ -356,9 +357,14 @@ router.get('/:id/history', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid fridge id' });
     }
 
-    const fridge = await Fridge.findById(req.params.id).select('code name number status');
+    const fridge = await Fridge.findById(req.params.id).select(
+      'code name number status cityId warehouseStatus brokenSince address',
+    );
     if (!fridge) {
       return res.status(404).json({ error: 'Fridge not found' });
+    }
+    if (!userCanAccessCity(req.user, fridge.cityId)) {
+      return res.status(403).json({ error: 'Access denied for this city' });
     }
 
     const repairs = await Repair.find({ fridgeId: fridge._id })
@@ -372,6 +378,9 @@ router.get('/:id/history', authenticateToken, async (req, res) => {
       estimatedCostKzt: estimateRepairCostKzt(r.replacedParts),
     }));
 
+    const activeRepair = data.find((r) => r.status === 'in_progress') || null;
+    const totalRepairCostKzt = data.reduce((sum, r) => sum + (r.estimatedCostKzt || 0), 0);
+
     return res.json({
       fridge: {
         _id: fridge._id,
@@ -379,9 +388,17 @@ router.get('/:id/history', authenticateToken, async (req, res) => {
         name: fridge.name,
         number: fridge.number,
         status: fridge.status,
+        warehouseStatus: fridge.warehouseStatus,
+        brokenSince: fridge.brokenSince,
+        address: fridge.address,
       },
       data,
       total: data.length,
+      summary: {
+        totalRepairCostKzt,
+        complexRepairCount: data.filter((r) => r.isComplexRepair).length,
+        activeRepair,
+      },
     });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch repair history', details: err.message });
@@ -389,10 +406,13 @@ router.get('/:id/history', authenticateToken, async (req, res) => {
 });
 
 // GET /api/fridges/:id
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const fridge = await Fridge.findById(req.params.id).populate('cityId', 'name code');
     if (!fridge) return res.status(404).json({ error: 'Not found' });
+    if (!userCanAccessCity(req.user, fridge.cityId?._id || fridge.cityId)) {
+      return res.status(403).json({ error: 'Access denied for this city' });
+    }
     const plain = fridge.toObject();
     const ids = buildCheckinFridgeIdCandidates(plain);
     const lastCheckin = ids.length

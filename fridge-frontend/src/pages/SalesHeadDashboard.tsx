@@ -4,6 +4,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { api } from '../shared/apiClient';
+import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge } from '../components/ui/Card';
 import { LoadingSpinner } from '../components/ui/Loading';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
@@ -72,8 +73,12 @@ function formatMoney(kzt: number) {
 }
 
 export default function SalesHeadDashboard() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isSalesHead = user?.role === 'sales_head';
   const [cities, setCities] = useState<City[]>([]);
   const [selectedCityId, setSelectedCityId] = useState('all');
+  const [cityName, setCityName] = useState('');
   const [equipmentFilter, setEquipmentFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [fridges, setFridges] = useState<SalesFridge[]>([]);
@@ -88,9 +93,18 @@ export default function SalesHeadDashboard() {
 
   useEffect(() => {
     api.get('/api/cities?active=true')
-      .then((res) => setCities(res.data))
+      .then((res) => {
+        setCities(res.data);
+        if (isSalesHead && user?.cityId) {
+          const city = res.data.find((c: City) => c._id === user.cityId);
+          if (city) {
+            setSelectedCityId(city._id);
+            setCityName(city.name);
+          }
+        }
+      })
       .catch(() => {});
-  }, []);
+  }, [isSalesHead, user?.cityId]);
 
   useEffect(() => {
     let alive = true;
@@ -165,7 +179,9 @@ export default function SalesHeadDashboard() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Режим просмотра для НОП</h1>
         <p className="text-slate-500 mt-1">
-          Мониторинг неисправного оборудования, отметок ТП/МХО и аналитика затрат на ремонт
+          {isSalesHead && cityName
+            ? `Мониторинг по городу: ${cityName}`
+            : 'Мониторинг неисправного оборудования, отметок ТП/МХО и аналитика затрат на ремонт'}
         </p>
       </div>
 
@@ -177,16 +193,22 @@ export default function SalesHeadDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Город</label>
-            <select
-              value={selectedCityId}
-              onChange={(e) => setSelectedCityId(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
-            >
-              <option value="all">Все города</option>
-              {cities.map((c) => (
-                <option key={c._id} value={c._id}>{c.name}</option>
-              ))}
-            </select>
+            {isSalesHead ? (
+              <div className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 font-medium">
+                📍 {cityName || 'Город не назначен'}
+              </div>
+            ) : (
+              <select
+                value={selectedCityId}
+                onChange={(e) => setSelectedCityId(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+              >
+                <option value="all">Все города</option>
+                {cities.map((c) => (
+                  <option key={c._id} value={c._id}>{c.name}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Состояние</label>

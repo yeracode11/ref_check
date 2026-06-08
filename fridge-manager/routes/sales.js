@@ -12,8 +12,21 @@ const {
   isComplexRepair,
   getEquipmentIndicator,
 } = require('../lib/repairHelpers');
+const {
+  resolveCityFilter,
+  getCheckinFridgeIdsForCity,
+  getAssignedCityId,
+} = require('../lib/cityScope');
 
 const router = express.Router();
+
+function ensureSalesCityScope(req, res) {
+  if (req.user.role === 'sales_head' && !getAssignedCityId(req.user)) {
+    res.status(403).json({ error: 'Для НОП не назначен город. Обратитесь к администратору.' });
+    return false;
+  }
+  return true;
+}
 
 function parseDate(dateString) {
   if (!dateString) return undefined;
@@ -24,11 +37,13 @@ function parseDate(dateString) {
 // GET /api/sales/fridges — список для НОП с фильтрами
 router.get('/fridges', authenticateToken, requireSalesHead, async (req, res) => {
   try {
+    if (!ensureSalesCityScope(req, res)) return;
     const { cityId, equipmentStatus, search, limit, skip } = req.query;
     const filter = { active: true };
 
-    if (cityId && mongoose.Types.ObjectId.isValid(cityId)) {
-      filter.cityId = new mongoose.Types.ObjectId(cityId);
+    const scopedCityId = resolveCityFilter(req.user, cityId);
+    if (scopedCityId) {
+      filter.cityId = scopedCityId;
     }
 
     if (equipmentStatus === 'faulty') {
@@ -86,21 +101,18 @@ router.get('/fridges', authenticateToken, requireSalesHead, async (req, res) => 
 // GET /api/sales/checkins — история отметок для НОП
 router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) => {
   try {
+    if (!ensureSalesCityScope(req, res)) return;
     const { cityId, fridgeId, from, to, limit, skip } = req.query;
     const filter = {};
 
     if (fridgeId) {
       filter.fridgeId = String(fridgeId).trim().replace(/^#/, '');
-    } else if (cityId && mongoose.Types.ObjectId.isValid(cityId)) {
-      const fridgesInCity = await Fridge.find(
-        { cityId: new mongoose.Types.ObjectId(cityId) },
-        { code: 1, number: 1, 'clientInfo.inn': 1 },
-      ).lean();
-      const ids = new Set();
-      fridgesInCity.forEach((f) => {
-        buildCheckinFridgeIdCandidates(f).forEach((id) => ids.add(id));
-      });
-      filter.fridgeId = { $in: [...ids] };
+    } else {
+      const scopedCityId = resolveCityFilter(req.user, cityId);
+      if (scopedCityId) {
+        const ids = await getCheckinFridgeIdsForCity(scopedCityId);
+        filter.fridgeId = { $in: ids.length ? ids : ['__none__'] };
+      }
     }
 
     const fromDate = parseDate(from);
@@ -151,18 +163,30 @@ router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) =>
 // GET /api/sales/analytics — аналитика поломок и затрат на ремонт
 router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) => {
   try {
+    if (!ensureSalesCityScope(req, res)) return;
     const days = Math.max(7, Math.min(365, Number(req.query.days) || 90));
-    const cityId = req.query.cityId;
+    const scopedCityId = resolveCityFilter(req.user, req.query.cityId);
     const since = new Date();
     since.setDate(since.getDate() - days);
 
     const fridgeFilter = { active: true };
-    if (cityId && mongoose.Types.ObjectId.isValid(cityId)) {
-      fridgeFilter.cityId = new mongoose.Types.ObjectId(cityId);
+    if (scopedCityId) {
+      fridgeFilter.cityId = scopedCityId;
     }
 
-    const fridges = await Fridge.find(fridgeFilter, { _id: 1, status: 1, cityId: 1 }).lean();
+    const fridges = await Fridge.find(
+      fridgeFilter,
+      { _id: 1, status: 1, cityId: 1, code: 1, number: 1, 'clientInfo.inn': 1 },
+    ).lean();
     const fridgeIds = fridges.map((f) => f._id);
+    const checkinFridgeIds = new Set();
+    fridges.forEach((f) => {
+      buildCheckinFridgeIdCandidates(f).forEach((id) => checkinFridgeIds.add(id));
+    });
+    const checkinIdList = [...checkinFridgeIds];
+
+    const citiesQuery = { active: true };
+    if (scopedCityId) citiesQuery._id = scopedCityId;
 
     const [repairs, brokenCheckins, cities] = await Promise.all([
       Repair.find({
@@ -172,8 +196,9 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       Checkin.find({
         fridgeCondition: 'broken',
         visitedAt: { $gte: since },
+        ...(checkinIdList.length ? { fridgeId: { $in: checkinIdList } } : { fridgeId: '__none__' }),
       }).lean(),
-      City.find({ active: true }).select('name code').lean(),
+      City.find(citiesQuery).select('name code').lean(),
     ]);
 
     const breakdownsByDay = {};

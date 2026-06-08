@@ -5,6 +5,12 @@ import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 // @ts-ignore - leaflet.markercluster расширяет L namespace
 import 'leaflet.markercluster';
+import {
+  getEquipmentIndicator,
+  getEquipmentMarkerColor,
+  getEquipmentStatusLabel,
+  EquipmentStatus,
+} from '../../utils/fridgeUtils';
 
 type AdminFridgeForMap = {
   id: string;
@@ -14,6 +20,7 @@ type AdminFridgeForMap = {
   status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed';
   warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
   visitStatus?: 'today' | 'week' | 'old' | 'never';
+  equipmentStatus?: EquipmentStatus;
   location?: { type: 'Point'; coordinates: [number, number] };
 };
 
@@ -21,25 +28,28 @@ type Props = {
   fridges: AdminFridgeForMap[];
 };
 
-// Иконки для разных статусов
-// ВРЕМЕННО ОТКЛЮЧЕНО: location_changed (местоположение изменилось) = черный
-// today/week (свежие отметки в пределах недели) = зеленый
-// old (старые отметки, больше недели) = красный
-// never (нет посещений) = синий (на складе)
-function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed', hasCheckin: boolean): L.DivIcon {
-  let color = '#2563eb'; // синий по умолчанию (нет посещений / на складе)
-  
-  // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
-  // Если пришел location_changed, обрабатываем как old (старые отметки)
+function getVisitMarkerColor(status: AdminFridgeForMap['status']): string {
   const normalizedStatus = status === 'location_changed' ? 'old' : status;
-  
-  if (normalizedStatus === 'today' || normalizedStatus === 'week') {
-    // Свежие отметки в пределах недели - зеленый
-    color = '#28a745'; // зелёный
-  } else if (normalizedStatus === 'old') {
-    // Старые отметки (больше недели) - красный
-    color = '#dc3545'; // красный
+  if (normalizedStatus === 'today' || normalizedStatus === 'week') return '#28a745';
+  if (normalizedStatus === 'old') return '#dc3545';
+  return '#2563eb';
+}
+
+function getMarkerColor(
+  visitStatus: AdminFridgeForMap['status'],
+  equipmentStatus?: EquipmentStatus,
+): string {
+  if (equipmentStatus === 'broken' || equipmentStatus === 'under_repair') {
+    return getEquipmentMarkerColor(getEquipmentIndicator(equipmentStatus));
   }
+  return getVisitMarkerColor(visitStatus);
+}
+
+function getMarkerIcon(
+  visitStatus: AdminFridgeForMap['status'],
+  equipmentStatus?: EquipmentStatus,
+): L.DivIcon {
+  const color = getMarkerColor(visitStatus, equipmentStatus);
 
   return L.divIcon({
     className: 'custom-marker',
@@ -49,19 +59,22 @@ function getMarkerIcon(status: 'today' | 'week' | 'old' | 'never' | 'warehouse' 
   });
 }
 
-// Функция для определения цвета кластера по статусам
-// ВРЕМЕННО ОТКЛЮЧЕНО: location_changed (черный)
-// Приоритет: старые отметки (красный) > свежие отметки (зеленый) > нет посещений (синий)
-function getClusterColor(statuses: string[]): string {
-  // ВРЕМЕННО ОТКЛЮЧЕНО: черная метка для перемещенных холодильников
-  // Преобразуем location_changed в old
-  const normalizedStatuses = statuses.map(s => s === 'location_changed' ? 'old' : s);
-  
-  // Если есть хотя бы один маркер со старыми отметками (old) - красный
-  if (normalizedStatuses.some(s => s === 'old')) return '#dc3545'; // красный
-  // Если есть хотя бы один маркер со свежими отметками (today/week) - зеленый
-  if (normalizedStatuses.some(s => s === 'today' || s === 'week')) return '#28a745'; // зелёный
-  return '#2563eb'; // синий (только если все маркеры без посещений / на складе)
+// Приоритет кластера: сломан (фиолетовый) > на ремонте (оранжевый) > давно (красный) > свежие (зелёный) > синий
+function getClusterColor(
+  visitStatuses: string[],
+  equipmentStatuses: (EquipmentStatus | undefined)[],
+): string {
+  if (equipmentStatuses.some((s) => s === 'broken')) {
+    return getEquipmentMarkerColor('purple');
+  }
+  if (equipmentStatuses.some((s) => s === 'under_repair')) {
+    return getEquipmentMarkerColor('orange');
+  }
+
+  const normalizedStatuses = visitStatuses.map((s) => (s === 'location_changed' ? 'old' : s));
+  if (normalizedStatuses.some((s) => s === 'old')) return '#dc3545';
+  if (normalizedStatuses.some((s) => s === 'today' || s === 'week')) return '#28a745';
+  return '#2563eb';
 }
 
 export function AdminFridgeMap({ fridges }: Props) {
@@ -96,7 +109,8 @@ export function AdminFridgeMap({ fridges }: Props) {
         iconCreateFunction: (cluster) => {
           const childMarkers = cluster.getAllChildMarkers();
           const statuses = childMarkers.map((m: any) => m.options.status || 'never');
-          const color = getClusterColor(statuses);
+          const equipmentStatuses = childMarkers.map((m: any) => m.options.equipmentStatus);
+          const color = getClusterColor(statuses, equipmentStatuses);
           const count = childMarkers.length;
 
           return L.divIcon({
@@ -130,11 +144,13 @@ export function AdminFridgeMap({ fridges }: Props) {
       const position: [number, number] = [lat, lng];
       bounds.push(position);
 
-      // Определяем, есть ли посещения (чек-ины)
-      // Если статус не 'never', значит есть посещения
-      const hasCheckin = f.status !== 'never';
-      const icon = getMarkerIcon(f.status, hasCheckin);
-      const marker = L.marker(position, { icon, status: f.status } as any);
+      const equipmentStatus = f.equipmentStatus || 'working';
+      const icon = getMarkerIcon(f.status, equipmentStatus);
+      const marker = L.marker(position, {
+        icon,
+        status: f.status,
+        equipmentStatus,
+      } as any);
 
       const warehouseLabel = f.warehouseStatus === 'warehouse' ? 'На складе' :
                             f.warehouseStatus === 'returned' ? 'Возврат на склад' :
@@ -146,11 +162,13 @@ export function AdminFridgeMap({ fridges }: Props) {
                          visitSource === 'week' ? 'Неделя' :
                          visitSource === 'old' ? 'Давно' : 'Нет отметок';
 
+      const equipmentLabel = getEquipmentStatusLabel(equipmentStatus);
       const popupContent = `
         <div style="min-width: 200px;">
           <strong>${f.name}</strong><br/>
           <div>Код: ${f.code}</div>
           ${f.address ? `<div>Адрес: ${f.address}</div>` : ''}
+          <div>Оборудование: ${equipmentLabel}</div>
           <div>Склад: ${warehouseLabel}</div>
           <div>Отметка: ${visitLabel}</div>
         </div>
@@ -184,6 +202,29 @@ export function AdminFridgeMap({ fridges }: Props) {
   }, [fridges]);
 
   return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#9333ea' }} />
+          Сломан
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#ea580c' }} />
+          На ремонте
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#28a745' }} />
+          Свежая отметка
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#dc3545' }} />
+          Давно без визита
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#2563eb' }} />
+          Исправен / нет отметок
+        </span>
+      </div>
     <div className="w-full h-[480px] rounded-lg overflow-hidden border border-slate-200">
       <div ref={mapRef} className="w-full h-full" />
       <style>{`
@@ -199,6 +240,7 @@ export function AdminFridgeMap({ fridges }: Props) {
           border-radius: 8px;
         }
       `}</style>
+    </div>
     </div>
   );
 }

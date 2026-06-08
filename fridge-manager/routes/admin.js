@@ -151,6 +151,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
         status: finalStatus, // комбинированный статус для цвета (гарантированно не location_changed)
         warehouseStatus, // статус склада
         visitStatus, // статус последнего визита
+        equipmentStatus: f.status || 'working', // состояние оборудования: working / broken / under_repair
         clientInfo: f.clientInfo || null,
       };
     });
@@ -1758,6 +1759,10 @@ router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
       return res.status(400).json({
         error: `Некорректная роль. Допустимые: ${USER_ROLES.join(', ')}`,
       });
+    }
+
+    if (['accountant', 'service_manager', 'sales_head', 'manager'].includes(role) && !cityId) {
+      return res.status(400).json({ error: 'Для этой роли необходимо указать город (cityId)' });
     }
 
     // Проверка уникальности только по username

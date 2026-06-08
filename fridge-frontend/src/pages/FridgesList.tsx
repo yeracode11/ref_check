@@ -65,6 +65,9 @@ export default function FridgesList() {
   const [searchParams, setSearchParams] = useSearchParams();
   const isAccountant = user?.role === 'accountant';
   const isManager = user?.role === 'manager';
+  const isServiceManager = user?.role === 'service_manager';
+  const isSalesHead = user?.role === 'sales_head';
+  const isCityBound = isAccountant || isManager || isServiceManager || isSalesHead;
   
   const [items, setItems] = useState<Fridge[]>([]);
   const [cities, setCities] = useState<City[]>([]);
@@ -96,13 +99,13 @@ export default function FridgesList() {
         setCities(res.data);
         
         // Для бухгалтера и менеджера - выбираем их город
-        if ((isAccountant || isManager) && user?.cityId) {
+        if (isCityBound && user?.cityId) {
           const city = res.data.find((c: City) => c._id === user.cityId);
           if (city) {
             setAccountantCityName(city.name);
             setSelectedCityId(city._id);
           }
-        } else if (!isAccountant && !isManager) {
+        } else if (!isCityBound) {
           // Для админов - проверяем URL параметр, если есть валидный город, используем его
           const urlCityId = searchParams.get('city') || '';
           if (urlCityId) {
@@ -130,7 +133,7 @@ export default function FridgesList() {
       }
     })();
     return () => { alive = false; };
-  }, [isAccountant, isManager, user?.cityId, searchParams, setSearchParams]);
+  }, [isCityBound, user?.cityId, searchParams, setSearchParams]);
 
   // Загрузка холодильников (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
@@ -154,7 +157,7 @@ export default function FridgesList() {
       }
       // Для бухгалтера/менеджера город добавляется на бэкенде автоматически
       // Для админов - если выбран город, фильтруем по нему, иначе (пустая строка = "Все города") показываем все
-      if (!isAccountant && !isManager && selectedCityId && selectedCityId.trim() !== '') {
+      if (!isCityBound && selectedCityId && selectedCityId.trim() !== '') {
         params.append('cityId', selectedCityId);
       }
       // Если selectedCityId пустой - не добавляем параметр cityId, backend вернет все холодильники
@@ -187,7 +190,7 @@ export default function FridgesList() {
         setLoadingMore(false);
       }
     }
-  }, [selectedCityId, warehouseStatusFilter, equipmentStatusFilter, searchQuery, isAccountant, isManager]);
+  }, [selectedCityId, warehouseStatusFilter, equipmentStatusFilter, searchQuery, isCityBound]);
 
   // Debounce для поиска - обновляем searchQuery после задержки
   useEffect(() => {
@@ -212,10 +215,10 @@ export default function FridgesList() {
   // Загрузка при изменении фильтров
   useEffect(() => {
     // Для бухгалтера/менеджера загружаем сразу, для админов - всегда (даже если город не выбран - показываем все)
-    if (isAccountant || isManager || !citiesLoading) {
+    if (isCityBound || !citiesLoading) {
       loadFridges(0, true);
     }
-  }, [selectedCityId, warehouseStatusFilter, equipmentStatusFilter, searchQuery, isAccountant, isManager, citiesLoading]);
+  }, [selectedCityId, warehouseStatusFilter, equipmentStatusFilter, searchQuery, isCityBound, citiesLoading]);
 
   // Бесконечный скролл
   useEffect(() => {
@@ -298,7 +301,7 @@ export default function FridgesList() {
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Город
               </label>
-              {isAccountant || isManager ? (
+              {isCityBound ? (
                 <div className="w-full rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-800 font-medium">
                   📍 {accountantCityName || 'Город не назначен'}
                 </div>

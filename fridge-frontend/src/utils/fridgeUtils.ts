@@ -86,15 +86,30 @@ function isComplexRepairParts(parts?: string[] | null): boolean {
   });
 }
 
+export function isComplexRepair(replacedParts?: string[] | null): boolean {
+  return isComplexRepairParts(replacedParts);
+}
+
 export function getEquipmentIndicator(
   status?: EquipmentStatus | null,
   replacedParts?: string[] | null,
 ): EquipmentIndicator {
   if (status === 'broken') return 'purple';
   if (status === 'under_repair') {
-    return isComplexRepairParts(replacedParts) ? 'orange' : 'orange';
+    return isComplexRepairParts(replacedParts) ? 'orange' : 'blue';
   }
   return 'blue';
+}
+
+export function getEquipmentIndicatorLabel(
+  status?: EquipmentStatus | null,
+  replacedParts?: string[] | null,
+): string {
+  if (status === 'broken') return 'Сломанный (отмечен ТП)';
+  if (status === 'under_repair') {
+    return isComplexRepairParts(replacedParts) ? 'Сложный ремонт' : 'На ремонте';
+  }
+  return 'Исправен';
 }
 
 export function getEquipmentStatusLabel(status?: EquipmentStatus | null): string {

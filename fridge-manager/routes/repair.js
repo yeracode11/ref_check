@@ -7,6 +7,7 @@ const {
   requireAdminOrServiceManager,
 } = require('../middleware/auth');
 const { isComplexRepair, estimateRepairCostKzt } = require('../lib/repairHelpers');
+const { getAssignedCityId, getFridgeObjectIdsForCity, userCanAccessCity } = require('../lib/cityScope');
 
 const router = express.Router();
 
@@ -38,6 +39,9 @@ router.post('/', authenticateToken, requireAdminOrServiceManager, async (req, re
     const fridge = await Fridge.findById(fridgeOid);
     if (!fridge) {
       return res.status(404).json({ error: 'Fridge not found' });
+    }
+    if (!userCanAccessCity(req.user, fridge.cityId)) {
+      return res.status(403).json({ error: 'Access denied for this city' });
     }
 
     const parts = Array.isArray(replacedParts)
@@ -100,6 +104,10 @@ router.patch('/:id/complete', authenticateToken, requireAdminOrServiceManager, a
     if (!repair) {
       return res.status(404).json({ error: 'Repair not found' });
     }
+    const repairFridge = await Fridge.findById(repair.fridgeId).select('cityId');
+    if (!repairFridge || !userCanAccessCity(req.user, repairFridge.cityId)) {
+      return res.status(403).json({ error: 'Access denied for this city' });
+    }
     if (repair.status === 'completed') {
       return res.status(400).json({ error: 'Repair is already completed' });
     }
@@ -136,6 +144,18 @@ router.get('/', authenticateToken, async (req, res) => {
     if (fridgeOid) filter.fridgeId = fridgeOid;
     if (status && ['in_progress', 'completed'].includes(status)) {
       filter.status = status;
+    }
+
+    const cityId = getAssignedCityId(req.user);
+    if (cityId) {
+      const fridgeIds = await getFridgeObjectIdsForCity(cityId);
+      if (fridgeOid) {
+        if (!fridgeIds.some((id) => String(id) === String(fridgeOid))) {
+          return res.status(403).json({ error: 'Access denied for this city' });
+        }
+      } else {
+        filter.fridgeId = { $in: fridgeIds.length ? fridgeIds : [null] };
+      }
     }
 
     const limitNum = limit ? Math.max(1, Math.min(200, Number(limit))) : 50;

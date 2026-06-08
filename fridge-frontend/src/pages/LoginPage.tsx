@@ -51,7 +51,9 @@ export default function LoginPage() {
           redirectTo = '/fridges';
         }
       } else if (userData?.role === 'service_manager') {
-        if (from === '/' || from === '/new' || adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from) || salesOnlyPaths.includes(from)) {
+        if (from.startsWith('/checkin/')) {
+          redirectTo = from;
+        } else if (from === '/' || from === '/new' || adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from) || salesOnlyPaths.includes(from)) {
           redirectTo = '/fridges';
         }
       } else if (userData?.role === 'sales_head') {

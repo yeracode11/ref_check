@@ -136,6 +136,14 @@ export default function UsersManagement() {
       return;
     }
 
+    if (
+      ['accountant', 'service_manager', 'sales_head', 'manager'].includes(form.role)
+      && !form.cityId
+    ) {
+      alert('Для ролей МХО, НОП, менеджера и бухгалтера необходимо выбрать город');
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -366,7 +374,12 @@ export default function UsersManagement() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Город</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Город
+                  {['accountant', 'service_manager', 'sales_head', 'manager'].includes(form.role) && (
+                    <span className="text-red-500"> *</span>
+                  )}
+                </label>
                 <select
                   value={form.cityId}
                   onChange={(e) => setForm({ ...form, cityId: e.target.value })}

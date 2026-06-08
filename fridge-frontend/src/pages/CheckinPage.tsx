@@ -4,6 +4,7 @@ import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { getDisplayIdentifier, showSeasonalClosureCheckbox } from '../utils/fridgeUtils';
 import { Card, Button, Badge } from '../components/ui/Card';
+import ServiceFridgeScanPage from './ServiceFridgeScanPage';
 
 type Fridge = {
   _id: string;
@@ -12,6 +13,9 @@ type Fridge = {
   name: string;
   address?: string;
   description?: string;
+  status?: 'working' | 'broken' | 'under_repair';
+  warehouseStatus?: string;
+  brokenSince?: string | null;
   type?: 'regular' | 'school' | 'restricted';
   cityId?: { _id?: string; name: string; code: string } | null;
   clientInfo?: {
@@ -226,7 +230,7 @@ export default function CheckinPage() {
         <Card className="max-w-md w-full">
           <h1 className="text-xl font-semibold mb-2">Требуется авторизация</h1>
           <p className="text-slate-600 text-sm mb-4">
-            Для отметки по холодильнику необходимо войти в систему.
+            Для работы с холодильником необходимо войти в систему.
           </p>
           <Button onClick={() => navigate('/login')} className="w-full">
             Войти
@@ -234,6 +238,11 @@ export default function CheckinPage() {
         </Card>
       </div>
     );
+  }
+
+  // МХО: при сканировании QR — карточка с историей ремонтов
+  if (user.role === 'service_manager' && fridge) {
+    return <ServiceFridgeScanPage fridge={fridge} />;
   }
 
   return (

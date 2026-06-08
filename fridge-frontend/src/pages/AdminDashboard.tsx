@@ -32,6 +32,7 @@ type AdminFridge = {
   status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed';
   warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
   visitStatus?: 'today' | 'week' | 'old' | 'never';
+  equipmentStatus?: 'working' | 'broken' | 'under_repair';
   clientInfo?: ClientInfo | null;
 };
 
