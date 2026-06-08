@@ -45,6 +45,7 @@ const router = express.Router();
 // query: limit, skip, all=true (все для карты), warehouseStatus, search (как в GET /api/fridges)
 // Для бухгалтеров возвращает только холодильники их города
 const WAREHOUSE_STATUS_ENUM = ['warehouse', 'installed', 'returned', 'moved'];
+const USER_ROLES = ['manager', 'accountant', 'admin', 'service_manager', 'sales_head'];
 
 router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
@@ -1753,8 +1754,10 @@ router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Обязательные поля: username, password' });
     }
 
-    if (!['manager', 'accountant', 'admin'].includes(role)) {
-      return res.status(400).json({ error: 'Некорректная роль. Допустимые: manager, accountant, admin' });
+    if (!USER_ROLES.includes(role)) {
+      return res.status(400).json({
+        error: `Некорректная роль. Допустимые: ${USER_ROLES.join(', ')}`,
+      });
     }
 
     // Проверка уникальности только по username
@@ -1807,7 +1810,12 @@ router.patch('/users/:id', authenticateToken, requireAdmin, async (req, res) => 
 
     // Обновляем поля
     if (username !== undefined) user.username = username;
-    if (role !== undefined && ['manager', 'accountant', 'admin'].includes(role)) {
+    if (role !== undefined) {
+      if (!USER_ROLES.includes(role)) {
+        return res.status(400).json({
+          error: `Некорректная роль. Допустимые: ${USER_ROLES.join(', ')}`,
+        });
+      }
       user.role = role;
     }
     if (fullName !== undefined) user.fullName = fullName;
