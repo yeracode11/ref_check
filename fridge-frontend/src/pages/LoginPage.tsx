@@ -40,19 +40,28 @@ export default function LoginPage() {
       // Страницы бухгалтера
       const accountantOnlyPaths = ['/accountant'];
       
+      const salesOnlyPaths = ['/sales'];
+
       if (userData?.role === 'admin') {
-        // Админ: если пытается на главную/new, редиректим на /fridges
         if (from === '/' || from === '/new') {
           redirectTo = '/fridges';
         }
       } else if (userData?.role === 'accountant') {
-        // Бухгалтер: если пытается на главную/new или админские страницы, редиректим на /fridges
-        if (from === '/' || from === '/new' || adminOnlyPaths.includes(from)) {
+        if (from === '/' || from === '/new' || adminOnlyPaths.includes(from) || salesOnlyPaths.includes(from)) {
           redirectTo = '/fridges';
         }
+      } else if (userData?.role === 'service_manager') {
+        if (from === '/' || from === '/new' || adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from) || salesOnlyPaths.includes(from)) {
+          redirectTo = '/fridges';
+        }
+      } else if (userData?.role === 'sales_head') {
+        if (from === '/' || from === '/new' || adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from)) {
+          redirectTo = '/sales';
+        } else if (!salesOnlyPaths.includes(from) && from !== '/fridges') {
+          redirectTo = '/sales';
+        }
       } else {
-        // Менеджер: если пытается на админские или бухгалтерские страницы, редиректим на главную
-        if (adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from)) {
+        if (adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from) || salesOnlyPaths.includes(from)) {
           redirectTo = '/';
         }
       }

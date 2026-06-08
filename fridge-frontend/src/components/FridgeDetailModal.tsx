@@ -6,7 +6,14 @@ import { QRCode } from './ui/QRCode';
 import { GeocodedAddress } from './ui/GeocodedAddress';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
-import { getDisplayIdentifier } from '../utils/fridgeUtils';
+import {
+  getDisplayIdentifier,
+  getEquipmentIndicator,
+  getEquipmentStatusLabel,
+  getEquipmentIndicatorClasses,
+  getEquipmentMarkerColor,
+  EquipmentStatus,
+} from '../utils/fridgeUtils';
 
 type ClientInfo = {
   name?: string;
@@ -35,6 +42,19 @@ type CheckinItem = {
   location?: { type: 'Point'; coordinates: [number, number] };
 };
 
+type RepairItem = {
+  _id: string;
+  repairDate: string;
+  workType: string;
+  replacedParts: string[];
+  comment?: string;
+  status: 'in_progress' | 'completed';
+  completedAt?: string;
+  isComplexRepair?: boolean;
+  estimatedCostKzt?: number;
+  technicianId?: { username?: string; fullName?: string };
+};
+
 type FridgeDetail = {
   _id: string;
   code: string;
@@ -45,6 +65,10 @@ type FridgeDetail = {
   cityId?: { _id: string; name: string; code: string };
   location?: { type: 'Point'; coordinates: [number, number] };
   warehouseStatus: 'warehouse' | 'installed' | 'returned' | 'moved';
+  status?: EquipmentStatus;
+  isSeasonalClosure?: boolean;
+  type?: 'regular' | 'school' | 'restricted';
+  brokenSince?: string | null;
   visitStatus?: 'today' | 'week' | 'old' | 'never';
   lastVisit?: string | null;
   clientInfo?: ClientInfo;
@@ -208,15 +232,29 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const isAccountant = user?.role === 'accountant';
+  const isServiceManager = user?.role === 'service_manager';
   const isPrivileged = isAdmin || isAccountant;
+  const canManageRepairs = isAdmin || isServiceManager;
+  const useAdminApi = isAdmin || isAccountant;
   
   const [fridge, setFridge] = useState<FridgeDetail | null>(null);
   const [checkins, setCheckins] = useState<CheckinItem[]>([]);
+  const [repairs, setRepairs] = useState<RepairItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingCheckins, setLoadingCheckins] = useState(false);
+  const [loadingRepairs, setLoadingRepairs] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showQR, setShowQR] = useState(false);
-  const [activeTab, setActiveTab] = useState<'info' | 'history'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'history' | 'repairs'>('info');
+  const [showRepairForm, setShowRepairForm] = useState(false);
+  const [repairForm, setRepairForm] = useState({
+    workType: '',
+    replacedParts: '',
+    comment: '',
+    completeImmediately: false,
+  });
+  const [savingRepair, setSavingRepair] = useState(false);
+  const [completingRepairId, setCompletingRepairId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -243,9 +281,17 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
     if (!fridgeId && !fridgeCode) return;
     try {
       setLoadingCheckins(true);
-      if (isPrivileged) {
+      if (useAdminApi) {
         const res = await api.get(`/api/admin/fridges/${fridgeId}/checkins?limit=50`);
         setCheckins(res.data);
+      } else if (isServiceManager && fridgeId) {
+        const code = fridgeCode || fridge?.code;
+        if (!code) return;
+        const params = new URLSearchParams();
+        params.append('fridgeId', code);
+        params.append('meta', '1');
+        const res = await api.get(`/api/checkins?${params.toString()}`);
+        setCheckins(res.data?.data || res.data || []);
       } else {
         // Менеджер: грузим свои отметки по коду холодильника
         const code = fridgeCode || fridge?.code;
@@ -263,11 +309,27 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
     }
   };
 
+  const loadRepairs = async () => {
+    if (!fridgeId) return;
+    try {
+      setLoadingRepairs(true);
+      const res = await api.get(`/api/fridges/${fridgeId}/history`);
+      setRepairs(res.data?.data || []);
+    } catch (e) {
+      console.error('Ошибка загрузки истории ремонтов:', e);
+    } finally {
+      setLoadingRepairs(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'history' && checkins.length === 0) {
       loadCheckins(fridge?.code);
     }
-  }, [activeTab, fridge?.code, checkins.length]);
+    if (activeTab === 'repairs' && repairs.length === 0) {
+      loadRepairs();
+    }
+  }, [activeTab, fridge?.code, checkins.length, repairs.length, fridgeId]);
 
   // Инициализация формы бухгалтера при загрузке холодильника
   useEffect(() => {
@@ -284,7 +346,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
     (async () => {
       try {
         setLoading(true);
-        const res = isPrivileged
+        const res = useAdminApi
           ? await api.get(`/api/admin/fridges/${fridgeId}`)
           : await api.get(`/api/fridges/${fridgeId}`);
         if (!alive) return;
@@ -344,12 +406,12 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
     );
   }
 
-  const statusMarkerColor =
-    fridge.visitStatus === 'today' || fridge.visitStatus === 'week'
-      ? '#16a34a'
-      : fridge.visitStatus === 'old'
-        ? '#dc2626'
-        : '#2563eb';
+  const activeRepair = repairs.find((r) => r.status === 'in_progress');
+  const equipmentIndicator = getEquipmentIndicator(
+    fridge.status,
+    activeRepair?.replacedParts,
+  );
+  const statusMarkerColor = getEquipmentMarkerColor(equipmentIndicator);
 
   return (
     <div 
@@ -365,7 +427,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${getEquipmentIndicatorClasses(equipmentIndicator)}`}>
               <span className="text-xl">🧊</span>
             </div>
             <div>
@@ -387,9 +449,15 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <Badge className={getStatusColor(fridge.warehouseStatus)}>
               {getStatusLabel(fridge.warehouseStatus)}
             </Badge>
+            <Badge className={getEquipmentIndicatorClasses(equipmentIndicator)}>
+              {getEquipmentStatusLabel(fridge.status)}
+            </Badge>
             <Badge className={getVisitStatusColor(fridge.visitStatus)}>
               {getVisitStatusLabel(fridge.visitStatus)}
             </Badge>
+            {fridge.isSeasonalClosure && (
+              <Badge className="bg-amber-100 text-amber-800">Закрыт временно</Badge>
+            )}
             <button
               onClick={onClose}
               className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
@@ -419,7 +487,17 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
             }`}
           >
-            📅 История посещений {checkins.length > 0 && `(${checkins.length})`}
+            📅 Посещения {checkins.length > 0 && `(${checkins.length})`}
+          </button>
+          <button
+            onClick={() => setActiveTab('repairs')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'repairs'
+                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            🔧 Ремонты {repairs.length > 0 && `(${repairs.length})`}
           </button>
         </div>
 
@@ -439,8 +517,8 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
               </h3>
               <MiniMap location={fridge.location} name={fridge.name} markerColor={statusMarkerColor} />
               <p className="text-xs text-slate-500 mt-1.5">
-                Цвет метки — давность последней отметки (как на общей карте): зелёный — сегодня или на этой
-                неделе, красный — более недели без визита, синий — отметок не было.
+                Цвет метки — состояние оборудования: синий — исправен, фиолетовый — сломан (отметка ТП),
+                оранжевый — на ремонте (сложный ремонт при замене компрессора, мотора или двери).
               </p>
             </div>
           )}
@@ -663,6 +741,87 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             </div>
           )}
             </>
+          ) : activeTab === 'repairs' ? (
+            <div className="space-y-3">
+              {canManageRepairs && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowRepairForm(true)}
+                    className="px-3 py-1.5 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                  >
+                    + Записать ремонт
+                  </button>
+                </div>
+              )}
+              {loadingRepairs ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-slate-300 border-t-slate-900"></div>
+                </div>
+              ) : repairs.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <div className="text-4xl mb-2">🔧</div>
+                  <p>История ремонтов пуста</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {repairs.map((r) => (
+                    <div key={r._id} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-medium text-slate-900">{r.workType}</div>
+                          <div className="text-xs text-slate-500 mt-0.5">{formatDate(r.repairDate)}</div>
+                        </div>
+                        <Badge className={r.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}>
+                          {r.status === 'completed' ? 'Завершён' : 'В работе'}
+                        </Badge>
+                      </div>
+                      {r.replacedParts?.length > 0 && (
+                        <p className="text-sm text-slate-600 mt-2">
+                          <span className="text-slate-400">Запчасти:</span> {r.replacedParts.join(', ')}
+                        </p>
+                      )}
+                      {r.technicianId && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          МХО: {r.technicianId.fullName || r.technicianId.username}
+                        </p>
+                      )}
+                      {r.comment && (
+                        <p className="text-sm text-slate-500 mt-1 italic">{r.comment}</p>
+                      )}
+                      {r.isComplexRepair && (
+                        <p className="text-xs text-orange-600 mt-1">Сложный ремонт</p>
+                      )}
+                      {canManageRepairs && r.status === 'in_progress' && (
+                        <button
+                          type="button"
+                          disabled={completingRepairId === r._id}
+                          onClick={async () => {
+                            try {
+                              setCompletingRepairId(r._id);
+                              await api.patch(`/api/repairs/${r._id}/complete`);
+                              await loadRepairs();
+                              const res = useAdminApi
+                                ? await api.get(`/api/admin/fridges/${fridgeId}`)
+                                : await api.get(`/api/fridges/${fridgeId}`);
+                              setFridge(res.data);
+                              onUpdated?.();
+                            } catch (e: any) {
+                              alert(e?.response?.data?.error || e.message);
+                            } finally {
+                              setCompletingRepairId(null);
+                            }
+                          }}
+                          className="mt-2 text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {completingRepairId === r._id ? 'Сохранение...' : 'Завершить ремонт'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
             /* История посещений */
             <div className="space-y-3">
@@ -1096,6 +1255,105 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     onClick={() => setShowEditClientModal(false)}
                     disabled={savingClient}
                     className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Форма записи ремонта (МХО / админ) */}
+        {showRepairForm && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center overflow-auto p-4 z-[1200]" style={{ zIndex: 1200 }}>
+            <div className="bg-white rounded-lg p-6 max-w-md w-full relative z-[1201]" style={{ zIndex: 1201 }}>
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Запись о ремонте</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Вид работ *</label>
+                  <input
+                    type="text"
+                    value={repairForm.workType}
+                    onChange={(e) => setRepairForm({ ...repairForm, workType: e.target.value })}
+                    placeholder="Например: замена компрессора"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Заменённые детали</label>
+                  <input
+                    type="text"
+                    value={repairForm.replacedParts}
+                    onChange={(e) => setRepairForm({ ...repairForm, replacedParts: e.target.value })}
+                    placeholder="компрессор, мотор вентилятора (через запятую)"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Комментарий</label>
+                  <textarea
+                    value={repairForm.comment}
+                    onChange={(e) => setRepairForm({ ...repairForm, comment: e.target.value })}
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={repairForm.completeImmediately}
+                    onChange={(e) => setRepairForm({ ...repairForm, completeImmediately: e.target.checked })}
+                    className="rounded border-slate-300"
+                  />
+                  Ремонт уже завершён
+                </label>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={savingRepair}
+                    onClick={async () => {
+                      if (!repairForm.workType.trim()) {
+                        alert('Укажите вид работ');
+                        return;
+                      }
+                      try {
+                        setSavingRepair(true);
+                        const parts = repairForm.replacedParts
+                          .split(',')
+                          .map((p) => p.trim())
+                          .filter(Boolean);
+                        await api.post('/api/repairs', {
+                          fridgeId: fridge._id,
+                          workType: repairForm.workType.trim(),
+                          replacedParts: parts,
+                          comment: repairForm.comment.trim() || undefined,
+                          completeImmediately: repairForm.completeImmediately,
+                        });
+                        setShowRepairForm(false);
+                        setRepairForm({ workType: '', replacedParts: '', comment: '', completeImmediately: false });
+                        setRepairs([]);
+                        await loadRepairs();
+                        const res = useAdminApi
+                          ? await api.get(`/api/admin/fridges/${fridgeId}`)
+                          : await api.get(`/api/fridges/${fridgeId}`);
+                        setFridge(res.data);
+                        onUpdated?.();
+                      } catch (e: any) {
+                        alert(e?.response?.data?.error || e.message);
+                      } finally {
+                        setSavingRepair(false);
+                      }
+                    }}
+                    className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 font-medium"
+                  >
+                    {savingRepair ? 'Сохранение...' : 'Сохранить'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingRepair}
+                    onClick={() => setShowRepairForm(false)}
+                    className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300"
                   >
                     Отмена
                   </button>

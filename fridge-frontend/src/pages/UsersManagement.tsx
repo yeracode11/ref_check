@@ -13,7 +13,7 @@ type City = {
 type User = {
   _id: string;
   username: string;
-  role: 'manager' | 'admin' | 'accountant';
+  role: 'manager' | 'admin' | 'accountant' | 'service_manager' | 'sales_head';
   fullName?: string;
   phone?: string;
   cityId?: City | null;
@@ -24,7 +24,7 @@ type User = {
 type UserForm = {
   username: string;
   password: string;
-  role: 'manager' | 'admin' | 'accountant';
+  role: 'manager' | 'admin' | 'accountant' | 'service_manager' | 'sales_head';
   fullName: string;
   phone: string;
   cityId: string;
@@ -49,6 +49,10 @@ function getRoleBadge(role: string) {
       return <Badge className="bg-blue-100 text-blue-700">Бухгалтер</Badge>;
     case 'manager':
       return <Badge className="bg-green-100 text-green-700">Менеджер</Badge>;
+    case 'service_manager':
+      return <Badge className="bg-orange-100 text-orange-700">МХО</Badge>;
+    case 'sales_head':
+      return <Badge className="bg-indigo-100 text-indigo-700">НОП</Badge>;
     default:
       return <Badge>{role}</Badge>;
   }
@@ -236,6 +240,8 @@ export default function UsersManagement() {
           >
             <option value="all">Все роли</option>
             <option value="manager">Менеджеры</option>
+            <option value="service_manager">МХО</option>
+            <option value="sales_head">НОП</option>
             <option value="accountant">Бухгалтеры</option>
             <option value="admin">Админы</option>
           </select>
@@ -334,7 +340,9 @@ export default function UsersManagement() {
                   onChange={(e) => setForm({ ...form, role: e.target.value as any })}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="manager">Менеджер</option>
+                  <option value="manager">Менеджер (ТП)</option>
+                  <option value="service_manager">МХО</option>
+                  <option value="sales_head">НОП</option>
                   <option value="accountant">Бухгалтер</option>
                   <option value="admin">Админ</option>
                 </select>

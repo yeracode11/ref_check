@@ -6,6 +6,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRouteGuard from './components/AdminRouteGuard';
 import AccountantRouteGuard from './components/AccountantRouteGuard';
+import SalesHeadRouteGuard from './components/SalesHeadRouteGuard';
 import App from './App';
 import { LoadingSpinner } from './components/ui/Loading';
 
@@ -19,6 +20,7 @@ const CheckinPage = lazy(() => import('./pages/CheckinPage'));
 const AccountantDashboard = lazy(() => import('./pages/AccountantDashboard'));
 const UsersManagement = lazy(() => import('./pages/UsersManagement'));
 const CitiesManagement = lazy(() => import('./pages/CitiesManagement'));
+const SalesHeadDashboard = lazy(() => import('./pages/SalesHeadDashboard'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -104,6 +106,16 @@ const router = createBrowserRouter([
                 </AccountantRouteGuard>
               </Suspense>
             )
+          },
+          {
+            path: 'sales',
+            element: (
+              <Suspense fallback={<PageLoader />}>
+                <SalesHeadRouteGuard>
+                  <SalesHeadDashboard />
+                </SalesHeadRouteGuard>
+              </Suspense>
+            ),
           },
           { 
             path: 'checkin/:code', 

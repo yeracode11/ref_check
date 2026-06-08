@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
-import { getDisplayIdentifier } from '../utils/fridgeUtils';
+import { getDisplayIdentifier, showSeasonalClosureCheckbox } from '../utils/fridgeUtils';
 import { Card, Button, Badge } from '../components/ui/Card';
 
 type Fridge = {
@@ -12,6 +12,7 @@ type Fridge = {
   name: string;
   address?: string;
   description?: string;
+  type?: 'regular' | 'school' | 'restricted';
   cityId?: { _id?: string; name: string; code: string } | null;
   clientInfo?: {
     inn?: string;
@@ -41,6 +42,8 @@ export default function CheckinPage() {
   const locationRef = useRef<{ lat: number; lng: number } | null>(null);
   const [geoRefreshWarning, setGeoRefreshWarning] = useState<string | null>(null);
   const [address, setAddress] = useState('');
+  const [fridgeCondition, setFridgeCondition] = useState<'working' | 'broken'>('working');
+  const [isSeasonalClosure, setIsSeasonalClosure] = useState(false);
 
   useEffect(() => {
     locationRef.current = currentLocation;
@@ -166,6 +169,8 @@ export default function CheckinPage() {
         fridgeId: code,
         address: address || undefined,
         location: geo,
+        fridgeCondition,
+        isSeasonalClosure: showSeasonalClosureCheckbox(fridge?.type) ? isSeasonalClosure : undefined,
       });
 
       setSuccess(
@@ -283,6 +288,51 @@ export default function CheckinPage() {
             </div>
           )}
 
+          {/* Состояние холодильника */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Состояние холодильника
+            </label>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
+                <input
+                  type="radio"
+                  name="fridgeCondition"
+                  value="working"
+                  checked={fridgeCondition === 'working'}
+                  onChange={() => setFridgeCondition('working')}
+                  className="text-blue-600"
+                />
+                <span className="text-sm">Рабочий холодильник</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-purple-200 hover:bg-purple-50">
+                <input
+                  type="radio"
+                  name="fridgeCondition"
+                  value="broken"
+                  checked={fridgeCondition === 'broken'}
+                  onChange={() => setFridgeCondition('broken')}
+                  className="text-purple-600"
+                />
+                <span className="text-sm text-purple-800">Сломанный холодильник</span>
+              </label>
+            </div>
+          </div>
+
+          {showSeasonalClosureCheckbox(fridge?.type) && (
+            <label className="flex items-start gap-2 cursor-pointer p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <input
+                type="checkbox"
+                checked={isSeasonalClosure}
+                onChange={(e) => setIsSeasonalClosure(e.target.checked)}
+                className="mt-0.5 rounded border-amber-300"
+              />
+              <span className="text-sm text-amber-900">
+                Объект закрыт на каникулы / временно не работает
+              </span>
+            </label>
+          )}
+
           {/* Адрес точки (опционально) */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -293,7 +343,7 @@ export default function CheckinPage() {
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="Улица, дом, ориентир..."
-              className="w/full rounded-lg border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
             <p className="mt-1 text-xs text-slate-500">
               Этот адрес будет сохранён как текущее местоположение холодильника.

@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Button } from '../components/ui/Card';
+import { showSeasonalClosureCheckbox } from '../utils/fridgeUtils';
 
 type Fridge = {
   _id: string;
   code: string;
   number?: string;
   name: string;
+  type?: 'regular' | 'school' | 'restricted';
   cityId?: { name: string };
 };
 
@@ -26,6 +28,10 @@ export default function NewCheckin() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const locationRef = useRef<{ lat: number; lng: number } | null>(null);
   const [geoRefreshWarning, setGeoRefreshWarning] = useState<string | null>(null);
+  const [fridgeCondition, setFridgeCondition] = useState<'working' | 'broken'>('working');
+  const [isSeasonalClosure, setIsSeasonalClosure] = useState(false);
+
+  const selectedFridge = fridges.find((f) => f.code === fridgeId);
 
   useEffect(() => {
     locationRef.current = currentLocation;
@@ -96,6 +102,8 @@ export default function NewCheckin() {
         notes: notes || undefined,
         address: address || undefined,
         location: geo,
+        fridgeCondition,
+        isSeasonalClosure: showSeasonalClosureCheckbox(selectedFridge?.type) ? isSeasonalClosure : undefined,
       });
 
       setSuccess(
@@ -158,6 +166,49 @@ export default function NewCheckin() {
               />
             )}
           </div>
+
+          {/* Состояние холодильника */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Состояние холодильника
+            </label>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-slate-200">
+                <input
+                  type="radio"
+                  name="fridgeCondition"
+                  value="working"
+                  checked={fridgeCondition === 'working'}
+                  onChange={() => setFridgeCondition('working')}
+                />
+                <span className="text-sm">Рабочий холодильник</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-purple-200">
+                <input
+                  type="radio"
+                  name="fridgeCondition"
+                  value="broken"
+                  checked={fridgeCondition === 'broken'}
+                  onChange={() => setFridgeCondition('broken')}
+                />
+                <span className="text-sm text-purple-800">Сломанный холодильник</span>
+              </label>
+            </div>
+          </div>
+
+          {showSeasonalClosureCheckbox(selectedFridge?.type) && (
+            <label className="flex items-start gap-2 cursor-pointer p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <input
+                type="checkbox"
+                checked={isSeasonalClosure}
+                onChange={(e) => setIsSeasonalClosure(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="text-sm text-amber-900">
+                Объект закрыт на каникулы / временно не работает
+              </span>
+            </label>
+          )}
 
           {/* Address */}
           <div>

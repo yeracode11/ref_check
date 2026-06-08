@@ -53,13 +53,31 @@ const FridgeSchema = new mongoose.Schema(
     },
     // Информация о клиенте (заполняется при установке)
     clientInfo: { type: ClientInfoSchema },
-    // История изменений статуса
+    // История изменений статуса склада
     statusHistory: [{
       status: { type: String, enum: ['warehouse', 'installed', 'returned', 'moved'] },
       changedAt: { type: Date, default: Date.now },
       changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       notes: { type: String },
     }],
+    // Состояние оборудования (сервисный модуль)
+    status: {
+      type: String,
+      enum: ['working', 'broken', 'under_repair'],
+      default: 'working',
+      index: true,
+    },
+    // Объект закрыт на каникулы / временно не работает
+    isSeasonalClosure: { type: Boolean, default: false },
+    // Тип объекта: обычный, школа, режимный
+    type: {
+      type: String,
+      enum: ['regular', 'school', 'restricted'],
+      default: 'regular',
+      index: true,
+    },
+    // Дата выявления поломки (для индикации «сложный ремонт»)
+    brokenSince: { type: Date },
   },
   { timestamps: true }
 );

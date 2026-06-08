@@ -6,7 +6,13 @@ import { Card, Badge } from '../components/ui/Card';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { GeocodedAddress } from '../components/ui/GeocodedAddress';
-import { getDisplayIdentifier } from '../utils/fridgeUtils';
+import {
+  getDisplayIdentifier,
+  getEquipmentIndicator,
+  getEquipmentStatusLabel,
+  getEquipmentIndicatorClasses,
+  EquipmentStatus,
+} from '../utils/fridgeUtils';
 
 type City = {
   _id: string;
@@ -26,6 +32,9 @@ type Fridge = {
   description?: string;
   cityId?: City | string;
   warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
+  status?: EquipmentStatus;
+  isSeasonalClosure?: boolean;
+  type?: 'regular' | 'school' | 'restricted';
   clientInfo?: {
     inn?: string;
     name?: string;
@@ -71,6 +80,7 @@ export default function FridgesList() {
   const [citiesLoading, setCitiesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [warehouseStatusFilter, setWarehouseStatusFilter] = useState<string>('all');
+  const [equipmentStatusFilter, setEquipmentStatusFilter] = useState<string>('all');
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
   const observerTarget = useRef<HTMLDivElement | null>(null);
@@ -139,6 +149,9 @@ export default function FridgesList() {
       if (warehouseStatusFilter !== 'all') {
         params.append('warehouseStatus', warehouseStatusFilter);
       }
+      if (equipmentStatusFilter !== 'all') {
+        params.append('equipmentStatus', equipmentStatusFilter);
+      }
       // Для бухгалтера/менеджера город добавляется на бэкенде автоматически
       // Для админов - если выбран город, фильтруем по нему, иначе (пустая строка = "Все города") показываем все
       if (!isAccountant && !isManager && selectedCityId && selectedCityId.trim() !== '') {
@@ -174,7 +187,7 @@ export default function FridgesList() {
         setLoadingMore(false);
       }
     }
-  }, [selectedCityId, warehouseStatusFilter, searchQuery, isAccountant, isManager]);
+  }, [selectedCityId, warehouseStatusFilter, equipmentStatusFilter, searchQuery, isAccountant, isManager]);
 
   // Debounce для поиска - обновляем searchQuery после задержки
   useEffect(() => {
@@ -202,7 +215,7 @@ export default function FridgesList() {
     if (isAccountant || isManager || !citiesLoading) {
       loadFridges(0, true);
     }
-  }, [selectedCityId, warehouseStatusFilter, searchQuery, isAccountant, isManager, citiesLoading]);
+  }, [selectedCityId, warehouseStatusFilter, equipmentStatusFilter, searchQuery, isAccountant, isManager, citiesLoading]);
 
   // Бесконечный скролл
   useEffect(() => {
@@ -385,6 +398,24 @@ export default function FridgesList() {
                 <option value="moved">Перемещён</option>
               </select>
             </div>
+
+            {/* Состояние оборудования */}
+            <div className="w-full sm:w-auto sm:min-w-[200px]">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Состояние оборудования
+              </label>
+              <select
+                value={equipmentStatusFilter}
+                onChange={(e) => setEquipmentStatusFilter(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 bg-white"
+              >
+                <option value="all">Все</option>
+                <option value="working">Исправные</option>
+                <option value="faulty">Неисправные</option>
+                <option value="broken">Сломанные</option>
+                <option value="under_repair">На ремонте</option>
+              </select>
+            </div>
           </div>
         </Card>
       )}
@@ -427,7 +458,10 @@ export default function FridgesList() {
                         return <div className="text-sm text-slate-500 font-mono truncate">{isNumberCity ? displayId : `#${displayId}`}</div>;
                       })()}
                     </div>
-                    <div className="flex-shrink-0">
+                    <div className="flex-shrink-0 flex flex-col gap-1 items-end">
+                      <Badge className={getEquipmentIndicatorClasses(getEquipmentIndicator(f.status))}>
+                        {getEquipmentStatusLabel(f.status)}
+                      </Badge>
                       {getStatusBadge(f.warehouseStatus)}
                     </div>
                   </div>

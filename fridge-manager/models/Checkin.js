@@ -30,6 +30,14 @@ const CheckinSchema = new mongoose.Schema(
     address: { type: String },
     notes: { type: String },
     visitedAt: { type: Date, default: Date.now, index: true },
+    // Состояние холодильника по отметке ТП
+    fridgeCondition: {
+      type: String,
+      enum: ['working', 'broken'],
+      default: 'working',
+    },
+    // Флаг закрытия объекта (школа / режимный объект)
+    isSeasonalClosure: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

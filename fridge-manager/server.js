@@ -89,6 +89,12 @@ app.use('/api/cities', cityRoutes);
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
 
+const repairRoutes = require('./routes/repair');
+app.use('/api/repairs', repairRoutes);
+
+const salesRoutes = require('./routes/sales');
+app.use('/api/sales', salesRoutes);
+
 // DB Connection
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fridge_manager';
 

@@ -6,7 +6,12 @@ const UserSchema = new mongoose.Schema(
     username: { type: String, required: true, unique: true, index: true },
     email: { type: String }, // необязательное поле без индекса
     password: { type: String, required: true },
-    role: { type: String, enum: ['manager', 'admin', 'accountant'], default: 'manager', index: true },
+    role: {
+      type: String,
+      enum: ['manager', 'admin', 'accountant', 'service_manager', 'sales_head'],
+      default: 'manager',
+      index: true,
+    },
     cityId: { type: mongoose.Schema.Types.ObjectId, ref: 'City', index: true }, // Город бухгалтера
     fullName: { type: String },
     phone: { type: String },

@@ -76,6 +76,11 @@ router.post('/', async (req, res) => {
       }
     }
 
+    const fridgeCondition =
+      req.body.fridgeCondition === 'broken' ? 'broken' : 'working';
+    const isSeasonalClosure = req.body.isSeasonalClosure === true
+      || req.body.isSeasonalClosure === 'true';
+
     const id = await getNextSequence('checkin');
     const checkin = await Checkin.create({
       id,
@@ -86,6 +91,8 @@ router.post('/', async (req, res) => {
       address: req.body.address,
       notes: req.body.notes,
       visitedAt: req.body.visitedAt ? new Date(req.body.visitedAt) : undefined,
+      fridgeCondition,
+      isSeasonalClosure,
     });
     
     // Обновляем местоположение, адрес и статус холодильника по последней отметке
@@ -168,6 +175,22 @@ router.post('/', async (req, res) => {
           }
         }
         
+        const fridgeStatusUpdate = {};
+        if (fridgeCondition === 'broken') {
+          fridgeStatusUpdate.status = 'broken';
+          if (!fridge.brokenSince) {
+            fridgeStatusUpdate.brokenSince = new Date();
+          }
+        } else if (fridge.status !== 'under_repair') {
+          fridgeStatusUpdate.status = 'working';
+          fridgeStatusUpdate.brokenSince = null;
+        }
+
+        const seasonalTypes = ['school', 'restricted'];
+        if (seasonalTypes.includes(fridge.type)) {
+          fridgeStatusUpdate.isSeasonalClosure = isSeasonalClosure;
+        }
+
         // Обновляем холодильник (ищем и по code, и по number, и по ИНН)
         await Fridge.findOneAndUpdate(
           {
@@ -183,6 +206,7 @@ router.post('/', async (req, res) => {
               warehouseStatus: newWarehouseStatus,
               // Если менеджер передал новый адрес — обновим его; иначе не трогаем старый
               ...(req.body.address ? { address: req.body.address } : {}),
+              ...fridgeStatusUpdate,
             },
           },
           { new: true }

@@ -1,0 +1,249 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const Fridge = require('../models/Fridge');
+const Checkin = require('../models/Checkin');
+const Repair = require('../models/Repair');
+const City = require('../models/City');
+const User = require('../models/User');
+const { authenticateToken, requireSalesHead } = require('../middleware/auth');
+const { buildCheckinFridgeIdCandidates } = require('../lib/fridgeVisitHelpers');
+const {
+  estimateRepairCostKzt,
+  isComplexRepair,
+  getEquipmentIndicator,
+} = require('../lib/repairHelpers');
+
+const router = express.Router();
+
+function parseDate(dateString) {
+  if (!dateString) return undefined;
+  const d = new Date(dateString);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+// GET /api/sales/fridges — список для НОП с фильтрами
+router.get('/fridges', authenticateToken, requireSalesHead, async (req, res) => {
+  try {
+    const { cityId, equipmentStatus, search, limit, skip } = req.query;
+    const filter = { active: true };
+
+    if (cityId && mongoose.Types.ObjectId.isValid(cityId)) {
+      filter.cityId = new mongoose.Types.ObjectId(cityId);
+    }
+
+    if (equipmentStatus === 'faulty') {
+      filter.status = { $in: ['broken', 'under_repair'] };
+    } else if (equipmentStatus && ['working', 'broken', 'under_repair'].includes(equipmentStatus)) {
+      filter.status = equipmentStatus;
+    }
+
+    if (search && String(search).trim()) {
+      const searchRegex = new RegExp(String(search).trim(), 'i');
+      filter.$or = [
+        { name: searchRegex },
+        { code: searchRegex },
+        { number: searchRegex },
+        { address: searchRegex },
+      ];
+    }
+
+    const limitNum = limit ? Math.max(1, Math.min(500, Number(limit))) : 100;
+    const skipNum = skip ? Math.max(0, Number(skip)) : 0;
+
+    const [fridges, total] = await Promise.all([
+      Fridge.find(filter)
+        .populate('cityId', 'name code')
+        .sort({ updatedAt: -1 })
+        .skip(skipNum)
+        .limit(limitNum)
+        .lean(),
+      Fridge.countDocuments(filter),
+    ]);
+
+    const fridgeIds = fridges.map((f) => f._id);
+    const activeRepairs = await Repair.find({
+      fridgeId: { $in: fridgeIds },
+      status: 'in_progress',
+    }).lean();
+    const repairByFridge = new Map(activeRepairs.map((r) => [String(r.fridgeId), r]));
+
+    const data = fridges.map((f) => {
+      const activeRepair = repairByFridge.get(String(f._id)) || null;
+      return {
+        ...f,
+        equipmentIndicator: getEquipmentIndicator(f, activeRepair),
+        isComplexRepair: activeRepair ? isComplexRepair(activeRepair.replacedParts) : false,
+        activeRepair,
+      };
+    });
+
+    return res.json({ data, total, limit: limitNum, skip: skipNum });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch fridges for sales', details: err.message });
+  }
+});
+
+// GET /api/sales/checkins — история отметок для НОП
+router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) => {
+  try {
+    const { cityId, fridgeId, from, to, limit, skip } = req.query;
+    const filter = {};
+
+    if (fridgeId) {
+      filter.fridgeId = String(fridgeId).trim().replace(/^#/, '');
+    } else if (cityId && mongoose.Types.ObjectId.isValid(cityId)) {
+      const fridgesInCity = await Fridge.find(
+        { cityId: new mongoose.Types.ObjectId(cityId) },
+        { code: 1, number: 1, 'clientInfo.inn': 1 },
+      ).lean();
+      const ids = new Set();
+      fridgesInCity.forEach((f) => {
+        buildCheckinFridgeIdCandidates(f).forEach((id) => ids.add(id));
+      });
+      filter.fridgeId = { $in: [...ids] };
+    }
+
+    const fromDate = parseDate(from);
+    const toDate = parseDate(to);
+    if (fromDate || toDate) {
+      filter.visitedAt = {};
+      if (fromDate) filter.visitedAt.$gte = fromDate;
+      if (toDate) filter.visitedAt.$lte = toDate;
+    }
+
+    const limitNum = limit ? Math.max(1, Math.min(500, Number(limit))) : 100;
+    const skipNum = skip ? Math.max(0, Number(skip)) : 0;
+
+    const [items, total] = await Promise.all([
+      Checkin.find(filter).sort({ visitedAt: -1 }).skip(skipNum).limit(limitNum).lean(),
+      Checkin.countDocuments(filter),
+    ]);
+
+    const managerIds = [...new Set(items.map((i) => i.managerId).filter(Boolean))];
+    const objectIds = managerIds
+      .filter((id) => mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+    const users = await User.find({
+      $or: [{ username: { $in: managerIds } }, { _id: { $in: objectIds } }],
+    }).select('username fullName role');
+    const userMap = new Map();
+    users.forEach((u) => {
+      if (u.username) userMap.set(u.username, u);
+      userMap.set(String(u._id), u);
+    });
+
+    const data = items.map((item) => {
+      const user = userMap.get(item.managerId) || userMap.get(String(item.managerId));
+      return {
+        ...item,
+        managerUsername: user?.username || item.managerId,
+        managerFullName: user?.fullName || '',
+        managerRole: user?.role || null,
+      };
+    });
+
+    return res.json({ data, total, limit: limitNum, skip: skipNum });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch checkins for sales', details: err.message });
+  }
+});
+
+// GET /api/sales/analytics — аналитика поломок и затрат на ремонт
+router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) => {
+  try {
+    const days = Math.max(7, Math.min(365, Number(req.query.days) || 90));
+    const cityId = req.query.cityId;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const fridgeFilter = { active: true };
+    if (cityId && mongoose.Types.ObjectId.isValid(cityId)) {
+      fridgeFilter.cityId = new mongoose.Types.ObjectId(cityId);
+    }
+
+    const fridges = await Fridge.find(fridgeFilter, { _id: 1, status: 1, cityId: 1 }).lean();
+    const fridgeIds = fridges.map((f) => f._id);
+
+    const [repairs, brokenCheckins, cities] = await Promise.all([
+      Repair.find({
+        fridgeId: { $in: fridgeIds },
+        repairDate: { $gte: since },
+      }).lean(),
+      Checkin.find({
+        fridgeCondition: 'broken',
+        visitedAt: { $gte: since },
+      }).lean(),
+      City.find({ active: true }).select('name code').lean(),
+    ]);
+
+    const breakdownsByDay = {};
+    for (let i = 0; i < days; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      breakdownsByDay[key] = { date: key, breakdowns: 0, repairs: 0, costKzt: 0 };
+    }
+
+    brokenCheckins.forEach((c) => {
+      const key = new Date(c.visitedAt).toISOString().slice(0, 10);
+      if (breakdownsByDay[key]) breakdownsByDay[key].breakdowns += 1;
+    });
+
+    repairs.forEach((r) => {
+      const key = new Date(r.repairDate).toISOString().slice(0, 10);
+      if (breakdownsByDay[key]) {
+        breakdownsByDay[key].repairs += 1;
+        breakdownsByDay[key].costKzt += estimateRepairCostKzt(r.replacedParts);
+      }
+    });
+
+    const dailyStats = Object.values(breakdownsByDay).sort((a, b) => a.date.localeCompare(b.date));
+
+    const statusCounts = {
+      working: fridges.filter((f) => f.status === 'working' || !f.status).length,
+      broken: fridges.filter((f) => f.status === 'broken').length,
+      under_repair: fridges.filter((f) => f.status === 'under_repair').length,
+    };
+
+    const partsCost = {};
+    repairs.forEach((r) => {
+      (r.replacedParts || []).forEach((part) => {
+        const p = String(part).trim();
+        if (!p) return;
+        partsCost[p] = (partsCost[p] || 0) + 1;
+      });
+    });
+    const topParts = Object.entries(partsCost)
+      .map(([part, count]) => ({
+        part,
+        count,
+        estimatedCostKzt: estimateRepairCostKzt([part]) * count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const totalRepairCostKzt = repairs.reduce(
+      (sum, r) => sum + estimateRepairCostKzt(r.replacedParts),
+      0,
+    );
+
+    return res.json({
+      dailyStats,
+      statusCounts,
+      topParts,
+      summary: {
+        totalFridges: fridges.length,
+        faultyFridges: statusCounts.broken + statusCounts.under_repair,
+        totalRepairs: repairs.length,
+        totalRepairCostKzt,
+        breakdownReports: brokenCheckins.length,
+        days,
+      },
+      cities,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch sales analytics', details: err.message });
+  }
+});
+
+module.exports = router;

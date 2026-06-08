@@ -2,7 +2,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
+const Repair = require('../models/Repair');
 const { authenticateToken } = require('../middleware/auth');
+const { isComplexRepair, estimateRepairCostKzt } = require('../lib/repairHelpers');
 const {
   buildCheckinFridgeIdCandidates,
   visitStatusFromLastVisit,
@@ -125,6 +127,7 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const {
       active, nearLat, nearLng, nearKm, cityId, code, search, limit, skip, warehouseStatus,
+      equipmentStatus,
     } = req.query;
     const filter = {};
     if (active !== undefined) filter.active = active === 'true';
@@ -144,6 +147,12 @@ router.get('/', authenticateToken, async (req, res) => {
     }
     
     if (warehouseStatus) filter.warehouseStatus = warehouseStatus;
+
+    if (equipmentStatus === 'faulty') {
+      filter.status = { $in: ['broken', 'under_repair'] };
+    } else if (equipmentStatus && ['working', 'broken', 'under_repair'].includes(equipmentStatus)) {
+      filter.status = equipmentStatus;
+    }
 
     // Поиск по нескольким полям (если передан search)
     if (search && search.trim()) {
@@ -202,7 +211,7 @@ router.get('/', authenticateToken, async (req, res) => {
       const list = await Fridge.find(filter)
         .populate('cityId', 'name code')
         .select(
-          'code number name cityId location address description active warehouseStatus createdAt updatedAt',
+          'code number name cityId location address description active warehouseStatus status isSeasonalClosure type brokenSince createdAt updatedAt',
         )
         .sort({ createdAt: -1 })
         .skip(skipNum)
@@ -337,6 +346,45 @@ router.get('/', authenticateToken, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch fridges', details: err.message });
+  }
+});
+
+// GET /api/fridges/:id/history — история ремонтов холодильника
+router.get('/:id/history', authenticateToken, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid fridge id' });
+    }
+
+    const fridge = await Fridge.findById(req.params.id).select('code name number status');
+    if (!fridge) {
+      return res.status(404).json({ error: 'Fridge not found' });
+    }
+
+    const repairs = await Repair.find({ fridgeId: fridge._id })
+      .populate('technicianId', 'username fullName')
+      .sort({ repairDate: -1 })
+      .lean();
+
+    const data = repairs.map((r) => ({
+      ...r,
+      isComplexRepair: isComplexRepair(r.replacedParts),
+      estimatedCostKzt: estimateRepairCostKzt(r.replacedParts),
+    }));
+
+    return res.json({
+      fridge: {
+        _id: fridge._id,
+        code: fridge.code,
+        name: fridge.name,
+        number: fridge.number,
+        status: fridge.status,
+      },
+      data,
+      total: data.length,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch repair history', details: err.message });
   }
 });
 

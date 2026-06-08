@@ -63,3 +63,76 @@ export function getDisplayIdentifier(
   // 4. Для остальных городов используем code
   return fridge.code || null;
 }
+
+export type EquipmentStatus = 'working' | 'broken' | 'under_repair';
+export type EquipmentIndicator = 'blue' | 'purple' | 'orange';
+
+const COMPLEX_PART_KEYWORDS = [
+  'компрессор',
+  'compressor',
+  'мотор вентилятора',
+  'вентилятор',
+  'fan motor',
+  'дверь',
+  'дверца',
+  'door',
+];
+
+function isComplexRepairParts(parts?: string[] | null): boolean {
+  if (!parts?.length) return false;
+  return parts.some((part) => {
+    const p = part.trim().toLowerCase();
+    return COMPLEX_PART_KEYWORDS.some((kw) => p.includes(kw));
+  });
+}
+
+export function getEquipmentIndicator(
+  status?: EquipmentStatus | null,
+  replacedParts?: string[] | null,
+): EquipmentIndicator {
+  if (status === 'broken') return 'purple';
+  if (status === 'under_repair') {
+    return isComplexRepairParts(replacedParts) ? 'orange' : 'orange';
+  }
+  return 'blue';
+}
+
+export function getEquipmentStatusLabel(status?: EquipmentStatus | null): string {
+  switch (status) {
+    case 'broken':
+      return 'Сломан';
+    case 'under_repair':
+      return 'На ремонте';
+    case 'working':
+    default:
+      return 'Исправен';
+  }
+}
+
+export function getEquipmentIndicatorClasses(indicator: EquipmentIndicator): string {
+  switch (indicator) {
+    case 'purple':
+      return 'bg-purple-100 text-purple-800 border-purple-300';
+    case 'orange':
+      return 'bg-orange-100 text-orange-800 border-orange-300';
+    case 'blue':
+    default:
+      return 'bg-blue-100 text-blue-800 border-blue-300';
+  }
+}
+
+export function getEquipmentMarkerColor(indicator: EquipmentIndicator): string {
+  switch (indicator) {
+    case 'purple':
+      return '#9333ea';
+    case 'orange':
+      return '#ea580c';
+    case 'blue':
+    default:
+      return '#2563eb';
+  }
+}
+
+export function showSeasonalClosureCheckbox(type?: string | null): boolean {
+  return type === 'school' || type === 'restricted';
+}

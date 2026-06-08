@@ -5,7 +5,7 @@ type User = {
   _id: string;
   username: string;
   email: string;
-  role: 'manager' | 'admin' | 'accountant';
+  role: 'manager' | 'admin' | 'accountant' | 'service_manager' | 'sales_head';
   fullName?: string;
   cityId?: string;
 };

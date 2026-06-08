@@ -40,6 +40,20 @@ function requireAdminOrAccountant(req, res, next) {
   return next();
 }
 
+function requireAdminOrServiceManager(req, res, next) {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'service_manager')) {
+    return res.status(403).json({ error: 'Admin or Service Manager access required' });
+  }
+  return next();
+}
+
+function requireSalesHead(req, res, next) {
+  if (!req.user || (req.user.role !== 'sales_head' && req.user.role !== 'admin')) {
+    return res.status(403).json({ error: 'Sales Head or Admin access required' });
+  }
+  return next();
+}
+
 function generateToken(user) {
   return jwt.sign(
     { id: user._id, username: user.username, role: user.role, cityId: user.cityId },
@@ -48,5 +62,14 @@ function generateToken(user) {
   );
 }
 
-module.exports = { authenticateToken, requireAdmin, requireAccountant, requireAdminOrAccountant, generateToken, JWT_SECRET };
+module.exports = {
+  authenticateToken,
+  requireAdmin,
+  requireAccountant,
+  requireAdminOrAccountant,
+  requireAdminOrServiceManager,
+  requireSalesHead,
+  generateToken,
+  JWT_SECRET,
+};
 

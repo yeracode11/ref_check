@@ -20,12 +20,22 @@ export default function App() {
     const managerOnlyPaths = ['/', '/new'];
     // Страницы только для админов
     const adminOnlyPaths = ['/admin', '/users', '/cities'];
-    // Страницы только для бухгалтеров
     const accountantOnlyPaths = ['/accountant'];
+    const salesOnlyPaths = ['/sales'];
     
     // Если менеджер пытается зайти на админские или бухгалтерские страницы
-    if (user.role === 'manager' && (adminOnlyPaths.includes(currentPath) || accountantOnlyPaths.includes(currentPath))) {
+    if (user.role === 'manager' && (adminOnlyPaths.includes(currentPath) || accountantOnlyPaths.includes(currentPath) || salesOnlyPaths.includes(currentPath))) {
       navigate('/', { replace: true });
+      return;
+    }
+
+    if (user.role === 'service_manager' && (managerOnlyPaths.includes(currentPath) || adminOnlyPaths.includes(currentPath) || accountantOnlyPaths.includes(currentPath) || salesOnlyPaths.includes(currentPath))) {
+      navigate('/fridges', { replace: true });
+      return;
+    }
+
+    if (user.role === 'sales_head' && (managerOnlyPaths.includes(currentPath) || adminOnlyPaths.includes(currentPath) || accountantOnlyPaths.includes(currentPath))) {
+      navigate('/sales', { replace: true });
       return;
     }
     
@@ -52,6 +62,7 @@ export default function App() {
 
     const adminNavItems = [
       { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+      { path: '/sales', label: 'Сервис НОП', icon: '📈' },
       { path: '/admin', label: 'Админ', icon: '🛠️' },
       { path: '/users', label: 'Пользователи', icon: '👥' },
       { path: '/cities', label: 'Города', icon: '🏙️' },
@@ -61,12 +72,21 @@ export default function App() {
       { path: '/fridges', label: 'Холодильники', icon: '🧊' },
       { path: '/accountant', label: 'Управление', icon: '📊' },
     ];
+
+    const serviceManagerNavItems = [
+      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+    ];
+
+    const salesHeadNavItems = [
+      { path: '/sales', label: 'Аналитика НОП', icon: '📈' },
+      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+    ];
     
-    return user?.role === 'admin' 
-      ? adminNavItems 
-      : user?.role === 'accountant' 
-        ? accountantNavItems 
-        : baseNavItems;
+    if (user?.role === 'admin') return adminNavItems;
+    if (user?.role === 'accountant') return accountantNavItems;
+    if (user?.role === 'service_manager') return serviceManagerNavItems;
+    if (user?.role === 'sales_head') return salesHeadNavItems;
+    return baseNavItems;
   }, [user?.role]);
 
   return (
@@ -76,7 +96,13 @@ export default function App() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link 
-              to={user?.role === 'admin' || user?.role === 'accountant' ? '/fridges' : '/'} 
+              to={
+                user?.role === 'admin' || user?.role === 'accountant' || user?.role === 'service_manager'
+                  ? '/fridges'
+                  : user?.role === 'sales_head'
+                    ? '/sales'
+                    : '/'
+              } 
               className="flex items-center gap-2" 
               onClick={() => setMobileMenuOpen(false)}
             >

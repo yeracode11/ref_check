@@ -13,8 +13,13 @@ type Props = {
 export default function AdminRouteGuard({ children }: Props) {
   const { user } = useAuth();
 
-  // Если пользователь - админ или бухгалтер, редиректим на /fridges
-  if (user?.role === 'admin' || user?.role === 'accountant') {
+  // Страницы ТП доступны только менеджерам
+  if (
+    user?.role === 'admin'
+    || user?.role === 'accountant'
+    || user?.role === 'service_manager'
+    || user?.role === 'sales_head'
+  ) {
     return <Navigate to="/fridges" replace />;
   }
 
