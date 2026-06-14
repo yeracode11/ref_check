@@ -281,7 +281,11 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const [saving, setSaving] = useState(false);
   const [savingClient, setSavingClient] = useState(false);
   const [showAccountantForm, setShowAccountantForm] = useState(false);
-  const [accountantForm, setAccountantForm] = useState({ address: '', isReturned: false });
+  const [accountantForm, setAccountantForm] = useState({
+    address: '',
+    isReturned: false,
+    isSeasonalClosure: false,
+  });
   const [savingAccountant, setSavingAccountant] = useState(false);
 
   // Загрузка истории посещений
@@ -345,6 +349,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
       setAccountantForm({
         address: fridge.address || '',
         isReturned: fridge.warehouseStatus === 'returned',
+        isSeasonalClosure: !!fridge.isSeasonalClosure,
       });
     }
   }, [fridge, isAccountant]);
@@ -662,6 +667,18 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     Сделан возврат (холодильник возвращен на склад)
                   </label>
                 </div>
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    id="isSeasonalClosure"
+                    checked={accountantForm.isSeasonalClosure}
+                    onChange={(e) => setAccountantForm({ ...accountantForm, isSeasonalClosure: e.target.checked })}
+                    className="w-4 h-4 mt-0.5 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
+                  />
+                  <label htmlFor="isSeasonalClosure" className="text-sm font-medium text-slate-700 cursor-pointer">
+                    Объект закрыт на каникулы / временно не работает
+                  </label>
+                </div>
                 <button
                   onClick={async () => {
                     try {
@@ -684,6 +701,11 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                           notes: accountantForm.isReturned 
                             ? 'Холодильник возвращен на склад (отмечено бухгалтером)'
                             : 'Статус возврата снят',
+                          isSeasonalClosure: accountantForm.isSeasonalClosure,
+                        });
+                      } else if (accountantForm.isSeasonalClosure !== !!fridge.isSeasonalClosure) {
+                        await api.patch(`/api/admin/fridges/${fridge._id}`, {
+                          isSeasonalClosure: accountantForm.isSeasonalClosure,
                         });
                       }
                       
@@ -692,7 +714,8 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                       setFridge(res.data);
                       setAccountantForm({ 
                         address: res.data.address || '', 
-                        isReturned: res.data.warehouseStatus === 'returned' 
+                        isReturned: res.data.warehouseStatus === 'returned',
+                        isSeasonalClosure: !!res.data.isSeasonalClosure,
                       });
                       onUpdated?.();
                       alert('Данные сохранены');

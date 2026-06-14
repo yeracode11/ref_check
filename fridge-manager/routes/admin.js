@@ -17,6 +17,7 @@ const {
 const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
 const {
   generateSalesReportBuffer,
+  appendSalesReportSheets,
   buildExportFileName,
 } = require('../lib/salesReportExport');
 const { getAssignedCityId } = require('../lib/cityScope');
@@ -376,6 +377,8 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
         'Адрес': f.address || '',
         'Адрес по координатам': geocodedAddress,
         'Описание': f.description || '',
+        'Тип объекта': f.type === 'school' ? 'Школа' : f.type === 'restricted' ? 'Режимный' : 'Обычный',
+        'Объект закрыт на каникулы': f.isSeasonalClosure ? 'Да' : 'Нет',
         'Статус склада': warehouseStatusLabel,
         'Возврат': isReturned ? 'Да' : 'Нет',
         'Статус визита': status,
@@ -417,6 +420,8 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       { wch: 40 }, // Адрес
       { wch: 50 }, // Адрес по координатам
       { wch: 30 }, // Описание
+      { wch: 14 }, // Тип объекта
+      { wch: 28 }, // Каникулы
       { wch: 18 }, // Статус склада
       { wch: 10 }, // Возврат
       { wch: 12 }, // Статус визита
@@ -424,6 +429,9 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async
       { wch: 10 }, // Активен
     ];
     worksheet['!cols'] = columnWidths;
+
+    console.log('[Export] Adding NOP fund and MXO repair sheets...');
+    await appendSalesReportSheets(workbook, req.user, {}, { activeOnly: false });
 
     // Генерируем буфер Excel файла
     const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
@@ -1978,7 +1986,7 @@ router.patch('/fridges/:id/client', authenticateToken, requireAdminOrAccountant,
 // Изменить статус холодильника (warehouseStatus) - доступно для бухгалтера и админа
 router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
-    const { warehouseStatus, clientInfo, notes } = req.body;
+    const { warehouseStatus, clientInfo, notes, isSeasonalClosure } = req.body;
 
     if (!warehouseStatus || !['warehouse', 'installed', 'returned', 'moved'].includes(warehouseStatus)) {
       return res.status(400).json({ error: 'Некорректный статус' });
@@ -1999,6 +2007,10 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
     // Обновляем warehouseStatus
     const oldStatus = fridge.warehouseStatus;
     fridge.warehouseStatus = warehouseStatus;
+
+    if (isSeasonalClosure !== undefined) {
+      fridge.isSeasonalClosure = isSeasonalClosure === true || isSeasonalClosure === 'true';
+    }
 
     // Обновляем clientInfo если передан
     if (clientInfo !== undefined) {
@@ -2051,7 +2063,7 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
 // Редактировать холодильник (доступно для админа и бухгалтера)
 router.patch('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
-    const { name, address, description, cityId, active } = req.body;
+    const { name, address, description, cityId, active, isSeasonalClosure } = req.body;
 
     const fridge = await Fridge.findById(req.params.id);
     if (!fridge) {
@@ -2070,6 +2082,9 @@ router.patch('/fridges/:id', authenticateToken, requireAdminOrAccountant, async 
     if (name !== undefined) fridge.name = name;
     if (address !== undefined) fridge.address = address;
     if (description !== undefined) fridge.description = description;
+    if (isSeasonalClosure !== undefined) {
+      fridge.isSeasonalClosure = isSeasonalClosure === true || isSeasonalClosure === 'true';
+    }
     
     // Только админ может менять cityId и active
     if (req.user.role === 'admin') {

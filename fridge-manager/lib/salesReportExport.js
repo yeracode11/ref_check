@@ -38,9 +38,12 @@ function buildEquipmentStatusFilter(equipmentStatus) {
   return null;
 }
 
-function buildFridgeQuery(user, query = {}) {
+function buildFridgeQuery(user, query = {}, opts = {}) {
   const { cityId, equipmentStatus, search } = query;
-  const filter = { active: true };
+  const filter = {};
+  if (opts.activeOnly !== false) {
+    filter.active = true;
+  }
 
   const scopedCityId = resolveCityFilter(user, cityId);
   if (scopedCityId) {
@@ -95,8 +98,8 @@ async function countBrokenCheckinsByFridge(fridges, checkinIdList) {
 /**
  * Лист 1: состояние фонда холодильников региона НОП.
  */
-async function fetchFundSheetRows(user, query) {
-  const fridgeFilter = buildFridgeQuery(user, query);
+async function fetchFundSheetRows(user, query, opts = {}) {
+  const fridgeFilter = buildFridgeQuery(user, query, opts);
   const fridges = await Fridge.find(fridgeFilter)
     .populate('cityId', 'name code')
     .sort({ createdAt: -1 })
@@ -120,7 +123,7 @@ async function fetchFundSheetRows(user, query) {
       'Адрес торговой точки': f.address || '',
       'Тип объекта': FRIDGE_TYPE_LABELS[f.type] || FRIDGE_TYPE_LABELS.regular,
       'Текущий статус': EQUIPMENT_STATUS_LABELS[statusKey] || statusKey,
-      'Флаг каникул': f.isSeasonalClosure ? 'Да' : 'Нет',
+      'Объект закрыт на каникулы': f.isSeasonalClosure ? 'Да' : 'Нет',
       'Общее кол-во чекинов': totalCheckins || 0,
       'Кол-во поломок за всё время': brokenByFridgeId.get(String(f._id)) || 0,
     };
@@ -130,8 +133,8 @@ async function fetchFundSheetRows(user, query) {
 /**
  * Лист 2: лог ремонтов МХО ($lookup fridges + users).
  */
-async function fetchRepairSheetRows(user, query) {
-  const fridgeFilter = buildFridgeQuery(user, query);
+async function fetchRepairSheetRows(user, query, opts = {}) {
+  const fridgeFilter = buildFridgeQuery(user, query, opts);
   const fridgeIds = await Fridge.find(fridgeFilter).distinct('_id');
 
   if (!fridgeIds.length) return [];
@@ -205,12 +208,13 @@ function applyComplexRepairRowMark(worksheet, rowCount, colCount) {
   }
 }
 
-function buildSalesReportWorkbook(fundRows, repairRows) {
+function appendFundAndRepairSheets(workbook, fundRows, repairRows) {
   const fundSheet = XLSX.utils.json_to_sheet(fundRows);
   fundSheet['!cols'] = [
     { wch: 18 }, { wch: 16 }, { wch: 40 }, { wch: 14 }, { wch: 28 },
     { wch: 14 }, { wch: 18 }, { wch: 22 },
   ];
+  XLSX.utils.book_append_sheet(workbook, fundSheet, 'Состояние фонда');
 
   const repairForSheet = repairRows.map(({ _isComplexRepair, ...row }) => row);
   const repairSheet = XLSX.utils.json_to_sheet(repairForSheet);
@@ -222,11 +226,26 @@ function buildSalesReportWorkbook(fundRows, repairRows) {
     { wch: 28 }, { wch: 30 }, { wch: 16 },
   ];
   applyComplexRepairRowMark(repairSheet, repairForSheet.length + 1, repairColCount);
-
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, fundSheet, 'Состояние фонда');
   XLSX.utils.book_append_sheet(workbook, repairSheet, 'История ремонтов');
+}
+
+function buildSalesReportWorkbook(fundRows, repairRows) {
+  const workbook = XLSX.utils.book_new();
+  appendFundAndRepairSheets(workbook, fundRows, repairRows);
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+}
+
+/**
+ * Добавляет листы НОП (состояние фонда + ремонты МХО) в существующую книгу Excel.
+ * Для админского экспорта: activeOnly=false — тот же охват, что и лист «Холодильники».
+ */
+async function appendSalesReportSheets(workbook, user, query = {}, opts = {}) {
+  const [fundRows, repairRows] = await Promise.all([
+    fetchFundSheetRows(user, query, opts),
+    fetchRepairSheetRows(user, query, opts),
+  ]);
+  appendFundAndRepairSheets(workbook, fundRows, repairRows);
+  return { fundCount: fundRows.length, repairCount: repairRows.length };
 }
 
 async function generateSalesReportBuffer(user, query) {
@@ -248,5 +267,6 @@ module.exports = {
   fetchFundSheetRows,
   fetchRepairSheetRows,
   generateSalesReportBuffer,
+  appendSalesReportSheets,
   buildExportFileName,
 };

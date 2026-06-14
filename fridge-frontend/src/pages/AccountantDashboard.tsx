@@ -29,6 +29,7 @@ type Fridge = {
   address?: string;
   cityId?: { _id: string; name: string; code: string } | null;
   warehouseStatus: 'warehouse' | 'installed' | 'returned' | 'moved';
+  isSeasonalClosure?: boolean;
   clientInfo?: ClientInfo | null;
   createdAt: string;
 };
@@ -111,7 +112,9 @@ export default function AccountantDashboard() {
   const [statusForm, setStatusForm] = useState({
     warehouseStatus: 'installed' as 'warehouse' | 'installed' | 'returned',
     notes: '',
+    isSeasonalClosure: false,
   });
+  const [togglingSeasonalId, setTogglingSeasonalId] = useState<string | null>(null);
 
   const observerTarget = useRef<HTMLDivElement | null>(null);
   const isCreatingRef = useRef(false); // Защита от двойного вызова
@@ -414,6 +417,7 @@ export default function AccountantDashboard() {
     setStatusForm({
       warehouseStatus: fridge.warehouseStatus === 'installed' ? 'returned' : 'installed',
       notes: '',
+      isSeasonalClosure: !!fridge.isSeasonalClosure,
     });
     setClientForm({
       name: '',
@@ -508,6 +512,7 @@ export default function AccountantDashboard() {
         warehouseStatus: statusForm.warehouseStatus,
         clientInfo: statusForm.warehouseStatus === 'installed' ? clientForm : undefined,
         notes: statusForm.notes,
+        isSeasonalClosure: statusForm.isSeasonalClosure,
       });
       setShowStatusModal(false);
       loadFridges(0, true);
@@ -518,6 +523,24 @@ export default function AccountantDashboard() {
       alert('Ошибка: ' + (e?.response?.data?.error || e.message));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Переключить флаг каникул / временного закрытия
+  const handleSeasonalClosureToggle = async (fridge: Fridge, checked: boolean) => {
+    try {
+      setTogglingSeasonalId(fridge._id);
+      await api.patch(`/api/admin/fridges/${fridge._id}`, {
+        isSeasonalClosure: checked,
+      });
+      setFridges((prev) =>
+        prev.map((f) => (f._id === fridge._id ? { ...f, isSeasonalClosure: checked } : f)),
+      );
+      showToast(checked ? 'Объект отмечен как закрытый' : 'Флаг каникул снят', 'success');
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || e?.message || 'Ошибка сохранения', 'error');
+    } finally {
+      setTogglingSeasonalId(null);
     }
   };
 
@@ -738,6 +761,16 @@ export default function AccountantDashboard() {
                   >
                     {f.warehouseStatus === 'installed' ? 'Возврат' : 'Установить'}
                   </button>
+                  <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                      checked={!!f.isSeasonalClosure}
+                      disabled={togglingSeasonalId === f._id}
+                      onChange={(e) => handleSeasonalClosureToggle(f, e.target.checked)}
+                    />
+                    <span>Объект закрыт на каникулы / временно не работает</span>
+                  </label>
                 </div>
               </div>
             </Card>
@@ -1013,6 +1046,18 @@ export default function AccountantDashboard() {
                 </div>
               </div>
             )}
+
+            <div className="mb-4">
+              <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                  checked={statusForm.isSeasonalClosure}
+                  onChange={(e) => setStatusForm({ ...statusForm, isSeasonalClosure: e.target.checked })}
+                />
+                <span>Объект закрыт на каникулы / временно не работает</span>
+              </label>
+            </div>
 
             <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">Примечание</label>
