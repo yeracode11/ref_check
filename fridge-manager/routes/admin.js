@@ -6,7 +6,7 @@ const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
 const City = require('../models/City');
 const User = require('../models/User');
-const { authenticateToken, requireAdmin, requireAdminOrAccountant } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireAdminOrAccountant, requireSalesHead } = require('../middleware/auth');
 const {
   buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
@@ -15,6 +15,11 @@ const {
   resolveEquipmentStatus,
 } = require('../lib/fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
+const {
+  generateSalesReportBuffer,
+  buildExportFileName,
+} = require('../lib/salesReportExport');
+const { getAssignedCityId } = require('../lib/cityScope');
 const XLSX = require('xlsx');
 
 // Настройка multer для загрузки файлов в память
@@ -176,6 +181,42 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     return res
       .status(500)
       .json({ error: 'Failed to fetch admin fridge status', details: err.message });
+  }
+});
+
+// GET /api/admin/export-sales-report
+// Excel-отчёт для НОП: состояние фонда + история ремонтов МХО
+router.get('/export-sales-report', authenticateToken, requireSalesHead, async (req, res) => {
+  try {
+    if (req.user.role === 'sales_head' && !getAssignedCityId(req.user)) {
+      return res.status(403).json({
+        error: 'Для НОП не назначен город. Обратитесь к администратору.',
+      });
+    }
+
+    const { cityId, equipmentStatus, search } = req.query;
+    let cityName = '';
+    const scopedCityId = cityId || getAssignedCityId(req.user);
+    if (scopedCityId) {
+      const city = await City.findById(scopedCityId).select('name').lean();
+      cityName = city?.name || '';
+    }
+
+    const excelBuffer = await generateSalesReportBuffer(req.user, {
+      cityId,
+      equipmentStatus,
+      search,
+    });
+
+    const fileName = buildExportFileName(cityName);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    return res.send(excelBuffer);
+  } catch (err) {
+    return res.status(500).json({
+      error: 'Failed to export sales report',
+      details: err.message,
+    });
   }
 });
 
