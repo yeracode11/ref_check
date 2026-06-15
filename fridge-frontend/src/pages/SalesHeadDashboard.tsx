@@ -276,12 +276,12 @@ export default function SalesHeadDashboard() {
   const handleExportReport = async () => {
     try {
       setExporting(true);
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ geocode: 'false' });
       if (isAdmin && selectedCityId) params.append('cityId', selectedCityId);
       if (equipmentFilter !== 'all') params.append('equipmentStatus', equipmentFilter);
       if (search.trim()) params.append('search', search.trim());
 
-      const response = await api.get(`/api/admin/export-sales-report?${params.toString()}`, {
+      const response = await api.get(`/api/admin/export-fridges?${params.toString()}`, {
         responseType: 'blob',
         timeout: 300000,
       });
@@ -290,7 +290,7 @@ export default function SalesHeadDashboard() {
       const link = document.createElement('a');
       link.href = url;
       const contentDisposition = response.headers['content-disposition'];
-      let fileName = 'отчет_НОП.xlsx';
+      let fileName = 'холодильники.xlsx';
       if (contentDisposition) {
         const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
         if (fileNameMatch?.[1]) {
@@ -303,7 +303,7 @@ export default function SalesHeadDashboard() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Ошибка при экспорте отчёта');
+      alert(e?.response?.data?.error || e?.message || 'Ошибка при экспорте');
     } finally {
       setExporting(false);
     }
@@ -341,7 +341,7 @@ export default function SalesHeadDashboard() {
           disabled={exporting || (isAdmin && !selectedCityId)}
           className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors font-medium shadow-sm"
         >
-          {exporting ? 'Формирование...' : 'Экспорт отчёта в Excel'}
+          {exporting ? 'Экспорт...' : 'Экспорт в Excel'}
         </button>
       </div>
 

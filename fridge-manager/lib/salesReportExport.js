@@ -9,6 +9,11 @@ const {
 } = require('./fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
 const { resolveCityFilter, getCheckinFridgeIdsForCity } = require('./cityScope');
+const {
+  fetchFridgeListSheetRows,
+  appendFridgeListSheet,
+  buildFridgesExportFileName,
+} = require('./fridgeExcelExport');
 const { labelsFromCompletedWorks } = require('./mxoRepairWorks');
 const { isComplexRepairRecord } = require('./repairHelpers');
 
@@ -312,8 +317,11 @@ function appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows =
   XLSX.utils.book_append_sheet(workbook, checkinSheet, 'Отметки ТП');
 }
 
-function buildSalesReportWorkbook(fundRows, repairRows, checkinRows = []) {
+function buildSalesReportWorkbook(fundRows, repairRows, checkinRows = [], fridgeRows = null) {
   const workbook = XLSX.utils.book_new();
+  if (fridgeRows) {
+    appendFridgeListSheet(workbook, fridgeRows);
+  }
   appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows);
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 }
@@ -332,19 +340,23 @@ async function appendSalesReportSheets(workbook, user, query = {}, opts = {}) {
   return { fundCount: fundRows.length, repairCount: repairRows.length, checkinCount: checkinRows.length };
 }
 
-async function generateSalesReportBuffer(user, query) {
-  const [fundRows, repairRows, checkinRows] = await Promise.all([
-    fetchFundSheetRows(user, query),
-    fetchRepairSheetRows(user, query),
-    fetchCheckinSheetRows(user, query),
+async function generateFullExportBuffer(user, query = {}, opts = {}) {
+  const exportOpts = { activeOnly: false, geocode: opts.geocode !== false, ...opts };
+  const [fridgeRows, fundRows, repairRows, checkinRows] = await Promise.all([
+    fetchFridgeListSheetRows(user, query, exportOpts),
+    fetchFundSheetRows(user, query, exportOpts),
+    fetchRepairSheetRows(user, query, exportOpts),
+    fetchCheckinSheetRows(user, query, exportOpts),
   ]);
-  return buildSalesReportWorkbook(fundRows, repairRows, checkinRows);
+  return buildSalesReportWorkbook(fundRows, repairRows, checkinRows, fridgeRows);
+}
+
+async function generateSalesReportBuffer(user, query, opts = {}) {
+  return generateFullExportBuffer(user, query, { geocode: false, ...opts });
 }
 
 function buildExportFileName(cityName) {
-  const date = new Date().toISOString().split('T')[0];
-  const cityPart = cityName ? `_${cityName.replace(/\s+/g, '_')}` : '';
-  return `отчет_НОП${cityPart}_${date}.xlsx`;
+  return buildFridgesExportFileName(cityName);
 }
 
 module.exports = {
@@ -352,7 +364,10 @@ module.exports = {
   fetchFundSheetRows,
   fetchRepairSheetRows,
   fetchCheckinSheetRows,
+  fetchFridgeListSheetRows,
+  generateFullExportBuffer,
   generateSalesReportBuffer,
   appendSalesReportSheets,
   buildExportFileName,
+  buildFridgesExportFileName,
 };

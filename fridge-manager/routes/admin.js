@@ -17,9 +17,9 @@ const {
 } = require('../lib/fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
 const {
-  generateSalesReportBuffer,
-  appendSalesReportSheets,
+  generateFullExportBuffer,
   buildExportFileName,
+  buildFridgesExportFileName,
 } = require('../lib/salesReportExport');
 const { getAssignedCityId, resolveCityFilter, getCheckinFridgeIdsForCity } = require('../lib/cityScope');
 const XLSX = require('xlsx');
@@ -188,7 +188,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
 });
 
 // GET /api/admin/export-sales-report
-// Excel-отчёт для НОП: состояние фонда + история ремонтов МХО
+// Алиас полного отчёта (как export-fridges) для НОП
 router.get('/export-sales-report', authenticateToken, requireSalesHead, async (req, res) => {
   try {
     if (req.user.role === 'sales_head' && !getAssignedCityId(req.user)) {
@@ -199,19 +199,19 @@ router.get('/export-sales-report', authenticateToken, requireSalesHead, async (r
 
     const { cityId, equipmentStatus, search } = req.query;
     let cityName = '';
-    const scopedCityId = cityId || getAssignedCityId(req.user);
+    const scopedCityId = resolveCityFilter(req.user, cityId);
     if (scopedCityId) {
       const city = await City.findById(scopedCityId).select('name').lean();
       cityName = city?.name || '';
     }
 
-    const excelBuffer = await generateSalesReportBuffer(req.user, {
-      cityId,
-      equipmentStatus,
-      search,
-    });
+    const excelBuffer = await generateFullExportBuffer(
+      req.user,
+      { cityId, equipmentStatus, search },
+      { geocode: false, activeOnly: false },
+    );
 
-    const fileName = buildExportFileName(cityName);
+    const fileName = buildFridgesExportFileName(cityName);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
     return res.send(excelBuffer);
@@ -224,225 +224,36 @@ router.get('/export-sales-report', authenticateToken, requireSalesHead, async (r
 });
 
 // GET /api/admin/export-fridges
-// Экспорт всех холодильников в Excel
-// Доступно админам (все города) и бухгалтерам (только их город)
-// Параметры: ?geocode=false - отключить геокодирование (быстрее для больших объемов)
-router.get('/export-fridges', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+// Полный Excel: холодильники + состояние фонда + ремонты + отметки ТП
+// Доступно админам, бухгалтерам и НОП (по своему городу)
+router.get('/export-fridges', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
   try {
-    const enableGeocoding = req.query.geocode !== 'false'; // По умолчанию включено, но можно отключить
-
-    // Если пользователь бухгалтер — экспортируем только холодильники его города
-    const fridgeFilter = {};
-    if (req.user.role === 'accountant' && req.user.cityId) {
-      fridgeFilter.cityId = req.user.cityId;
-    }
-
-    // Получаем холодильники и сортируем: для Шымкента и Кызылорды по number, для остальных по code
-    const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').lean();
-    const statsByFridgeIdForExport = await getCheckinStatsForFridges(
-      fridges,
-      JSON.stringify(fridgeFilter),
-    );
-    console.log(`[Export] Found ${fridges.length} fridges to export`);
-    
-    // Сортируем: для Шымкента, Кызылорды и Талдыкоргана по number, для остальных по code
-    fridges.sort((a, b) => {
-      const isNumberCityA = a.cityId?.name === 'Шымкент' || a.cityId?.name === 'Кызылорда' || a.cityId?.name === 'Талдыкорган';
-      const isNumberCityB = b.cityId?.name === 'Шымкент' || b.cityId?.name === 'Кызылорда' || b.cityId?.name === 'Талдыкорган';
-      
-      if (isNumberCityA && isNumberCityB) {
-        // Оба из Шымкента, Кызылорды или Талдыкоргана - сортируем по number
-        const numA = a.number || '';
-        const numB = b.number || '';
-        return numA.localeCompare(numB);
-      } else if (isNumberCityA) {
-        return -1; // Шымкент/Кызылорда/Талдыкорган в начале
-      } else if (isNumberCityB) {
-        return 1; // Шымкент/Кызылорда/Талдыкорган в начале
-      } else {
-        // Оба не из Шымкента/Кызылорды/Талдыкоргана - сортируем по code
-        const codeA = a.code || '';
-        const codeB = b.code || '';
-        return codeA.localeCompare(codeB);
-      }
-    });
-
-    const now = Date.now();
-
-    // Функция для reverse geocoding (конвертация координат в адрес)
-    const axios = require('axios');
-    const geocodeCache = new Map();
-    let lastGeocodeRequest = 0;
-    
-    async function reverseGeocode(lat, lng) {
-      if (!lat || !lng || (lat === 0 && lng === 0)) return null;
-      
-      const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
-      if (geocodeCache.has(cacheKey)) {
-        return geocodeCache.get(cacheKey);
-      }
-      
-      try {
-        // Соблюдаем лимит Nominatim (1 запрос в секунду)
-        const now = Date.now();
-        const timeSinceLastRequest = now - lastGeocodeRequest;
-        if (timeSinceLastRequest < 1000) {
-          await new Promise(resolve => setTimeout(resolve, 1000 - timeSinceLastRequest));
-        }
-        lastGeocodeRequest = Date.now();
-        
-        const response = await axios.get(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-          {
-            headers: {
-              'User-Agent': 'FridgeManager/1.0',
-            },
-            timeout: 5000,
-          }
-        );
-        
-        if (response.data && response.data.address) {
-          const addr = response.data.address;
-          const parts = [];
-          if (addr.road) parts.push(addr.road);
-          if (addr.house_number) parts.push(addr.house_number);
-          if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
-          const address = parts.length > 0 ? parts.join(', ') : response.data.display_name || null;
-          if (address) {
-            geocodeCache.set(cacheKey, address);
-            return address;
-          }
-        }
-        return null;
-      } catch (error) {
-        console.error('[Geocoding] Error:', error.message);
-        return null;
-      }
-    }
-
-    // Подготавливаем данные для Excel с конвертацией координат в адреса
-    const excelData = [];
-    const totalFridges = fridges.length;
-    console.log(`[Export] Processing ${totalFridges} fridges...`);
-    
-    for (let i = 0; i < fridges.length; i++) {
-      const f = fridges[i];
-      
-      // Логируем прогресс каждые 100 холодильников
-      if (i % 100 === 0 && i > 0) {
-        console.log(`[Export] Progress: ${i}/${totalFridges} (${Math.round(i / totalFridges * 100)}%)`);
-      }
-      const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeIdForExport, f);
-
-      // Статус визита в Excel = как на карте/в списке (в т.ч. возврат → «Нет отметок»)
-      const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, { nowMs: now });
-      const status =
-        mapSt === 'today'
-          ? 'Сегодня'
-          : mapSt === 'week'
-            ? 'Неделя'
-            : mapSt === 'old'
-              ? 'Давно'
-              : 'Нет отметок';
-
-      // Определяем статус склада и флаг возврата для экспорта
-      let warehouseStatusLabel = '';
-      let isReturned = false;
-      if (f.warehouseStatus === 'warehouse') {
-        warehouseStatusLabel = 'На складе';
-      } else if (f.warehouseStatus === 'installed') {
-        warehouseStatusLabel = 'Установлен';
-      } else if (f.warehouseStatus === 'returned') {
-        warehouseStatusLabel = 'Возврат';
-        isReturned = true;
-      } else if (f.warehouseStatus === 'moved') {
-        warehouseStatusLabel = 'Перемещён';
-      }
-
-      // Конвертируем координаты в адрес (только если включено геокодирование)
-      let geocodedAddress = '';
-      if (enableGeocoding && f.location && f.location.coordinates && f.location.coordinates[0] !== 0 && f.location.coordinates[1] !== 0) {
-        const [lng, lat] = f.location.coordinates;
-        const addr = await reverseGeocode(lat, lng);
-        geocodedAddress = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-      } else if (f.location && f.location.coordinates && f.location.coordinates[0] !== 0 && f.location.coordinates[1] !== 0) {
-        // Если геокодирование отключено, просто показываем координаты
-        const [lng, lat] = f.location.coordinates;
-        geocodedAddress = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-      }
-
-      excelData.push({
-        'Код': f.code || '',
-        'Номер': f.number || '', // Добавляем колонку с длинным номером для Шымкента
-        'Название': f.name || '',
-        'Город': f.cityId?.name || '',
-        'Адрес': f.address || '',
-        'Адрес по координатам': geocodedAddress,
-        'Описание': f.description || '',
-        'Тип объекта': f.type === 'school' ? 'Школа' : f.type === 'restricted' ? 'Режимный' : 'Обычный',
-        'Объект закрыт на каникулы': f.isSeasonalClosure ? 'Да' : 'Нет',
-        'Статус склада': warehouseStatusLabel,
-        'Возврат': isReturned ? 'Да' : 'Нет',
-        'Статус визита': status,
-        'Последний визит': lastVisit ? (() => {
-          // Конвертируем UTC время в UTC+5 (Казахстан)
-          const date = new Date(lastVisit);
-          const utcTime = date.getTime();
-          const localTime = new Date(utcTime + (5 * 60 * 60 * 1000)); // +5 часов
-          return localTime.toLocaleString('ru-RU', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
-        })() : '',
-        'Активен': f.active ? 'Да' : 'Нет',
+    if (req.user.role === 'sales_head' && !getAssignedCityId(req.user)) {
+      return res.status(403).json({
+        error: 'Для НОП не назначен город. Обратитесь к администратору.',
       });
-      
-      // Небольшая задержка между запросами для больших отчетов (только если включено геокодирование)
-      if (enableGeocoding && i < fridges.length - 1 && i % 10 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
     }
-    
-    console.log(`[Export] Processed ${excelData.length} rows, generating Excel file...`);
 
-    // Создаем рабочую книгу Excel
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Холодильники');
+    const enableGeocoding = req.query.geocode !== 'false';
+    const { cityId, equipmentStatus, search } = req.query;
 
-    // Настраиваем ширину колонок
-    const columnWidths = [
-      { wch: 10 }, // Код
-      { wch: 30 }, // Номер (длинный номер для Шымкента)
-      { wch: 30 }, // Название
-      { wch: 15 }, // Город
-      { wch: 40 }, // Адрес
-      { wch: 50 }, // Адрес по координатам
-      { wch: 30 }, // Описание
-      { wch: 14 }, // Тип объекта
-      { wch: 28 }, // Каникулы
-      { wch: 18 }, // Статус склада
-      { wch: 10 }, // Возврат
-      { wch: 12 }, // Статус визита
-      { wch: 20 }, // Последний визит
-      { wch: 10 }, // Активен
-    ];
-    worksheet['!cols'] = columnWidths;
+    let cityName = '';
+    const scopedCityId = resolveCityFilter(req.user, cityId);
+    if (scopedCityId) {
+      const city = await City.findById(scopedCityId).select('name').lean();
+      cityName = city?.name || '';
+    }
 
-    console.log('[Export] Adding NOP fund and MXO repair sheets...');
-    await appendSalesReportSheets(workbook, req.user, {}, { activeOnly: false });
+    console.log(`[Export] Generating full report for ${req.user.role}${cityName ? ` (${cityName})` : ''}...`);
+    const excelBuffer = await generateFullExportBuffer(
+      req.user,
+      { cityId, equipmentStatus, search },
+      { geocode: enableGeocoding, activeOnly: false },
+    );
 
-    // Генерируем буфер Excel файла
-    const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-
-    // Устанавливаем заголовки для скачивания файла
-    const fileName = `холодильники_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = buildFridgesExportFileName(cityName);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
-    
     return res.send(excelBuffer);
   } catch (err) {
     return res
