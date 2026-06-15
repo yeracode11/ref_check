@@ -9,6 +9,7 @@ const User = require('../models/User');
 const { authenticateToken, requireAdmin, requireAdminOrAccountant, requireAdminOrAccountantOrSalesHead, requireSalesHead } = require('../middleware/auth');
 const {
   buildCheckinFridgeIdMatchCondition,
+  buildCheckinFridgeIdCandidates,
   visitStatusFromLastVisit,
   combinedVisitMapStatus,
   getLastVisitFromStatsMap,
@@ -1546,6 +1547,8 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
           totalCheckins: 0,
           uniqueManagers: 0,
           avgCheckinsPerDay: 0,
+          withoutCheckinsInPeriod: 0,
+          neverVisited: 0,
           fridgesByStatus: { warehouse: 0, installed: 0, returned: 0 },
         },
       });
@@ -1572,6 +1575,8 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
           totalCheckins: 0,
           uniqueManagers: 0,
           avgCheckinsPerDay: 0,
+          withoutCheckinsInPeriod: 0,
+          neverVisited: 0,
           fridgesByStatus: { warehouse: 0, installed: 0, returned: 0 },
         },
       });
@@ -1684,20 +1689,47 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
     }
 
     const lastVisitMap = new Map();
-    lastCheckins.forEach((c) => lastVisitMap.set(c._id, c.lastVisit));
+    lastCheckins.forEach((c) => {
+      lastVisitMap.set(c._id, c.lastVisit);
+      lastVisitMap.set(String(c._id).trim(), c.lastVisit);
+      const n = Number(c._id);
+      if (Number.isFinite(n)) lastVisitMap.set(n, c.lastVisit);
+    });
+
+    const resolveLastVisit = (fridge) => {
+      for (const id of buildCheckinFridgeIdCandidates(fridge)) {
+        const hit =
+          lastVisitMap.get(id) ??
+          lastVisitMap.get(String(id).trim()) ??
+          (Number.isFinite(Number(id)) ? lastVisitMap.get(Number(id)) : undefined);
+        if (hit) return hit;
+      }
+      return null;
+    };
+
+    const visitedInPeriodSet = new Set();
+    uniqueFridgeIds.forEach((id) => {
+      visitedInPeriodSet.add(String(id).trim());
+      const n = Number(id);
+      if (Number.isFinite(n)) visitedInPeriodSet.add(String(n));
+    });
+
+    const fridgeVisitedInPeriod = (fridge) =>
+      buildCheckinFridgeIdCandidates(fridge).some((id) => {
+        const s = String(id).trim();
+        return visitedInPeriodSet.has(s)
+          || (Number.isFinite(Number(s)) && visitedInPeriodSet.has(String(Number(s))));
+      });
 
     const fridgesWithLastVisit = cityFridges.map((f) => {
-      // Для Шымкента ищем и по code, и по number
-      // Для Кызылорды также ищем по ИНН клиента
-      const lastVisit = lastVisitMap.get(f.code) || 
-                       (f.number ? lastVisitMap.get(f.number) : null) || 
-                       (f.clientInfo?.inn ? lastVisitMap.get(f.clientInfo.inn) : null) || 
-                       null;
+      const lastVisit = resolveLastVisit(f);
       return {
         code: f.code,
+        number: f.number,
         name: f.name,
         address: f.address,
-        lastVisit: lastVisit,
+        cityId: f.cityId || null,
+        lastVisit,
         daysSinceVisit: lastVisit
           ? Math.floor((Date.now() - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24))
           : null,
@@ -1714,7 +1746,9 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       .slice(0, 20);
 
     const totalFridges = cityFridges.length;
-    const totalCheckins = uniqueFridgeIds.length;
+    const totalCheckins = dailyCheckins.reduce((sum, row) => sum + row.count, 0);
+    const withoutCheckinsInPeriod = cityFridges.filter((f) => !fridgeVisitedInPeriod(f)).length;
+    const neverVisited = fridgesWithLastVisit.filter((f) => !f.lastVisit).length;
 
     // Холодильники по статусам
     const statusCounts = {
@@ -1738,6 +1772,8 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
         totalCheckins,
         uniqueManagers: uniqueManagers.length,
         avgCheckinsPerDay: daysNum > 0 ? Number((totalCheckins / daysNum).toFixed(2)) : 0,
+        withoutCheckinsInPeriod,
+        neverVisited,
         fridgesByStatus: statusCounts,
       },
     });

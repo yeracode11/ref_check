@@ -370,25 +370,22 @@ export default function SalesHeadDashboard() {
       <AnalyticsPanel
         endpoint="/api/admin/analytics/accountant"
         fixedCityId={isSalesHead ? user?.cityId : (selectedCityId || undefined)}
+        hideManagerStats
       />
 
       {repairSummary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="text-center">
             <p className="text-3xl font-bold text-orange-600">{repairSummary.faultyFridges}</p>
-            <p className="text-sm text-slate-500">Неисправных</p>
-          </Card>
-          <Card className="text-center">
-            <p className="text-3xl font-bold text-blue-600">{repairSummary.totalCheckins}</p>
-            <p className="text-sm text-slate-500">Отметок ТП (30 дн.)</p>
+            <p className="text-sm text-slate-500">Неисправных сейчас</p>
           </Card>
           <Card className="text-center">
             <p className="text-3xl font-bold text-purple-600">{repairSummary.breakdownReports}</p>
-            <p className="text-sm text-slate-500">Поломок (30 дн.)</p>
+            <p className="text-sm text-slate-500">Поломок за 30 дн.</p>
           </Card>
           <Card className="text-center">
             <p className="text-3xl font-bold text-orange-700">{repairSummary.totalRepairs}</p>
-            <p className="text-sm text-slate-500">Ремонтов МХО (30 дн.)</p>
+            <p className="text-sm text-slate-500">Ремонтов МХО за 30 дн.</p>
           </Card>
         </div>
       )}

@@ -38,6 +38,8 @@ type AnalyticsData = {
     totalCheckins: number;
     uniqueManagers: number;
     avgCheckinsPerDay: number;
+    withoutCheckinsInPeriod?: number;
+    neverVisited?: number;
     fridgesByStatus: {
       warehouse: number;
       installed: number;
@@ -63,12 +65,15 @@ type AnalyticsPanelProps = {
   endpoint?: string;
   cities?: City[];
   fixedCityId?: string;
+  /** Для НОП: скрыть рейтинг менеджеров, показать сводку по непосещённым */
+  hideManagerStats?: boolean;
 };
 
 export function AnalyticsPanel({
   endpoint = '/api/admin/analytics',
   cities = [],
   fixedCityId,
+  hideManagerStats = false,
 }: AnalyticsPanelProps = {}) {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -167,14 +172,29 @@ export function AnalyticsPanel({
           <p className="text-3xl font-bold text-blue-600">{data.summary.totalCheckins}</p>
           <p className="text-sm text-slate-500">Отметок за период</p>
         </Card>
-        <Card className="text-center">
-          <p className="text-3xl font-bold text-green-600">{data.summary.uniqueManagers}</p>
-          <p className="text-sm text-slate-500">Активных менеджеров</p>
-        </Card>
-        <Card className="text-center">
-          <p className="text-3xl font-bold text-orange-600">{data.summary.avgCheckinsPerDay}</p>
-          <p className="text-sm text-slate-500">Отметок в день (ср.)</p>
-        </Card>
+        {hideManagerStats ? (
+          <>
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-red-600">{data.summary.withoutCheckinsInPeriod ?? 0}</p>
+              <p className="text-sm text-slate-500">Без отметок за период</p>
+            </Card>
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-orange-600">{data.summary.neverVisited ?? 0}</p>
+              <p className="text-sm text-slate-500">Никогда не посещались</p>
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-green-600">{data.summary.uniqueManagers}</p>
+              <p className="text-sm text-slate-500">Активных менеджеров</p>
+            </Card>
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-orange-600">{data.summary.avgCheckinsPerDay}</p>
+              <p className="text-sm text-slate-500">Отметок в день (ср.)</p>
+            </Card>
+          </>
+        )}
         <Card className="text-center">
           <p className="text-3xl font-bold text-slate-700">{data.summary.totalFridges}</p>
           <p className="text-sm text-slate-500">Всего холодильников</p>
@@ -255,7 +275,8 @@ export function AnalyticsPanel({
         </Card>
       </div>
 
-      {/* Статистика по менеджерам */}
+      {/* Статистика по менеджерам — только для бухгалтера/админа */}
+      {!hideManagerStats && (
       <Card>
         <h3 className="font-semibold text-slate-900 mb-4">👥 Топ менеджеров по отметкам</h3>
         {data.managerStats.length > 0 ? (
@@ -282,10 +303,13 @@ export function AnalyticsPanel({
           </div>
         )}
       </Card>
+      )}
 
-      {/* Топ непосещаемых */}
+      {/* Точки без отметок / давно не посещались */}
       <Card>
-        <h3 className="font-semibold text-slate-900 mb-4">⚠️ Давно не посещались</h3>
+        <h3 className="font-semibold text-slate-900 mb-4">
+          {hideManagerStats ? '⚠️ Без отметок или давно не посещались' : '⚠️ Давно не посещались'}
+        </h3>
         {data.topUnvisited.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
