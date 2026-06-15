@@ -6,7 +6,7 @@ const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
 const City = require('../models/City');
 const User = require('../models/User');
-const { authenticateToken, requireAdmin, requireAdminOrAccountant, requireSalesHead } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireAdminOrAccountant, requireAdminOrAccountantOrSalesHead, requireSalesHead } = require('../middleware/auth');
 const {
   buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
@@ -20,7 +20,7 @@ const {
   appendSalesReportSheets,
   buildExportFileName,
 } = require('../lib/salesReportExport');
-const { getAssignedCityId } = require('../lib/cityScope');
+const { getAssignedCityId, resolveCityFilter, getCheckinFridgeIdsForCity } = require('../lib/cityScope');
 const XLSX = require('xlsx');
 
 // Настройка multer для загрузки файлов в память
@@ -54,7 +54,7 @@ const router = express.Router();
 const WAREHOUSE_STATUS_ENUM = ['warehouse', 'installed', 'returned', 'moved'];
 const USER_ROLES = ['manager', 'accountant', 'admin', 'service_manager', 'sales_head'];
 
-router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
   try {
     const { limit, skip, all, warehouseStatus, search } = req.query;
     
@@ -63,10 +63,11 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountant, async 
     const limitNum = shouldPaginate && limit ? Math.max(1, Math.min(100, Number(limit))) : undefined;
     const skipNum = shouldPaginate && skip ? Math.max(0, Number(skip)) : 0;
 
-    // Для бухгалтера фильтруем по городу
-    let fridgeQuery = {};
-    if (req.user.role === 'accountant' && req.user.cityId) {
-      fridgeQuery.cityId = req.user.cityId;
+    // Для бухгалтера и НОП фильтруем по городу
+    let fridgeQuery = { active: true };
+    const scopedCityId = resolveCityFilter(req.user, req.query.cityId);
+    if (scopedCityId) {
+      fridgeQuery.cityId = scopedCityId;
     }
 
     if (
@@ -1528,12 +1529,26 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/analytics/accountant
-// Аналитика для бухгалтера (только для его города)
-router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+// Аналитика отметок ТП для бухгалтера и НОП (по городу)
+router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
   try {
-    // Только бухгалтеры могут использовать этот endpoint
-    if (req.user.role !== 'accountant' || !req.user.cityId) {
-      return res.status(403).json({ error: 'Доступ только для бухгалтеров с назначенным городом' });
+    const scopedCityId = resolveCityFilter(req.user, req.query.cityId);
+    if ((req.user.role === 'accountant' || req.user.role === 'sales_head') && !scopedCityId) {
+      return res.status(403).json({ error: 'Для роли не назначен город. Обратитесь к администратору.' });
+    }
+    if (req.user.role === 'admin' && !scopedCityId) {
+      return res.json({
+        dailyCheckins: [],
+        managerStats: [],
+        topUnvisited: [],
+        summary: {
+          totalFridges: 0,
+          totalCheckins: 0,
+          uniqueManagers: 0,
+          avgCheckinsPerDay: 0,
+          fridgesByStatus: { warehouse: 0, installed: 0, returned: 0 },
+        },
+      });
     }
 
     const { days = 30 } = req.query;
@@ -1541,23 +1556,11 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountant,
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - daysNum);
 
-    // Получаем все холодильники из города бухгалтера
-    const cityFridges = await Fridge.find({ 
-      cityId: req.user.cityId,
-      active: true 
-    }).select('code number name address warehouseStatus clientInfo');
-    // Для Шымкента нужно учитывать и code, и number
-    // Для Кызылорды также учитываем ИНН клиента
-    const fridgeCodes = [];
-    cityFridges.forEach((f) => {
-      fridgeCodes.push(f.code);
-      if (f.number) {
-        fridgeCodes.push(f.number);
-      }
-      if (f.clientInfo?.inn) {
-        fridgeCodes.push(f.clientInfo.inn);
-      }
-    });
+    const cityFridges = await Fridge.find({
+      cityId: scopedCityId,
+      active: true,
+    }).select('code number name address warehouseStatus clientInfo').populate('cityId', 'name code');
+    const fridgeCodes = await getCheckinFridgeIdsForCity(scopedCityId);
 
     if (fridgeCodes.length === 0) {
       return res.json({

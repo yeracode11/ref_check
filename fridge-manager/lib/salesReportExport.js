@@ -4,10 +4,11 @@ const Repair = require('../models/Repair');
 const XLSX = require('xlsx');
 const {
   buildCheckinFridgeIdCandidates,
+  expandCheckinFridgeIdsForInQuery,
   getLastVisitFromStatsMap,
 } = require('./fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
-const { resolveCityFilter } = require('./cityScope');
+const { resolveCityFilter, getCheckinFridgeIdsForCity } = require('./cityScope');
 const { labelsFromCompletedWorks } = require('./mxoRepairWorks');
 const { isComplexRepairRecord } = require('./repairHelpers');
 
@@ -69,8 +70,9 @@ function buildFridgeQuery(user, query = {}, opts = {}) {
 }
 
 async function countBrokenCheckinsByFridge(fridges, checkinIdList) {
+  const expandedIds = expandCheckinFridgeIdsForInQuery(checkinIdList);
   const brokenRows = await Checkin.find({
-    fridgeId: { $in: checkinIdList.length ? checkinIdList : ['__none__'] },
+    fridgeId: { $in: expandedIds.length ? expandedIds : ['__none__'] },
     fridgeCondition: 'broken',
   }).select('fridgeId').lean();
 
@@ -190,6 +192,80 @@ async function fetchRepairSheetRows(user, query, opts = {}) {
   });
 }
 
+/**
+ * Лист 3: история отметок ТП по городу НОП.
+ */
+async function fetchCheckinSheetRows(user, query, opts = {}) {
+  const fridgeFilter = buildFridgeQuery(user, query, opts);
+  const scopedCityId = resolveCityFilter(user, query.cityId);
+  const fridges = await Fridge.find(fridgeFilter)
+    .select('_id code number name address clientInfo')
+    .lean();
+
+  const fridgeByCheckinId = new Map();
+  fridges.forEach((f) => {
+    for (const id of buildCheckinFridgeIdCandidates(f)) {
+      fridgeByCheckinId.set(String(id).trim(), f);
+      const n = Number(id);
+      if (Number.isFinite(n)) fridgeByCheckinId.set(String(n), f);
+    }
+  });
+
+  let checkinFilter = {};
+  if (scopedCityId) {
+    const ids = await getCheckinFridgeIdsForCity(scopedCityId);
+    checkinFilter = { fridgeId: { $in: ids.length ? ids : ['__none__'] } };
+  } else if (fridges.length) {
+    const ids = expandCheckinFridgeIdsForInQuery(
+      fridges.flatMap((f) => buildCheckinFridgeIdCandidates(f)),
+    );
+    checkinFilter = { fridgeId: { $in: ids.length ? ids : ['__none__'] } };
+  } else {
+    return [];
+  }
+
+  const User = require('../models/User');
+  const checkins = await Checkin.find(checkinFilter)
+    .sort({ visitedAt: -1 })
+    .limit(5000)
+    .lean();
+
+  const managerIds = [...new Set(checkins.map((c) => c.managerId).filter(Boolean))];
+  const users = await User.find({
+    $or: [
+      { username: { $in: managerIds } },
+      { _id: { $in: managerIds.filter((id) => /^[a-fA-F0-9]{24}$/.test(String(id))) } },
+    ],
+  }).select('username fullName').lean();
+  const userMap = new Map();
+  users.forEach((u) => {
+    if (u.username) userMap.set(u.username, u);
+    userMap.set(String(u._id), u);
+  });
+
+  return checkins.map((c) => {
+    const fridge = fridgeByCheckinId.get(String(c.fridgeId).trim());
+    const manager = userMap.get(c.managerId) || userMap.get(String(c.managerId));
+    return {
+      'Дата отметки': c.visitedAt ? new Date(c.visitedAt).toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Almaty',
+      }) : '',
+      'ID Холодильника': fridge ? getFridgeDisplayId(fridge) : c.fridgeId,
+      'Название точки': fridge?.name || '',
+      'Адрес точки': fridge?.address || c.address || '',
+      'Сотрудник ТП': manager?.fullName || manager?.username || c.managerId || '',
+      'Состояние': c.fridgeCondition === 'broken' ? 'Сломан' : 'Рабочий',
+      'Закрыт на каникулы': c.isSeasonalClosure ? 'Да' : 'Нет',
+      'Комментарий': c.notes || '',
+    };
+  });
+}
+
 function applyComplexRepairRowMark(worksheet, rowCount, colCount) {
   // xlsx community edition не сохраняет заливку; помечаем строку через колонку «Сложный ремонт»
   if (!worksheet || rowCount < 2) return;
@@ -208,7 +284,7 @@ function applyComplexRepairRowMark(worksheet, rowCount, colCount) {
   }
 }
 
-function appendFundAndRepairSheets(workbook, fundRows, repairRows) {
+function appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows = []) {
   const fundSheet = XLSX.utils.json_to_sheet(fundRows);
   fundSheet['!cols'] = [
     { wch: 18 }, { wch: 16 }, { wch: 40 }, { wch: 14 }, { wch: 28 },
@@ -227,11 +303,18 @@ function appendFundAndRepairSheets(workbook, fundRows, repairRows) {
   ];
   applyComplexRepairRowMark(repairSheet, repairForSheet.length + 1, repairColCount);
   XLSX.utils.book_append_sheet(workbook, repairSheet, 'История ремонтов');
+
+  const checkinSheet = XLSX.utils.json_to_sheet(checkinRows);
+  checkinSheet['!cols'] = [
+    { wch: 20 }, { wch: 18 }, { wch: 28 }, { wch: 40 }, { wch: 24 },
+    { wch: 14 }, { wch: 18 }, { wch: 30 },
+  ];
+  XLSX.utils.book_append_sheet(workbook, checkinSheet, 'Отметки ТП');
 }
 
-function buildSalesReportWorkbook(fundRows, repairRows) {
+function buildSalesReportWorkbook(fundRows, repairRows, checkinRows = []) {
   const workbook = XLSX.utils.book_new();
-  appendFundAndRepairSheets(workbook, fundRows, repairRows);
+  appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows);
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 }
 
@@ -240,20 +323,22 @@ function buildSalesReportWorkbook(fundRows, repairRows) {
  * Для админского экспорта: activeOnly=false — тот же охват, что и лист «Холодильники».
  */
 async function appendSalesReportSheets(workbook, user, query = {}, opts = {}) {
-  const [fundRows, repairRows] = await Promise.all([
+  const [fundRows, repairRows, checkinRows] = await Promise.all([
     fetchFundSheetRows(user, query, opts),
     fetchRepairSheetRows(user, query, opts),
+    fetchCheckinSheetRows(user, query, opts),
   ]);
-  appendFundAndRepairSheets(workbook, fundRows, repairRows);
-  return { fundCount: fundRows.length, repairCount: repairRows.length };
+  appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows);
+  return { fundCount: fundRows.length, repairCount: repairRows.length, checkinCount: checkinRows.length };
 }
 
 async function generateSalesReportBuffer(user, query) {
-  const [fundRows, repairRows] = await Promise.all([
+  const [fundRows, repairRows, checkinRows] = await Promise.all([
     fetchFundSheetRows(user, query),
     fetchRepairSheetRows(user, query),
+    fetchCheckinSheetRows(user, query),
   ]);
-  return buildSalesReportWorkbook(fundRows, repairRows);
+  return buildSalesReportWorkbook(fundRows, repairRows, checkinRows);
 }
 
 function buildExportFileName(cityName) {
@@ -266,6 +351,7 @@ module.exports = {
   buildFridgeQuery,
   fetchFundSheetRows,
   fetchRepairSheetRows,
+  fetchCheckinSheetRows,
   generateSalesReportBuffer,
   appendSalesReportSheets,
   buildExportFileName,

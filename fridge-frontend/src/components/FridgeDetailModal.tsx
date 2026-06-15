@@ -238,6 +238,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const isAdmin = user?.role === 'admin';
   const isAccountant = user?.role === 'accountant';
   const isServiceManager = user?.role === 'service_manager';
+  const isSalesHead = user?.role === 'sales_head';
   const isPrivileged = isAdmin || isAccountant;
   const canManageRepairs = isServiceManager;
   const useAdminApi = isAdmin || isAccountant;
@@ -296,6 +297,14 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
       if (useAdminApi) {
         const res = await api.get(`/api/admin/fridges/${fridgeId}/checkins?limit=50`);
         setCheckins(res.data);
+      } else if (isSalesHead && fridgeId) {
+        const code = fridgeCode || fridge?.code || fridge?.number;
+        if (!code) return;
+        const params = new URLSearchParams();
+        params.append('fridgeId', code);
+        params.append('limit', '50');
+        const res = await api.get(`/api/sales/checkins?${params.toString()}`);
+        setCheckins(res.data?.data || []);
       } else if (isServiceManager && fridgeId) {
         const code = fridgeCode || fridge?.code;
         if (!code) return;

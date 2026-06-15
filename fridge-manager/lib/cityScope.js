@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
-const { buildCheckinFridgeIdCandidates } = require('./fridgeVisitHelpers');
+const {
+  buildCheckinFridgeIdCandidates,
+  expandCheckinFridgeIdsForInQuery,
+  buildCheckinFridgeIdMatchCondition,
+} = require('./fridgeVisitHelpers');
 
 /** Роли, привязанные к одному городу (поле user.cityId) */
 const CITY_SCOPED_ROLES = ['manager', 'accountant', 'service_manager', 'sales_head'];
@@ -55,7 +59,24 @@ async function getCheckinFridgeIdsForCity(cityId) {
   fridges.forEach((f) => {
     buildCheckinFridgeIdCandidates(f).forEach((id) => ids.add(id));
   });
-  return [...ids];
+  return expandCheckinFridgeIdsForInQuery([...ids]);
+}
+
+async function findFridgeByIdentifier(identifier) {
+  const normalized = String(identifier || '').trim().replace(/^#/, '');
+  if (!normalized) return null;
+  return Fridge.findOne({
+    $or: [
+      { code: normalized },
+      { number: normalized },
+      { 'clientInfo.inn': normalized },
+    ],
+  }).lean();
+}
+
+function buildCheckinFilterForFridge(fridge) {
+  const idMatch = buildCheckinFridgeIdMatchCondition(fridge);
+  return idMatch || { fridgeId: '__none__' };
 }
 
 module.exports = {
@@ -66,4 +87,6 @@ module.exports = {
   userCanAccessCity,
   getFridgeObjectIdsForCity,
   getCheckinFridgeIdsForCity,
+  findFridgeByIdentifier,
+  buildCheckinFilterForFridge,
 };

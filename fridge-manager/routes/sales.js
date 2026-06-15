@@ -11,6 +11,7 @@ const {
   visitStatusFromLastVisit,
   getLastVisitFromStatsMap,
   resolveEquipmentStatus,
+  expandCheckinFridgeIdsForInQuery,
 } = require('../lib/fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
 const {
@@ -23,6 +24,8 @@ const {
   getCheckinFridgeIdsForCity,
   getFridgeObjectIdsForCity,
   getAssignedCityId,
+  findFridgeByIdentifier,
+  buildCheckinFilterForFridge,
 } = require('../lib/cityScope');
 const { labelsFromCompletedWorks } = require('../lib/mxoRepairWorks');
 
@@ -175,16 +178,23 @@ router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) =>
   try {
     if (!ensureSalesCityScope(req, res)) return;
     const { cityId, fridgeId, from, to, limit, skip } = req.query;
+    const limitNum = limit ? Math.max(1, Math.min(500, Number(limit))) : 100;
+    const skipNum = skip ? Math.max(0, Number(skip)) : 0;
     const filter = {};
+    const scopedCityId = resolveCityFilter(req.user, cityId);
 
     if (fridgeId) {
-      filter.fridgeId = String(fridgeId).trim().replace(/^#/, '');
-    } else {
-      const scopedCityId = resolveCityFilter(req.user, cityId);
-      if (scopedCityId) {
-        const ids = await getCheckinFridgeIdsForCity(scopedCityId);
-        filter.fridgeId = { $in: ids.length ? ids : ['__none__'] };
+      const fridge = await findFridgeByIdentifier(fridgeId);
+      if (!fridge) {
+        return res.json({ data: [], total: 0, limit: limitNum, skip: skipNum });
       }
+      if (scopedCityId && String(fridge.cityId) !== String(scopedCityId)) {
+        return res.status(403).json({ error: 'Холодильник из другого города' });
+      }
+      Object.assign(filter, buildCheckinFilterForFridge(fridge));
+    } else if (scopedCityId) {
+      const ids = await getCheckinFridgeIdsForCity(scopedCityId);
+      filter.fridgeId = { $in: ids.length ? ids : ['__none__'] };
     }
 
     const fromDate = parseDate(from);
@@ -194,9 +204,6 @@ router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) =>
       if (fromDate) filter.visitedAt.$gte = fromDate;
       if (toDate) filter.visitedAt.$lte = toDate;
     }
-
-    const limitNum = limit ? Math.max(1, Math.min(500, Number(limit))) : 100;
-    const skipNum = skip ? Math.max(0, Number(skip)) : 0;
 
     const [items, total] = await Promise.all([
       Checkin.find(filter).sort({ visitedAt: -1 }).skip(skipNum).limit(limitNum).lean(),
@@ -246,10 +253,17 @@ router.get('/activity', authenticateToken, requireSalesHead, async (req, res) =>
     }
 
     const fridges = await Fridge.find(fridgeFilter)
-      .select('_id code number name')
+      .select('_id code number name clientInfo')
       .lean();
     const fridgeIds = fridges.map((f) => f._id);
-    const fridgeById = new Map(fridges.map((f) => [String(f._id), f]));
+    const fridgeByCheckinId = new Map();
+    fridges.forEach((f) => {
+      buildCheckinFridgeIdCandidates(f).forEach((id) => {
+        fridgeByCheckinId.set(String(id).trim(), f);
+        const n = Number(id);
+        if (Number.isFinite(n)) fridgeByCheckinId.set(String(n), f);
+      });
+    });
 
     const checkinFilter = {};
     if (scopedCityId) {
@@ -287,6 +301,7 @@ router.get('/activity', authenticateToken, requireSalesHead, async (req, res) =>
 
     const checkinRows = checkinItems.map((item) => {
       const user = userMap.get(item.managerId) || userMap.get(String(item.managerId));
+      const fridge = fridgeByCheckinId.get(String(item.fridgeId).trim());
       return {
         type: 'checkin',
         id: item.id,
@@ -294,13 +309,16 @@ router.get('/activity', authenticateToken, requireSalesHead, async (req, res) =>
         actorFullName: user?.fullName || '',
         actorUsername: user?.username || item.managerId,
         actorRole: user?.role || 'manager',
-        fridgeId: item.fridgeId,
+        fridgeId: fridge?.number || fridge?.code || item.fridgeId,
+        fridgeCode: fridge?.code,
+        fridgeName: fridge?.name,
         fridgeCondition: item.fridgeCondition,
         isSeasonalClosure: item.isSeasonalClosure,
         notes: item.notes,
       };
     });
 
+    const fridgeById = new Map(fridges.map((f) => [String(f._id), f]));
     const repairRows = repairItems.map((r) => {
       const tech = userMap.get(String(r.technicianId));
       const fridge = fridgeById.get(String(r.fridgeId));
@@ -360,11 +378,14 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       buildCheckinFridgeIdCandidates(f).forEach((id) => checkinFridgeIds.add(id));
     });
     const checkinIdList = [...checkinFridgeIds];
+    const checkinIdQuery = checkinIdList.length
+      ? { fridgeId: { $in: expandCheckinFridgeIdsForInQuery(checkinIdList) } }
+      : { fridgeId: '__none__' };
 
     const citiesQuery = { active: true };
     if (scopedCityId) citiesQuery._id = scopedCityId;
 
-    const [repairs, brokenCheckins, cities] = await Promise.all([
+    const [repairs, brokenCheckins, allCheckins, cities] = await Promise.all([
       Repair.find({
         fridgeId: { $in: fridgeIds },
         repairDate: { $gte: since },
@@ -372,7 +393,11 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       Checkin.find({
         fridgeCondition: 'broken',
         visitedAt: { $gte: since },
-        ...(checkinIdList.length ? { fridgeId: { $in: checkinIdList } } : { fridgeId: '__none__' }),
+        ...checkinIdQuery,
+      }).lean(),
+      Checkin.find({
+        visitedAt: { $gte: since },
+        ...checkinIdQuery,
       }).lean(),
       City.find(citiesQuery).select('name code').lean(),
     ]);
@@ -382,8 +407,13 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
-      breakdownsByDay[key] = { date: key, breakdowns: 0, repairs: 0, costKzt: 0 };
+      breakdownsByDay[key] = { date: key, checkins: 0, breakdowns: 0, repairs: 0, costKzt: 0 };
     }
+
+    allCheckins.forEach((c) => {
+      const key = new Date(c.visitedAt).toISOString().slice(0, 10);
+      if (breakdownsByDay[key]) breakdownsByDay[key].checkins += 1;
+    });
 
     brokenCheckins.forEach((c) => {
       const key = new Date(c.visitedAt).toISOString().slice(0, 10);
@@ -439,6 +469,7 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
         totalFridges: fridges.length,
         faultyFridges: statusCounts.broken + statusCounts.under_repair,
         totalRepairs: repairs.length,
+        totalCheckins: allCheckins.length,
         totalRepairCostKzt,
         breakdownReports: brokenCheckins.length,
         days,

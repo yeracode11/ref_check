@@ -33,6 +33,28 @@ function buildCheckinFridgeIdCandidates(fridgeLike) {
 }
 
 /**
+ * Расширяет список идентификаторов для $in: в checkins.fridgeId часто число, не строка.
+ */
+function expandCheckinFridgeIdsForInQuery(ids) {
+  const expanded = new Set();
+  for (const id of ids) {
+    if (id == null || String(id).trim() === '') continue;
+    const t = String(id).trim();
+    const bare = t.replace(/^#+/, '');
+    expanded.add(t);
+    if (bare) {
+      expanded.add(bare);
+      expanded.add(`#${bare}`);
+      const n = Number(bare);
+      if (Number.isFinite(n)) {
+        expanded.add(n);
+      }
+    }
+  }
+  return [...expanded];
+}
+
+/**
  * Условие для find/$match: в MongoDB fridgeId в чекинах может быть строкой или числом (старые данные).
  * Только строковый $in не находит документы с числовым fridgeId — из‑за этого lastVisit в деталях
  * мог отличаться от агрегата на /fridge-status (другая «последняя» отметка → другой цвет маркера).
@@ -210,6 +232,7 @@ function resolveEquipmentStatus(fridgeStatus, lastFridgeCondition) {
 
 module.exports = {
   buildCheckinFridgeIdCandidates,
+  expandCheckinFridgeIdsForInQuery,
   buildCheckinFridgeIdMatchCondition,
   visitStatusFromLastVisit,
   combinedVisitMapStatus,

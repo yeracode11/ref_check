@@ -78,8 +78,8 @@ export default function App() {
     ];
 
     const salesHeadNavItems = [
-      { path: '/sales', label: 'Аналитика НОП', icon: '📈' },
       { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+      { path: '/sales', label: 'Управление', icon: '📊' },
     ];
     
     if (user?.role === 'admin') return adminNavItems;
@@ -97,11 +97,9 @@ export default function App() {
             {/* Logo */}
             <Link 
               to={
-                user?.role === 'admin' || user?.role === 'accountant' || user?.role === 'service_manager'
+                user?.role === 'admin' || user?.role === 'accountant' || user?.role === 'service_manager' || user?.role === 'sales_head'
                   ? '/fridges'
-                  : user?.role === 'sales_head'
-                    ? '/sales'
-                    : '/'
+                  : '/'
               } 
               className="flex items-center gap-2" 
               onClick={() => setMobileMenuOpen(false)}

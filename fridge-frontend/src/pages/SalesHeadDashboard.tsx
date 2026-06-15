@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell, Legend,
-} from 'recharts';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge } from '../components/ui/Card';
-import { LoadingSpinner } from '../components/ui/Loading';
+import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
+import { QRCode } from '../components/ui/QRCode';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
-import { RepairWorksList } from '../components/RepairWorksList';
+import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
+import { RepairWorksList } from '../components/RepairWorksList';
 import {
+  getDisplayIdentifier,
   getEquipmentIndicator,
   getEquipmentStatusLabel,
   getEquipmentIndicatorClasses,
@@ -19,26 +19,27 @@ import {
 
 type City = { _id: string; name: string; code: string };
 
-type SalesFridge = {
+type Fridge = {
   _id: string;
   code: string;
   number?: string;
   name: string;
   address?: string;
+  cityId?: City | null;
+  warehouseStatus: 'warehouse' | 'installed' | 'returned' | 'moved';
   status?: EquipmentStatus;
-  cityId?: City;
-  equipmentIndicator?: string;
-  isComplexRepair?: boolean;
+  isSeasonalClosure?: boolean;
+  clientInfo?: { name?: string; inn?: string; contractNumber?: string; contactPhone?: string } | null;
 };
 
 type ActivityCheckin = {
   type: 'checkin';
   id: number;
   at: string;
-  actorUsername?: string;
   actorFullName?: string;
-  actorRole?: string;
+  actorUsername?: string;
   fridgeId: string;
+  fridgeName?: string;
   fridgeCondition?: string;
   isSeasonalClosure?: boolean;
   notes?: string;
@@ -48,14 +49,11 @@ type ActivityRepair = {
   type: 'repair';
   id: string;
   at: string;
-  actorUsername?: string;
   actorFullName?: string;
-  actorRole?: string;
+  actorUsername?: string;
   fridgeId: string;
-  fridgeCode?: string;
   fridgeName?: string;
   completedWorks?: string[];
-  workLabels?: string[];
   workType?: string;
   comment?: string;
   status: 'in_progress' | 'completed';
@@ -64,34 +62,14 @@ type ActivityRepair = {
 
 type ActivityRow = ActivityCheckin | ActivityRepair;
 
-type MapFridge = {
-  id: string;
-  code: string;
-  name: string;
-  address?: string;
-  status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed';
-  warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
-  visitStatus?: 'today' | 'week' | 'old' | 'never';
-  equipmentStatus?: EquipmentStatus;
-  location?: { type: 'Point'; coordinates: [number, number] };
+type RepairSummary = {
+  faultyFridges: number;
+  totalRepairs: number;
+  totalCheckins: number;
+  breakdownReports: number;
 };
 
-type AnalyticsData = {
-  dailyStats: { date: string; breakdowns: number; repairs: number; costKzt: number }[];
-  statusCounts: { working: number; broken: number; under_repair: number };
-  topParts: { part: string; count: number; estimatedCostKzt: number }[];
-  summary: {
-    totalFridges: number;
-    faultyFridges: number;
-    totalRepairs: number;
-    totalRepairCostKzt: number;
-    breakdownReports: number;
-    days: number;
-  };
-  cities: City[];
-};
-
-const PIE_COLORS = ['#2563eb', '#9333ea', '#ea580c'];
+const ITEMS_PER_PAGE = 30;
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('ru-RU', {
@@ -103,145 +81,203 @@ function formatDate(dateStr: string) {
   });
 }
 
-function formatMoney(kzt: number) {
-  return new Intl.NumberFormat('ru-RU').format(kzt) + ' ₸';
+function getWarehouseBadge(status: string) {
+  switch (status) {
+    case 'warehouse':
+      return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
+    case 'installed':
+      return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
+    case 'returned':
+      return <Badge className="bg-red-100 text-red-700">Возврат</Badge>;
+    case 'moved':
+      return <Badge className="bg-gray-900 text-white">Перемещен</Badge>;
+    default:
+      return <Badge className="bg-slate-100 text-slate-700">{status}</Badge>;
+  }
 }
 
 export default function SalesHeadDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
   const isSalesHead = user?.role === 'sales_head';
+
   const [cities, setCities] = useState<City[]>([]);
-  const [selectedCityId, setSelectedCityId] = useState('all');
   const [cityName, setCityName] = useState('');
-  const [equipmentFilter, setEquipmentFilter] = useState('all');
+  const [selectedCityId, setSelectedCityId] = useState('');
+
+  const [fridges, setFridges] = useState<Fridge[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalFridges, setTotalFridges] = useState(0);
   const [search, setSearch] = useState('');
-  const [fridges, setFridges] = useState<SalesFridge[]>([]);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [equipmentFilter, setEquipmentFilter] = useState('all');
+
+  const [mapFridges, setMapFridges] = useState<any[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
+
   const [activity, setActivity] = useState<ActivityRow[]>([]);
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-  const [loadingFridges, setLoadingFridges] = useState(true);
   const [loadingActivity, setLoadingActivity] = useState(true);
-  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
-  const [mapFridges, setMapFridges] = useState<MapFridge[]>([]);
-  const [loadingMap, setLoadingMap] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [activityFilter, setActivityFilter] = useState<'all' | 'checkin' | 'repair'>('all');
+  const [repairSummary, setRepairSummary] = useState<RepairSummary | null>(null);
+
   const [exporting, setExporting] = useState(false);
-  const [selectedFridgeId, setSelectedFridgeId] = useState<string | null>(null);
-  const [days, setDays] = useState(90);
+  const [selectedFridgeDetailId, setSelectedFridgeDetailId] = useState<string | null>(null);
+  const [selectedQRFridge, setSelectedQRFridge] = useState<Fridge | null>(null);
+
+  const observerTarget = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    api.get('/api/cities?active=true')
-      .then((res) => {
-        setCities(res.data);
-        if (isSalesHead && user?.cityId) {
-          const city = res.data.find((c: City) => c._id === user.cityId);
-          if (city) {
-            setSelectedCityId(city._id);
-            setCityName(city.name);
-          }
-        }
-      })
-      .catch(() => {});
-  }, [isSalesHead, user?.cityId]);
+    if (user && user.role !== 'sales_head' && user.role !== 'admin') {
+      navigate('/fridges', { replace: true });
+    }
+  }, [user, navigate]);
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setLoadingFridges(true);
-        const params = new URLSearchParams({ limit: '200' });
-        if (selectedCityId !== 'all') params.append('cityId', selectedCityId);
-        if (equipmentFilter === 'faulty') params.append('equipmentStatus', 'faulty');
-        else if (equipmentFilter !== 'all') params.append('equipmentStatus', equipmentFilter);
-        if (search.trim()) params.append('search', search.trim());
-        const res = await api.get(`/api/sales/fridges?${params.toString()}`);
-        if (!alive) return;
-        setFridges(res.data?.data || []);
-      } catch (e: any) {
-        if (alive) setError(e?.response?.data?.error || e.message);
-      } finally {
-        if (alive) setLoadingFridges(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, [selectedCityId, equipmentFilter, search]);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setLoadingActivity(true);
-        const params = new URLSearchParams({ limit: '50' });
-        if (selectedCityId !== 'all') params.append('cityId', selectedCityId);
-        const res = await api.get(`/api/sales/activity?${params.toString()}`);
-        if (!alive) return;
-        setActivity(res.data?.data || []);
-      } catch (e: any) {
-        if (alive) setError(e?.response?.data?.error || e.message);
-      } finally {
-        if (alive) setLoadingActivity(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, [selectedCityId]);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setLoadingAnalytics(true);
-        const params = new URLSearchParams({ days: String(days) });
-        if (selectedCityId !== 'all') params.append('cityId', selectedCityId);
-        const res = await api.get(`/api/sales/analytics?${params.toString()}`);
-        if (!alive) return;
-        setAnalytics(res.data);
-      } catch (e: any) {
-        if (alive) setError(e?.response?.data?.error || e.message);
-      } finally {
-        if (alive) setLoadingAnalytics(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, [selectedCityId, days]);
+    if (!user) return;
+    if (isSalesHead && user.cityId) {
+      api.get(`/api/cities/${user.cityId}`)
+        .then((res) => {
+          setCities([res.data]);
+          setCityName(res.data.name);
+          setSelectedCityId(res.data._id);
+        })
+        .catch(console.error);
+    } else if (isAdmin) {
+      api.get('/api/cities?active=true')
+        .then((res) => setCities(res.data))
+        .catch(console.error);
+    }
+  }, [user, isSalesHead, isAdmin]);
 
   const loadMapData = useCallback(async () => {
+    if (!user) return;
     try {
-      setLoadingMap(true);
-      const params = new URLSearchParams();
-      if (selectedCityId !== 'all') params.append('cityId', selectedCityId);
-      const res = await api.get(`/api/sales/map?${params.toString()}`);
-      const raw = Array.isArray(res.data) ? res.data : [];
-      const withLocation = raw.filter((f: MapFridge) => {
-        if (!f.location?.coordinates || f.location.coordinates.length !== 2) return false;
-        const [lng, lat] = f.location.coordinates;
-        return lng !== 0 || lat !== 0;
-      });
+      setMapLoading(true);
+      const params = new URLSearchParams({ all: 'true' });
+      if (isAdmin && selectedCityId) params.append('cityId', selectedCityId);
+      const res = await api.get(`/api/admin/fridge-status?${params.toString()}`);
+      const withLocation = (Array.isArray(res.data) ? res.data : res.data?.data || []).filter(
+        (f: any) =>
+          f.location?.coordinates &&
+          f.location.coordinates[0] !== 0 &&
+          f.location.coordinates[1] !== 0,
+      );
       setMapFridges(withLocation);
-    } catch (e: any) {
-      console.error('Ошибка загрузки карты НОП:', e);
+    } catch (e) {
+      console.error('Ошибка загрузки карты:', e);
       setMapFridges([]);
     } finally {
-      setLoadingMap(false);
+      setMapLoading(false);
     }
-  }, [selectedCityId]);
+  }, [user, isAdmin, selectedCityId]);
 
   useEffect(() => {
     loadMapData();
   }, [loadMapData]);
 
-  const statusPie = analytics
-    ? [
-        { name: 'Исправные', value: analytics.statusCounts.working },
-        { name: 'Сломанные', value: analytics.statusCounts.broken },
-        { name: 'На ремонте', value: analytics.statusCounts.under_repair },
-      ]
-    : [];
+  const loadFridges = useCallback(async (skip = 0, reset = false) => {
+    if (!user) return;
+    if (isAdmin && !selectedCityId) {
+      setFridges([]);
+      setTotalFridges(0);
+      setHasMore(false);
+      setLoading(false);
+      return;
+    }
+    try {
+      if (skip === 0) setLoading(true);
+      else setLoadingMore(true);
+
+      const params = new URLSearchParams();
+      params.append('limit', String(ITEMS_PER_PAGE));
+      params.append('skip', String(skip));
+      if (search) params.append('search', search);
+      if (statusFilter !== 'all') params.append('warehouseStatus', statusFilter);
+      if (equipmentFilter === 'faulty') params.append('equipmentStatus', 'faulty');
+      else if (equipmentFilter !== 'all') params.append('equipmentStatus', equipmentFilter);
+      if (isAdmin && selectedCityId) params.append('cityId', selectedCityId);
+
+      const res = await api.get(`/api/fridges?${params.toString()}`);
+      const data = res.data.data || res.data;
+      const pagination = res.data.pagination;
+
+      if (reset) setFridges(data);
+      else setFridges((prev) => [...prev, ...data]);
+
+      if (pagination) {
+        setTotalFridges(pagination.total);
+        setHasMore(pagination.hasMore);
+      } else {
+        setTotalFridges(data.length);
+        setHasMore(false);
+      }
+    } catch (e) {
+      console.error('Ошибка загрузки холодильников:', e);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [user, search, statusFilter, equipmentFilter, isAdmin, selectedCityId]);
+
+  useEffect(() => {
+    loadFridges(0, true);
+  }, [loadFridges]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadFridges(fridges.length, false);
+        }
+      },
+      { threshold: 0.1 },
+    );
+    if (observerTarget.current) observer.observe(observerTarget.current);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, fridges.length, loadFridges]);
+
+  useEffect(() => {
+    if (isAdmin && !selectedCityId) {
+      setActivity([]);
+      setRepairSummary(null);
+      setLoadingActivity(false);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        setLoadingActivity(true);
+        const params = new URLSearchParams({ limit: '50' });
+        if (isAdmin && selectedCityId) params.append('cityId', selectedCityId);
+        const [activityRes, analyticsRes] = await Promise.all([
+          api.get(`/api/sales/activity?${params.toString()}`),
+          api.get(`/api/sales/analytics?${params.toString()}&days=30`),
+        ]);
+        if (!alive) return;
+        setActivity(activityRes.data?.data || []);
+        setRepairSummary({
+          faultyFridges: analyticsRes.data?.summary?.faultyFridges || 0,
+          totalRepairs: analyticsRes.data?.summary?.totalRepairs || 0,
+          totalCheckins: analyticsRes.data?.summary?.totalCheckins || 0,
+          breakdownReports: analyticsRes.data?.summary?.breakdownReports || 0,
+        });
+      } catch (e) {
+        console.error('Ошибка загрузки активности:', e);
+      } finally {
+        if (alive) setLoadingActivity(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [isAdmin, selectedCityId]);
 
   const handleExportReport = async () => {
     try {
       setExporting(true);
       const params = new URLSearchParams();
-      if (selectedCityId !== 'all') params.append('cityId', selectedCityId);
+      if (isAdmin && selectedCityId) params.append('cityId', selectedCityId);
       if (equipmentFilter !== 'all') params.append('equipmentStatus', equipmentFilter);
       if (search.trim()) params.append('search', search.trim());
 
@@ -253,265 +289,275 @@ export default function SalesHeadDashboard() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-
       const contentDisposition = response.headers['content-disposition'];
       let fileName = 'отчет_НОП.xlsx';
       if (contentDisposition) {
         const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (fileNameMatch && fileNameMatch[1]) {
+        if (fileNameMatch?.[1]) {
           fileName = decodeURIComponent(fileNameMatch[1].replace(/['"]/g, ''));
         }
       }
-
       link.setAttribute('download', fileName);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
-      console.error('Ошибка экспорта НОП:', e);
       alert(e?.response?.data?.error || e?.message || 'Ошибка при экспорте отчёта');
     } finally {
       setExporting(false);
     }
   };
 
+  const filteredActivity = activity.filter((row) => {
+    if (activityFilter === 'all') return true;
+    return row.type === activityFilter;
+  });
+  const checkinCount = activity.filter((r) => r.type === 'checkin').length;
+  const repairCount = activity.filter((r) => r.type === 'repair').length;
+
+  if (!user || (user.role !== 'sales_head' && user.role !== 'admin')) {
+    return (
+      <Card>
+        <p className="text-red-600">Доступ запрещён. Только для НОП и администраторов.</p>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Режим просмотра для НОП</h1>
-        <p className="text-slate-500 mt-1">
-          {isSalesHead && cityName
-            ? `Мониторинг по городу: ${cityName}`
-            : 'Мониторинг неисправного оборудования, отметок ТП/МХО и аналитика затрат на ремонт'}
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Мониторинг региона</h1>
+          <p className="text-slate-500 mt-1">
+            {isSalesHead && cityName
+              ? `Отметки ТП, ремонты МХО и состояние фонда — ${cityName}`
+              : 'Отметки ТП, ремонты МХО и состояние фонда по городу'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleExportReport}
+          disabled={exporting || (isAdmin && !selectedCityId)}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors font-medium shadow-sm"
+        >
+          {exporting ? 'Формирование...' : 'Экспорт отчёта в Excel'}
+        </button>
       </div>
 
-      {error && (
-        <Card className="border-red-200 bg-red-50 text-red-700 text-sm">{error}</Card>
-      )}
-
-      <Card className="bg-slate-50">
-        <div className="flex flex-wrap items-end justify-between gap-4 mb-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1 min-w-0">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Город</label>
-            {isSalesHead ? (
-              <div className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 font-medium">
-                📍 {cityName || 'Город не назначен'}
-              </div>
-            ) : (
-              <select
-                value={selectedCityId}
-                onChange={(e) => setSelectedCityId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
-              >
-                <option value="all">Все города</option>
-                {cities.map((c) => (
-                  <option key={c._id} value={c._id}>{c.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Состояние</label>
-            <select
-              value={equipmentFilter}
-              onChange={(e) => setEquipmentFilter(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
-            >
-              <option value="all">Все</option>
-              <option value="faulty">Неисправные</option>
-              <option value="broken">Сломанные</option>
-              <option value="under_repair">На ремонте</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Поиск</label>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Название, код, адрес..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Период аналитики</label>
-            <select
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
-            >
-              <option value={30}>30 дней</option>
-              <option value={90}>90 дней</option>
-              <option value={180}>180 дней</option>
-            </select>
-          </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleExportReport}
-            disabled={exporting}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 shrink-0"
+      {isAdmin && (
+        <Card className="bg-slate-50">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Город для просмотра</label>
+          <select
+            value={selectedCityId}
+            onChange={(e) => setSelectedCityId(e.target.value)}
+            className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
           >
-            {exporting ? (
-              <span>Формирование...</span>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Экспорт отчёта в Excel</span>
-              </>
-            )}
-          </button>
-        </div>
-      </Card>
-
-      {analytics && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card><div className="text-sm text-slate-500">Всего холодильников</div><div className="text-2xl font-bold">{analytics.summary.totalFridges}</div></Card>
-          <Card><div className="text-sm text-slate-500">Неисправные</div><div className="text-2xl font-bold text-orange-600">{analytics.summary.faultyFridges}</div></Card>
-          <Card><div className="text-sm text-slate-500">Ремонтов за период</div><div className="text-2xl font-bold">{analytics.summary.totalRepairs}</div></Card>
-          <Card><div className="text-sm text-slate-500">Оценка затрат</div><div className="text-xl font-bold">{formatMoney(analytics.summary.totalRepairCostKzt)}</div></Card>
-        </div>
+            <option value="">Выберите город</option>
+            {cities.map((c) => (
+              <option key={c._id} value={c._id}>{c.name}</option>
+            ))}
+          </select>
+        </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <h2 className="font-semibold text-slate-900 mb-4">Динамика поломок и ремонтов</h2>
-          {loadingAnalytics ? (
-            <div className="flex justify-center py-12"><LoadingSpinner /></div>
-          ) : analytics ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={analytics.dailyStats}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="breakdowns" name="Поломки (ТП)" stroke="#9333ea" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="repairs" name="Ремонты (МХО)" stroke="#ea580c" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : null}
+      {isSalesHead && cityName && (
+        <Card className="bg-blue-50 border-blue-200">
+          <p className="text-sm text-blue-900 font-medium">📍 Город: {cityName}</p>
         </Card>
+      )}
 
-        <Card>
-          <h2 className="font-semibold text-slate-900 mb-4">Затраты на ремонт по дням (₸)</h2>
-          {loadingAnalytics ? (
-            <div className="flex justify-center py-12"><LoadingSpinner /></div>
-          ) : analytics ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={analytics.dailyStats}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} />
-                <YAxis />
-                <Tooltip formatter={(v: number) => formatMoney(v)} />
-                <Bar dataKey="costKzt" name="Затраты" fill="#2563eb" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : null}
-        </Card>
-      </div>
+      <AnalyticsPanel
+        endpoint="/api/admin/analytics/accountant"
+        fixedCityId={isSalesHead ? user?.cityId : (selectedCityId || undefined)}
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <h2 className="font-semibold text-slate-900 mb-4">Распределение по состоянию</h2>
-          {analytics && (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={statusPie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                  {statusPie.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </Card>
-
-        <Card>
-          <h2 className="font-semibold text-slate-900 mb-4">Топ заменённых деталей</h2>
-          {analytics?.topParts?.length ? (
-            <div className="space-y-2 max-h-[240px] overflow-y-auto">
-              {analytics.topParts.map((p) => (
-                <div key={p.part} className="flex justify-between text-sm border-b border-slate-100 pb-2">
-                  <span>{p.part} <span className="text-slate-400">×{p.count}</span></span>
-                  <span className="font-medium">{formatMoney(p.estimatedCostKzt)}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">Нет данных за выбранный период</p>
-          )}
-        </Card>
-      </div>
+      {repairSummary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="text-center">
+            <p className="text-3xl font-bold text-orange-600">{repairSummary.faultyFridges}</p>
+            <p className="text-sm text-slate-500">Неисправных</p>
+          </Card>
+          <Card className="text-center">
+            <p className="text-3xl font-bold text-blue-600">{repairSummary.totalCheckins}</p>
+            <p className="text-sm text-slate-500">Отметок ТП (30 дн.)</p>
+          </Card>
+          <Card className="text-center">
+            <p className="text-3xl font-bold text-purple-600">{repairSummary.breakdownReports}</p>
+            <p className="text-sm text-slate-500">Поломок (30 дн.)</p>
+          </Card>
+          <Card className="text-center">
+            <p className="text-3xl font-bold text-orange-700">{repairSummary.totalRepairs}</p>
+            <p className="text-sm text-slate-500">Ремонтов МХО (30 дн.)</p>
+          </Card>
+        </div>
+      )}
 
       <Card>
-        <h2 className="font-semibold text-slate-900 mb-4">Холодильники</h2>
-        {loadingFridges ? (
-          <div className="flex justify-center py-8"><LoadingSpinner /></div>
-        ) : fridges.length === 0 ? (
-          <p className="text-sm text-slate-500">Нет холодильников по выбранным фильтрам</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b">
-                  <th className="py-2 pr-4">Название</th>
-                  <th className="py-2 pr-4">Код</th>
-                  <th className="py-2 pr-4">Город</th>
-                  <th className="py-2 pr-4">Состояние</th>
-                  <th className="py-2">Адрес</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fridges.map((f) => (
-                  <tr
-                    key={f._id}
-                    className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
-                    onClick={() => setSelectedFridgeId(f._id)}
-                  >
-                    <td className="py-2 pr-4 font-medium">{f.name}</td>
-                    <td className="py-2 pr-4 font-mono text-xs">{f.number || f.code}</td>
-                    <td className="py-2 pr-4">{f.cityId?.name || '—'}</td>
-                    <td className="py-2 pr-4">
-                      <Badge className={getEquipmentIndicatorClasses(getEquipmentIndicator(f.status))}>
-                        {getEquipmentStatusLabel(f.status)}
-                        {f.isComplexRepair ? ' (сложный)' : ''}
-                      </Badge>
-                    </td>
-                    <td className="py-2 text-slate-600 truncate max-w-[200px]">{f.address || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">
+          Карта холодильников
+          {cityName && <span className="text-blue-600 ml-2 font-normal">— {cityName}</span>}
+        </h2>
+        {mapLoading ? (
+          <div className="h-[480px] flex items-center justify-center"><LoadingSpinner /></div>
+        ) : mapFridges.length === 0 ? (
+          <div className="h-[480px] flex items-center justify-center text-slate-500 text-sm">
+            Нет холодильников с координатами для отображения на карте
           </div>
+        ) : (
+          <AdminFridgeMap fridges={mapFridges} />
         )}
       </Card>
 
       <Card>
-        <h2 className="font-semibold text-slate-900 mb-4">Последние отметки ТП и МХО</h2>
+        <div className="flex flex-wrap gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <input
+              type="text"
+              placeholder="Поиск по названию, номеру, адресу..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="all">Все статусы склада</option>
+            <option value="warehouse">На складе</option>
+            <option value="installed">Установлен</option>
+            <option value="returned">Возврат</option>
+          </select>
+          <select
+            value={equipmentFilter}
+            onChange={(e) => setEquipmentFilter(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="all">Все состояния</option>
+            <option value="faulty">Неисправные</option>
+            <option value="broken">Сломанные</option>
+            <option value="under_repair">На ремонте</option>
+            <option value="working">Исправные</option>
+          </select>
+        </div>
+        <p className="text-xs text-slate-500 mt-2">Найдено: {totalFridges} холодильников</p>
+      </Card>
+
+      {loading ? (
+        <LoadingCard />
+      ) : fridges.length === 0 ? (
+        <EmptyState message={isAdmin && !selectedCityId ? 'Выберите город' : 'Холодильники не найдены'} />
+      ) : (
+        <div className="grid gap-4">
+          {fridges.map((f) => (
+            <Card key={f._id}>
+              <div className="flex flex-wrap gap-4 justify-between">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    <span className="font-semibold text-slate-900">{f.name}</span>
+                    {getWarehouseBadge(f.warehouseStatus)}
+                    <Badge className={getEquipmentIndicatorClasses(getEquipmentIndicator(f.status))}>
+                      {getEquipmentStatusLabel(f.status)}
+                    </Badge>
+                    {f.isSeasonalClosure && (
+                      <Badge className="bg-amber-100 text-amber-800">Закрыт временно</Badge>
+                    )}
+                  </div>
+                  <div className="text-sm text-slate-600 space-y-1">
+                    {(() => {
+                      const displayId = getDisplayIdentifier(
+                        { clientInfo: f.clientInfo, number: f.number, code: f.code, name: f.name },
+                        f.cityId?.name,
+                      );
+                      if (!displayId) return null;
+                      const isNumberCity = ['Кызылорда', 'Шымкент', 'Талдыкорган'].includes(f.cityId?.name || '');
+                      return (
+                        <p>
+                          <span className="text-slate-500">{isNumberCity ? 'Номер:' : 'Код:'}</span>{' '}
+                          {displayId}
+                        </p>
+                      );
+                    })()}
+                    {f.address && <p><span className="text-slate-500">Адрес:</span> {f.address}</p>}
+                    {f.cityId && <p><span className="text-slate-500">Город:</span> {f.cityId.name}</p>}
+                  </div>
+                  {f.clientInfo?.name && (
+                    <div className="mt-3 p-2 bg-slate-50 rounded-lg text-sm">
+                      <p className="font-medium text-slate-700">Клиент: {f.clientInfo.name}</p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => setSelectedFridgeDetailId(f._id)}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
+                  >
+                    Подробнее
+                  </button>
+                  <button
+                    onClick={() => setSelectedQRFridge(f)}
+                    className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200"
+                  >
+                    QR-код
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))}
+          {hasMore && (
+            <div ref={observerTarget} className="py-4 flex justify-center">
+              {loadingMore ? <LoadingSpinner size="md" /> : <span className="text-xs text-slate-500">Загрузка...</span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">Последние отметки ТП и ремонты МХО</h2>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setActivityFilter('all')}
+              className={`px-3 py-1.5 rounded-lg border ${activityFilter === 'all' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200'}`}
+            >
+              Все ({activity.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivityFilter('checkin')}
+              className={`px-3 py-1.5 rounded-lg border ${activityFilter === 'checkin' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200'}`}
+            >
+              ТП ({checkinCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivityFilter('repair')}
+              className={`px-3 py-1.5 rounded-lg border ${activityFilter === 'repair' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white border-slate-200'}`}
+            >
+              МХО ({repairCount})
+            </button>
+          </div>
+        </div>
         {loadingActivity ? (
           <div className="flex justify-center py-8"><LoadingSpinner /></div>
-        ) : activity.length === 0 ? (
+        ) : filteredActivity.length === 0 ? (
           <p className="text-sm text-slate-500">Нет отметок и ремонтов</p>
         ) : (
-          <div className="space-y-3 max-h-[500px] overflow-y-auto">
-            {activity.map((row) => (
+          <div className="space-y-3 max-h-[480px] overflow-y-auto">
+            {filteredActivity.map((row) =>
               row.type === 'checkin' ? (
                 <div key={`checkin-${row.id}`} className="text-sm border-b border-slate-100 pb-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge className="bg-blue-100 text-blue-800">ТП</Badge>
+                    <Badge className="bg-blue-100 text-blue-800">ТП · Отметка</Badge>
                     <span className="font-medium">{row.actorFullName || row.actorUsername}</span>
                     <span className="text-slate-400">{formatDate(row.at)}</span>
                   </div>
                   <div className="mt-1 text-slate-600">
                     Холодильник: {row.fridgeId}
+                    {row.fridgeName && <span className="text-slate-400 ml-1">· {row.fridgeName}</span>}
                     {row.fridgeCondition === 'broken' && (
                       <Badge className="ml-2 bg-purple-100 text-purple-700">Сломан</Badge>
                     )}
@@ -530,56 +576,51 @@ export default function SalesHeadDashboard() {
                     <Badge className={row.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}>
                       {row.status === 'completed' ? 'Завершён' : 'В работе'}
                     </Badge>
-                    {row.isComplexRepair && (
-                      <Badge className="bg-orange-200 text-orange-900">Сложный</Badge>
-                    )}
                   </div>
                   <div className="mt-1 text-slate-600">
                     Холодильник: {row.fridgeId}
                     {row.fridgeName && <span className="text-slate-400 ml-1">· {row.fridgeName}</span>}
                   </div>
-                  <RepairWorksList
-                    completedWorks={row.completedWorks}
-                    workType={row.workType}
-                    compact
-                  />
-                  {row.comment && (
-                    <p className="text-xs text-slate-500 mt-1 italic">Комментарий: {row.comment}</p>
-                  )}
+                  <RepairWorksList completedWorks={row.completedWorks} workType={row.workType} compact />
+                  {row.comment && <p className="text-xs text-slate-500 mt-1 italic">Комментарий: {row.comment}</p>}
                 </div>
-              )
-            ))}
+              ),
+            )}
           </div>
         )}
       </Card>
 
-      <Card>
-        <h2 className="font-semibold text-slate-900 mb-4">
-          Карта холодильников
-          {(isSalesHead && cityName) || (isAdmin && selectedCityId !== 'all') ? (
-            <span className="text-blue-600 ml-2 font-normal">
-              ({isSalesHead ? cityName : cities.find((c) => c._id === selectedCityId)?.name})
-            </span>
-          ) : null}
-        </h2>
-        {loadingMap ? (
-          <div className="h-[480px] flex items-center justify-center">
-            <LoadingSpinner />
-          </div>
-        ) : mapFridges.length === 0 ? (
-          <div className="h-[480px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200 text-slate-500 text-sm">
-            Нет холодильников с координатами для отображения на карте
-          </div>
-        ) : (
-          <AdminFridgeMap fridges={mapFridges} />
-        )}
-      </Card>
-
-      {selectedFridgeId && (
+      {selectedFridgeDetailId && (
         <FridgeDetailModal
-          fridgeId={selectedFridgeId}
-          onClose={() => setSelectedFridgeId(null)}
+          fridgeId={selectedFridgeDetailId}
+          onClose={() => setSelectedFridgeDetailId(null)}
         />
+      )}
+
+      {selectedQRFridge && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedQRFridge(null)}
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">{selectedQRFridge.name}</h3>
+            <p className="text-sm text-slate-500 mb-4 font-mono">
+              {getDisplayIdentifier(selectedQRFridge, selectedQRFridge.cityId?.name) || selectedQRFridge.code}
+            </p>
+            <QRCode
+              value={`${window.location.origin}/checkin/${encodeURIComponent(
+                selectedQRFridge.number || selectedQRFridge.code,
+              )}`}
+              size={220}
+            />
+            <button
+              onClick={() => setSelectedQRFridge(null)}
+              className="mt-4 w-full px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

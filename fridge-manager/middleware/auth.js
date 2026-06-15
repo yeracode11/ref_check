@@ -54,6 +54,13 @@ function requireSalesHead(req, res, next) {
   return next();
 }
 
+function requireAdminOrAccountantOrSalesHead(req, res, next) {
+  if (!req.user || !['admin', 'accountant', 'sales_head'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Admin, Accountant or Sales Head access required' });
+  }
+  return next();
+}
+
 function generateToken(user) {
   return jwt.sign(
     { id: user._id, username: user.username, role: user.role, cityId: user.cityId },
@@ -69,6 +76,7 @@ module.exports = {
   requireAdminOrAccountant,
   requireAdminOrServiceManager,
   requireSalesHead,
+  requireAdminOrAccountantOrSalesHead,
   generateToken,
   JWT_SECRET,
 };

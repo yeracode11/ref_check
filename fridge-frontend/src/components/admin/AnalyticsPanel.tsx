@@ -60,16 +60,22 @@ type City = {
 };
 
 type AnalyticsPanelProps = {
-  endpoint?: string; // По умолчанию '/api/admin/analytics', для бухгалтера '/api/admin/analytics/accountant'
-  cities?: City[]; // Список городов для фильтра (только для админа)
+  endpoint?: string;
+  cities?: City[];
+  fixedCityId?: string;
 };
 
-export function AnalyticsPanel({ endpoint = '/api/admin/analytics', cities = [] }: AnalyticsPanelProps = {}) {
+export function AnalyticsPanel({
+  endpoint = '/api/admin/analytics',
+  cities = [],
+  fixedCityId,
+}: AnalyticsPanelProps = {}) {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
-  const [selectedCityId, setSelectedCityId] = useState<string>('all'); // 'all' для всех городов
+  const [selectedCityId, setSelectedCityId] = useState<string>('all');
+  const effectiveCityId = fixedCityId || (selectedCityId !== 'all' ? selectedCityId : undefined);
 
   useEffect(() => {
     let alive = true;
@@ -77,8 +83,8 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics', cities = [] 
       try {
         setLoading(true);
         const params = new URLSearchParams({ days: days.toString() });
-        if (selectedCityId && selectedCityId !== 'all') {
-          params.append('cityId', selectedCityId);
+        if (effectiveCityId) {
+          params.append('cityId', effectiveCityId);
         }
         const res = await api.get(`${endpoint}?${params.toString()}`);
         if (!alive) return;
@@ -92,7 +98,7 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics', cities = [] 
       }
     })();
     return () => { alive = false; };
-  }, [days, endpoint, selectedCityId]);
+  }, [days, endpoint, effectiveCityId]);
 
   if (loading) {
     return (
@@ -127,7 +133,7 @@ export function AnalyticsPanel({ endpoint = '/api/admin/analytics', cities = [] 
         <h2 className="text-lg font-semibold text-slate-900">📊 Аналитика</h2>
         <div className="flex items-center gap-3">
           {/* Фильтр по городам (только для админа) */}
-          {cities.length > 0 && (
+          {!fixedCityId && cities.length > 0 && (
             <select
               value={selectedCityId}
               onChange={(e) => setSelectedCityId(e.target.value)}
