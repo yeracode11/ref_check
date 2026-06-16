@@ -11,6 +11,41 @@ function freshCalendarDaysAfterToday() {
   return Number.isFinite(n) && n >= 1 ? n : 7;
 }
 
+/** Режимные объекты посещают раз в 1–2 месяца — не считаем просрочкой раньше этого срока */
+function restrictedVisitGraceDays() {
+  const n = parseInt(process.env.RESTRICTED_VISIT_GRACE_DAYS || '60', 10);
+  return Number.isFinite(n) && n >= 14 ? n : 60;
+}
+
+function isRestrictedObject(fridgeLike) {
+  return fridgeLike?.type === 'restricted';
+}
+
+function freshDaysForFridgeType(fridgeType) {
+  return fridgeType === 'restricted' ? restrictedVisitGraceDays() : freshCalendarDaysAfterToday();
+}
+
+/**
+ * Показывать в таблице «давно без отметок».
+ * Режимный объект не попадает, пока с последней отметки не прошло больше grace-дней.
+ */
+function shouldIncludeInUnvisitedReport(fridgeLike, { lastVisit, daysSinceVisit } = {}) {
+  if (!isRestrictedObject(fridgeLike)) return true;
+  if (!lastVisit) return false;
+  const grace = restrictedVisitGraceDays();
+  return daysSinceVisit != null && daysSinceVisit > grace;
+}
+
+function shouldCountAsWithoutCheckinsInPeriod(fridgeLike, visitedInPeriod) {
+  if (isRestrictedObject(fridgeLike)) return false;
+  return !visitedInPeriod;
+}
+
+function shouldCountAsNeverVisited(fridgeLike, lastVisit) {
+  if (isRestrictedObject(fridgeLike)) return false;
+  return !lastVisit;
+}
+
 /**
  * Все строки, с которыми может совпадать checkins.fridgeId (как в GET /api/fridges).
  */
@@ -123,7 +158,9 @@ function visitStatusFromLastVisit(lastVisit, opts = {}) {
   if (visitMs == null) return 'never';
   const timeZone = opts.timeZone || DEFAULT_VISIT_TIMEZONE;
   const nowMs = opts.nowMs != null ? opts.nowMs : Date.now();
-  const freshDays = opts.freshDays != null ? opts.freshDays : freshCalendarDaysAfterToday();
+  const freshDays = opts.freshDays != null
+    ? opts.freshDays
+    : freshDaysForFridgeType(opts.fridgeType);
   const d = calendarDaysFromVisitToNow(nowMs, visitMs, timeZone);
   if (d <= 0) return 'today';
   if (d <= freshDays) return 'week';
@@ -137,7 +174,11 @@ function visitStatusFromLastVisit(lastVisit, opts = {}) {
 function combinedVisitMapStatus(lastVisit, warehouseStatus, opts = {}) {
   const nowMs = opts.nowMs != null ? opts.nowMs : Date.now();
   const ws = warehouseStatus || 'warehouse';
-  const visitTimeliness = visitStatusFromLastVisit(lastVisit, { nowMs });
+  const visitTimeliness = visitStatusFromLastVisit(lastVisit, {
+    nowMs,
+    fridgeType: opts.fridgeType,
+    freshDays: opts.freshDays,
+  });
 
   if (!lastVisit) {
     return 'never';
@@ -243,4 +284,10 @@ module.exports = {
   calendarDaysFromVisitToNow,
   DEFAULT_VISIT_TIMEZONE,
   freshCalendarDaysAfterToday,
+  restrictedVisitGraceDays,
+  isRestrictedObject,
+  freshDaysForFridgeType,
+  shouldIncludeInUnvisitedReport,
+  shouldCountAsWithoutCheckinsInPeriod,
+  shouldCountAsNeverVisited,
 };

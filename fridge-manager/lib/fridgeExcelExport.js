@@ -143,7 +143,10 @@ async function fetchFridgeListSheetRows(user, query = {}, opts = {}) {
   for (let i = 0; i < sorted.length; i += 1) {
     const f = sorted[i];
     const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeId, f);
-    const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, { nowMs: now });
+    const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, {
+      nowMs: now,
+      fridgeType: f.type,
+    });
     const status =
       mapSt === 'today' ? 'Сегодня'
         : mapSt === 'week' ? 'Неделя'

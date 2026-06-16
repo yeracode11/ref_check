@@ -25,6 +25,59 @@ describe('combinedVisitMapStatus', () => {
   });
 });
 
+describe('restricted object visit rules', () => {
+  const {
+    shouldIncludeInUnvisitedReport,
+    shouldCountAsWithoutCheckinsInPeriod,
+    shouldCountAsNeverVisited,
+    visitStatusFromLastVisit,
+    restrictedVisitGraceDays,
+  } = require('../lib/fridgeVisitHelpers');
+
+  it('restricted with 30 days since visit is not unvisited', () => {
+    assert.equal(
+      shouldIncludeInUnvisitedReport(
+        { type: 'restricted' },
+        { lastVisit: new Date(), daysSinceVisit: 30 },
+      ),
+      false,
+    );
+  });
+
+  it('restricted beyond grace is unvisited', () => {
+    const grace = restrictedVisitGraceDays();
+    assert.equal(
+      shouldIncludeInUnvisitedReport(
+        { type: 'restricted' },
+        { lastVisit: new Date(), daysSinceVisit: grace + 1 },
+      ),
+      true,
+    );
+  });
+
+  it('regular object with 30 days is unvisited in report', () => {
+    assert.equal(
+      shouldIncludeInUnvisitedReport(
+        { type: 'regular' },
+        { lastVisit: new Date(), daysSinceVisit: 30 },
+      ),
+      true,
+    );
+  });
+
+  it('restricted excluded from without-checkins and never-visited counts', () => {
+    assert.equal(shouldCountAsWithoutCheckinsInPeriod({ type: 'restricted' }, false), false);
+    assert.equal(shouldCountAsNeverVisited({ type: 'restricted' }, null), false);
+  });
+
+  it('restricted stays fresh on map longer than regular', () => {
+    const now = new Date('2026-06-08T12:00:00.000Z').getTime();
+    const visit30d = new Date(now - 30 * 86400000);
+    assert.equal(visitStatusFromLastVisit(visit30d, { nowMs: now, fridgeType: 'regular' }), 'old');
+    assert.equal(visitStatusFromLastVisit(visit30d, { nowMs: now, fridgeType: 'restricted' }), 'week');
+  });
+});
+
 describe('mergeCheckinStatsAggregationIntoMap', () => {
   it('merges string and numeric _id into one key with latest lastVisit', () => {
     const older = new Date('2026-03-19T12:48:00.000Z');

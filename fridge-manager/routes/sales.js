@@ -130,7 +130,7 @@ router.get('/map', authenticateToken, requireSalesHead, async (req, res) => {
 
     const result = fridges.map((f) => {
       const { lastVisit, lastVisitTime, lastFridgeCondition } = getLastVisitFromStatsMap(statsByFridgeId, f);
-      const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: now });
+      const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: now, fridgeType: f.type });
 
       if (lastVisitTime != null && lastVisitTime > now) {
         console.warn(

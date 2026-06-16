@@ -14,6 +14,9 @@ const {
   combinedVisitMapStatus,
   getLastVisitFromStatsMap,
   resolveEquipmentStatus,
+  shouldIncludeInUnvisitedReport,
+  shouldCountAsWithoutCheckinsInPeriod,
+  shouldCountAsNeverVisited,
 } = require('../lib/fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
 const {
@@ -112,7 +115,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
     const result = fridges.map((f) => {
       const { lastVisit, lastVisitTime, lastFridgeCondition } = getLastVisitFromStatsMap(statsByFridgeId, f);
 
-      const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: now });
+      const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: now, fridgeType: f.type });
 
       if (lastVisitTime != null && lastVisitTime > now) {
         console.warn(
@@ -120,33 +123,11 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
         );
       }
 
-      // Определяем статус для отображения на карте.
-      // Упрощенная логика без учета перемещений (черные метки отключены):
-      // - Если нет визитов или warehouseStatus === 'returned' -> 'never' (синий)
-      // - Иначе используем visitStatus (today / week / old)
-      let status;
       const warehouseStatus = f.warehouseStatus || 'warehouse';
-      
-      if (!lastVisit) {
-        // Нет посещений - проверяем warehouseStatus
-        // Если возвращен на склад - синий (приоритет)
-        if (warehouseStatus === 'returned') {
-          status = 'never'; // Синий цвет для возвращенных
-        } else {
-          // На складе или установлен без отметок - синий
-          status = 'never';
-        }
-      } else {
-        // Есть визиты
-        if (warehouseStatus === 'returned') {
-          status = 'never';
-        } else {
-          status = visitStatus;
-        }
-      }
-
-      // ВРЕМЕННО ОТКЛЮЧЕНО: гарантируем, что location_changed никогда не вернется
-      // Если по какой-то причине status все еще location_changed, преобразуем в visitStatus
+      const status = combinedVisitMapStatus(lastVisit, warehouseStatus, {
+        nowMs: now,
+        fridgeType: f.type,
+      });
       const finalStatus = status === 'location_changed' ? (visitStatus || 'never') : status;
 
       return {
@@ -1128,7 +1109,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     const allFridges = await Fridge.find(fridgeQuery)
-      .select('code number name address cityId clientInfo')
+      .select('code number name address cityId clientInfo type')
       .populate('cityId', 'name')
       .lean();
 
@@ -1290,6 +1271,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         name: f.name,
         address: f.address,
         cityId: f.cityId ? { name: f.cityId.name } : null,
+        type: f.type || 'regular',
         lastVisit: lastVisit,
         daysSinceVisit: lastVisitDate
           ? Math.floor((Date.now() - lastVisitDate.getTime()) / (1000 * 60 * 60 * 24))
@@ -1297,8 +1279,11 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       };
     });
 
-    // Сортируем: сначала те, кто никогда не посещался, потом по давности
     const topUnvisited = fridgesWithLastVisit
+      .filter((row) => shouldIncludeInUnvisitedReport(
+        { type: row.type },
+        { lastVisit: row.lastVisit, daysSinceVisit: row.daysSinceVisit },
+      ))
       .sort((a, b) => {
         if (a.lastVisit === null && b.lastVisit === null) return 0;
         if (a.lastVisit === null) return -1;
@@ -1373,7 +1358,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
     const cityFridges = await Fridge.find({
       cityId: scopedCityId,
       active: true,
-    }).select('code number name address warehouseStatus clientInfo').populate('cityId', 'name code');
+    }).select('code number name address warehouseStatus clientInfo type').populate('cityId', 'name code');
     const fridgeCodes = await getCheckinFridgeIdsForCity(scopedCityId);
 
     if (fridgeCodes.length === 0) {
@@ -1534,20 +1519,26 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
 
     const fridgesWithLastVisit = cityFridges.map((f) => {
       const lastVisit = resolveLastVisit(f);
+      const daysSinceVisit = lastVisit
+        ? Math.floor((Date.now() - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
       return {
         code: f.code,
         number: f.number,
         name: f.name,
         address: f.address,
         cityId: f.cityId || null,
+        type: f.type || 'regular',
         lastVisit,
-        daysSinceVisit: lastVisit
-          ? Math.floor((Date.now() - new Date(lastVisit).getTime()) / (1000 * 60 * 60 * 24))
-          : null,
+        daysSinceVisit,
       };
     });
 
     const topUnvisited = fridgesWithLastVisit
+      .filter((row) => shouldIncludeInUnvisitedReport(
+        { type: row.type },
+        { lastVisit: row.lastVisit, daysSinceVisit: row.daysSinceVisit },
+      ))
       .sort((a, b) => {
         if (a.lastVisit === null && b.lastVisit === null) return 0;
         if (a.lastVisit === null) return -1;
@@ -1558,8 +1549,12 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
 
     const totalFridges = cityFridges.length;
     const totalCheckins = dailyCheckins.reduce((sum, row) => sum + row.count, 0);
-    const withoutCheckinsInPeriod = cityFridges.filter((f) => !fridgeVisitedInPeriod(f)).length;
-    const neverVisited = fridgesWithLastVisit.filter((f) => !f.lastVisit).length;
+    const withoutCheckinsInPeriod = cityFridges.filter(
+      (f) => shouldCountAsWithoutCheckinsInPeriod(f, fridgeVisitedInPeriod(f)),
+    ).length;
+    const neverVisited = fridgesWithLastVisit.filter(
+      (row) => shouldCountAsNeverVisited({ type: row.type }, row.lastVisit),
+    ).length;
 
     // Холодильники по статусам
     const statusCounts = {
