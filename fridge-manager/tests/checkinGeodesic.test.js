@@ -22,69 +22,56 @@ describe('findRecentDuplicateCheckin', () => {
     location: { coordinates: [71.4, 42.9] },
   };
 
+  const params = (overrides = {}) => ({
+    managerIds: ['17'],
+    fridgeIdCandidates: ['12345'],
+    lng: 71.40001,
+    lat: 42.90001,
+    now,
+    windowMs: 120_000,
+    maxDistanceM: 40,
+    ...overrides,
+  });
+
   it('finds duplicate for same manager, fridge, time window and close coords', () => {
-    const dup = findRecentDuplicateCheckin([base], {
-      managerId: '17',
-      fridgeId: '12345',
-      lng: 71.40001,
-      lat: 42.90001,
-      now,
-      windowMs: 120_000,
-      maxDistanceM: 40,
-    });
+    const dup = findRecentDuplicateCheckin([base], params());
     assert.equal(dup, base);
   });
 
+  it('finds duplicate when fridgeId stored as number', () => {
+    const numeric = { ...base, fridgeId: 12345 };
+    const dup = findRecentDuplicateCheckin([numeric], params({ fridgeIdCandidates: ['12345', '#12345'] }));
+    assert.equal(dup, numeric);
+  });
+
+  it('finds duplicate when managerId is ObjectId string vs username', () => {
+    const objectId = '507f1f77bcf86cd799439011';
+    const withObjectId = { ...base, managerId: objectId };
+    const dup = findRecentDuplicateCheckin(
+      [withObjectId],
+      params({ managerIds: ['17', objectId] }),
+    );
+    assert.equal(dup, withObjectId);
+  });
+
   it('returns null if manager differs', () => {
-    const dup = findRecentDuplicateCheckin([base], {
-      managerId: '99',
-      fridgeId: '12345',
-      lng: 71.4,
-      lat: 42.9,
-      now,
-      windowMs: 120_000,
-      maxDistanceM: 40,
-    });
+    const dup = findRecentDuplicateCheckin([base], params({ managerIds: ['99'] }));
     assert.equal(dup, null);
   });
 
   it('returns null if outside time window', () => {
     const old = { ...base, visitedAt: new Date(now - 200_000) };
-    const dup = findRecentDuplicateCheckin([old], {
-      managerId: '17',
-      fridgeId: '12345',
-      lng: 71.4,
-      lat: 42.9,
-      now,
-      windowMs: 120_000,
-      maxDistanceM: 40,
-    });
+    const dup = findRecentDuplicateCheckin([old], params({ lng: 71.4, lat: 42.9 }));
     assert.equal(dup, null);
   });
 
   it('returns null if coordinates too far', () => {
-    const dup = findRecentDuplicateCheckin([base], {
-      managerId: '17',
-      fridgeId: '12345',
-      lng: 72.5,
-      lat: 43.5,
-      now,
-      windowMs: 120_000,
-      maxDistanceM: 40,
-    });
+    const dup = findRecentDuplicateCheckin([base], params({ lng: 72.5, lat: 43.5 }));
     assert.equal(dup, null);
   });
 
   it('repeat same mark is not treated as conflict — duplicate is returned (idempotent path)', () => {
-    const dup = findRecentDuplicateCheckin([base], {
-      managerId: '17',
-      fridgeId: '12345',
-      lng: 71.4,
-      lat: 42.9,
-      now,
-      windowMs: 120_000,
-      maxDistanceM: 40,
-    });
+    const dup = findRecentDuplicateCheckin([base], params({ lng: 71.4, lat: 42.9 }));
     assert.ok(dup);
     assert.equal(dup.managerId, '17');
   });

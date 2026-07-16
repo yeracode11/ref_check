@@ -1,8 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { generateToken, JWT_SECRET } = require('../middleware/auth');
+const { generateToken, authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -74,24 +73,13 @@ router.post('/login', async (req, res) => {
 });
 
 // GET /api/auth/me - get current user info (protected)
-router.get('/me', async (req, res) => {
+router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ error: 'Access token required' });
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
-
-    jwt.verify(token, JWT_SECRET, async (err, decoded) => {
-      if (err) {
-        return res.status(403).json({ error: 'Invalid or expired token' });
-      }
-      const user = await User.findById(decoded.id).select('-password');
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      return res.json(user);
-    });
+    return res.json(user);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to get user info', details: err.message });
   }

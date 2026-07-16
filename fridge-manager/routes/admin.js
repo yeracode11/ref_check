@@ -17,8 +17,11 @@ const {
   shouldIncludeInUnvisitedReport,
   shouldCountAsWithoutCheckinsInPeriod,
   shouldCountAsNeverVisited,
+  buildDailyCheckinsAggregationStages,
+  mapDailyCheckinsAggregationResult,
 } = require('../lib/fridgeVisitHelpers');
-const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
+const { getCheckinStatsForFridges, invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
+const { deduplicateCityCheckins } = require('../lib/deduplicateCheckins');
 const {
   generateFullExportBuffer,
   buildExportFileName,
@@ -1130,13 +1133,8 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         });
       }
 
-      const fridgeCodes = [];
-      allFridges.forEach((f) => {
-        fridgeCodes.push(f.code);
-        if (f.number) fridgeCodes.push(f.number);
-        if (f.clientInfo?.inn) fridgeCodes.push(f.clientInfo.inn);
-      });
-      fridgeFilter = { fridgeId: { $in: fridgeCodes } };
+      const fridgeCodes = await getCheckinFridgeIdsForCity(cityId);
+      fridgeFilter = { fridgeId: { $in: fridgeCodes.length ? fridgeCodes : ['__none__'] } };
     }
 
     const periodMatch = { visitedAt: { $gte: startDate }, ...fridgeFilter };
@@ -1150,20 +1148,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       uniqueManagers,
       fridgesByStatus,
     ] = await Promise.all([
-      Checkin.aggregate([
-        { $match: periodMatch },
-        {
-          $group: {
-            _id: {
-              year: { $year: '$visitedAt' },
-              month: { $month: '$visitedAt' },
-              day: { $dayOfMonth: '$visitedAt' },
-            },
-            count: { $sum: 1 },
-          },
-        },
-        { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
-      ]),
+      Checkin.aggregate(buildDailyCheckinsAggregationStages(periodMatch)),
       Checkin.aggregate([
         { $match: periodMatch },
         {
@@ -1200,10 +1185,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       ]),
     ]);
 
-    const dailyCheckins = checkinsByDay.map((item) => ({
-      date: `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${String(item._id.day).padStart(2, '0')}`,
-      count: item.count,
-    }));
+    const dailyCheckins = mapDailyCheckinsAggregationResult(checkinsByDay);
 
     // Обогащаем статистику данными о менеджерах
     let enrichedManagerStats = managerStats;
@@ -1254,15 +1236,26 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     const lastVisitMap = new Map();
-    lastCheckins.forEach((c) => lastVisitMap.set(c._id, c.lastVisit));
+    lastCheckins.forEach((c) => {
+      lastVisitMap.set(c._id, c.lastVisit);
+      lastVisitMap.set(String(c._id).trim(), c.lastVisit);
+      const n = Number(c._id);
+      if (Number.isFinite(n)) lastVisitMap.set(n, c.lastVisit);
+    });
+
+    const resolveLastVisit = (fridge) => {
+      for (const id of buildCheckinFridgeIdCandidates(fridge)) {
+        const hit =
+          lastVisitMap.get(id) ??
+          lastVisitMap.get(String(id).trim()) ??
+          (Number.isFinite(Number(id)) ? lastVisitMap.get(Number(id)) : undefined);
+        if (hit) return hit;
+      }
+      return null;
+    };
 
     const fridgesWithLastVisit = allFridges.map((f) => {
-      // Проверяем и по code, и по number для Шымкента и Кызылорды
-      // Для Кызылорды также проверяем по ИНН клиента
-      const lastVisitCode = lastVisitMap.get(f.code);
-      const lastVisitNumber = f.number ? lastVisitMap.get(f.number) : null;
-      const lastVisitInn = f.clientInfo?.inn ? lastVisitMap.get(f.clientInfo.inn) : null;
-      const lastVisit = lastVisitCode || lastVisitNumber || lastVisitInn || null;
+      const lastVisit = resolveLastVisit(f);
       const lastVisitDate = lastVisit ? new Date(lastVisit) : null;
       
       return {
@@ -1292,7 +1285,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       })
       .slice(0, 20);
 
-    const totalCheckins = uniqueFridgeIds.length;
+    const totalCheckins = dailyCheckins.reduce((sum, row) => sum + row.count, 0);
 
     const statusCounts = {
       warehouse: 0,
@@ -1314,7 +1307,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         totalFridges,
         totalCheckins,
         uniqueManagers: uniqueManagers.length,
-        // Среднее количество холодильников с отметками в день
+        // Среднее количество отметок в день
         avgCheckinsPerDay: daysNum > 0 ? Math.round(totalCheckins / daysNum * 10) / 10 : 0,
         fridgesByStatus: statusCounts,
       },
@@ -1390,20 +1383,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       uniqueFridgeIds,
       uniqueManagers,
     ] = await Promise.all([
-      Checkin.aggregate([
-        { $match: periodMatch },
-        {
-          $group: {
-            _id: {
-              year: { $year: '$visitedAt' },
-              month: { $month: '$visitedAt' },
-              day: { $dayOfMonth: '$visitedAt' },
-            },
-            count: { $sum: 1 },
-          },
-        },
-        { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
-      ]),
+      Checkin.aggregate(buildDailyCheckinsAggregationStages(periodMatch)),
       Checkin.aggregate([
         { $match: periodMatch },
         {
@@ -1430,10 +1410,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       Checkin.distinct('managerId', periodMatch),
     ]);
 
-    const dailyCheckins = checkinsByDay.map((item) => ({
-      date: `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${String(item._id.day).padStart(2, '0')}`,
-      count: item.count,
-    }));
+    const dailyCheckins = mapDailyCheckinsAggregationResult(checkinsByDay);
 
     // Обогащаем статистику данными о менеджерах
     let enrichedManagerStats = managerStats;
@@ -2291,6 +2268,36 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
       error: 'Ошибка получения статистики по городам', 
       details: err.message 
     });
+  }
+});
+
+// POST /api/admin/checkins/deduplicate
+// Удаление дублей отметок (один ТП + один холодильник + близкие координаты в окне 5 мин)
+// body: { cityId?, cityName?, date?, today?, apply?: true } — без apply только предпросмотр
+router.post('/checkins/deduplicate', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { cityId, cityName, date, today, apply } = req.body || {};
+    const dryRun = apply !== true && apply !== 'true';
+
+    const result = await deduplicateCityCheckins({
+      cityId,
+      cityName,
+      date,
+      today: today === true || today === 'true',
+      dryRun,
+    });
+
+    if (!dryRun && result.deletedCount > 0) {
+      invalidateCheckinStatsCache();
+    }
+
+    return res.json(result);
+  } catch (err) {
+    if (err.cities) {
+      return res.status(404).json({ error: err.message, cities: err.cities });
+    }
+    console.error('[Admin] deduplicate checkins error:', err);
+    return res.status(500).json({ error: 'Ошибка удаления дублей', details: err.message });
   }
 });
 

@@ -1,7 +1,12 @@
 const express = require('express');
 const User = require('../models/User');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
+
+const USER_ROLES = ['manager', 'admin', 'accountant', 'service_manager', 'sales_head'];
+
+router.use(authenticateToken, requireAdmin);
 
 // GET /api/users
 router.get('/', async (req, res) => {
@@ -31,17 +36,30 @@ router.get('/:id', async (req, res) => {
 // POST /api/users
 router.post('/', async (req, res) => {
   try {
-    const { username, email, password, role, fullName, phone } = req.body;
-    if (!username || !email || !password) {
-      return res.status(400).json({ error: 'username, email, and password are required' });
+    const { username, password, role, fullName, phone, cityId, active } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password are required' });
     }
-    const user = await User.create({ username, email, password, role, fullName, phone });
+    if (role && !USER_ROLES.includes(role)) {
+      return res.status(400).json({
+        error: `Некорректная роль. Допустимые: ${USER_ROLES.join(', ')}`,
+      });
+    }
+    const user = await User.create({
+      username,
+      password,
+      role: role || 'manager',
+      fullName,
+      phone,
+      cityId: cityId || null,
+      active: active !== false,
+    });
     const userObj = user.toObject();
     delete userObj.password;
     return res.status(201).json(userObj);
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(400).json({ error: 'Username or email already exists' });
+      return res.status(400).json({ error: 'Username already exists' });
     }
     return res.status(500).json({ error: 'Failed to create user', details: err.message });
   }
@@ -50,18 +68,41 @@ router.post('/', async (req, res) => {
 // PATCH /api/users/:id
 router.patch('/:id', async (req, res) => {
   try {
-    const updates = { ...req.body };
-    // Password will be hashed by pre-save hook if provided
+    const { username, password, role, fullName, phone, cityId, active } = req.body;
+
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'Not found' });
-    
-    Object.assign(user, updates);
+
+    if (user._id.toString() === req.user.id) {
+      return res.status(400).json({ error: 'Нельзя редактировать свой аккаунт через этот интерфейс' });
+    }
+
+    if (username !== undefined) user.username = username;
+    if (role !== undefined) {
+      if (!USER_ROLES.includes(role)) {
+        return res.status(400).json({
+          error: `Некорректная роль. Допустимые: ${USER_ROLES.join(', ')}`,
+        });
+      }
+      user.role = role;
+    }
+    if (fullName !== undefined) user.fullName = fullName;
+    if (phone !== undefined) user.phone = phone;
+    if (cityId !== undefined) user.cityId = cityId || null;
+    if (active !== undefined) user.active = active;
+    if (password && password.length >= 6) {
+      user.password = password;
+    }
+
     await user.save();
-    
+
     const userObj = user.toObject();
     delete userObj.password;
     return res.json(userObj);
   } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
     return res.status(500).json({ error: 'Failed to update user', details: err.message });
   }
 });
@@ -69,8 +110,14 @@ router.patch('/:id', async (req, res) => {
 // DELETE /api/users/:id
 router.delete('/:id', async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'Not found' });
+
+    if (user._id.toString() === req.user.id) {
+      return res.status(400).json({ error: 'Нельзя удалить свой аккаунт' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
     return res.json({ message: 'User deleted' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to delete user', details: err.message });
@@ -78,4 +125,3 @@ router.delete('/:id', async (req, res) => {
 });
 
 module.exports = router;
-

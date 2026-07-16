@@ -3,12 +3,13 @@ const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
 const Checkin = require('../models/Checkin');
 const Repair = require('../models/Repair');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdminOrAccountant } = require('../middleware/auth');
 const { isComplexRepairRecord, estimateRepairCostRecord } = require('../lib/repairHelpers');
-const { isCityScopedRole, userCanAccessCity } = require('../lib/cityScope');
+const { isCityScopedRole, userCanAccessCity, getAssignedCityId, ensureCityScopedUserHasCity } = require('../lib/cityScope');
 const {
   buildCheckinFridgeIdCandidates,
   visitStatusFromLastVisit,
+  expandCheckinFridgeIdsForInQuery,
 } = require('../lib/fridgeVisitHelpers');
 
 const router = express.Router();
@@ -126,6 +127,8 @@ function enrichFridgeDocWithVisit(fridgePlain) {
 // Для бухгалтеров автоматически фильтрует по их городу
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    if (!ensureCityScopedUserHasCity(req, res)) return;
+
     const {
       active, nearLat, nearLng, nearKm, cityId, code, search, limit, skip, warehouseStatus,
       equipmentStatus,
@@ -134,8 +137,8 @@ router.get('/', authenticateToken, async (req, res) => {
     if (active !== undefined) filter.active = active === 'true';
     
     // Для ролей, привязанных к городу — только их город
-    if (isCityScopedRole(req.user.role) && req.user.cityId) {
-      filter.cityId = req.user.cityId;
+    if (isCityScopedRole(req.user.role)) {
+      filter.cityId = getAssignedCityId(req.user);
     } else if (cityId) {
       filter.cityId = cityId;
     }
@@ -414,7 +417,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied for this city' });
     }
     const plain = fridge.toObject();
-    const ids = buildCheckinFridgeIdCandidates(plain);
+    const ids = expandCheckinFridgeIdsForInQuery(buildCheckinFridgeIdCandidates(plain));
     const lastCheckin = ids.length
       ? await Checkin.findOne({ fridgeId: { $in: ids } }).sort({ visitedAt: -1 }).lean()
       : null;
@@ -424,8 +427,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// POST /api/fridges
-router.post('/', async (req, res) => {
+// POST /api/fridges (legacy — предпочтительно /api/admin/fridges)
+router.post('/', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const { code, name, address, description } = req.body;
     if (!code || !name) {
@@ -455,9 +458,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/fridges/:id
-router.patch('/:id', async (req, res) => {
+// PATCH /api/fridges/:id (legacy — предпочтительно /api/admin/fridges/:id)
+router.patch('/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
+    const existing = await Fridge.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (!userCanAccessCity(req.user, existing.cityId)) {
+      return res.status(403).json({ error: 'Access denied for this city' });
+    }
+
     const updates = { ...req.body };
     if (updates.location && typeof updates.location.lat === 'number' && typeof updates.location.lng === 'number') {
       updates.location = { type: 'Point', coordinates: [updates.location.lng, updates.location.lat] };
@@ -470,9 +479,15 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/fridges/:id
-router.delete('/:id', async (req, res) => {
+// DELETE /api/fridges/:id (legacy — предпочтительно /api/admin/fridges/:id)
+router.delete('/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
+    const existing = await Fridge.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (!userCanAccessCity(req.user, existing.cityId)) {
+      return res.status(403).json({ error: 'Access denied for this city' });
+    }
+
     const fridge = await Fridge.findByIdAndDelete(req.params.id);
     if (!fridge) return res.status(404).json({ error: 'Not found' });
     return res.json({ message: 'Fridge deleted' });

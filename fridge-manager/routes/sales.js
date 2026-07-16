@@ -12,6 +12,7 @@ const {
   getLastVisitFromStatsMap,
   resolveEquipmentStatus,
   expandCheckinFridgeIdsForInQuery,
+  localDateKeyFromVisit,
 } = require('../lib/fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
 const {
@@ -406,23 +407,24 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
     for (let i = 0; i < days; i++) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = localDateKeyFromVisit(d);
+      if (!key) continue;
       breakdownsByDay[key] = { date: key, checkins: 0, breakdowns: 0, repairs: 0, costKzt: 0 };
     }
 
     allCheckins.forEach((c) => {
-      const key = new Date(c.visitedAt).toISOString().slice(0, 10);
-      if (breakdownsByDay[key]) breakdownsByDay[key].checkins += 1;
+      const key = localDateKeyFromVisit(c.visitedAt);
+      if (key && breakdownsByDay[key]) breakdownsByDay[key].checkins += 1;
     });
 
     brokenCheckins.forEach((c) => {
-      const key = new Date(c.visitedAt).toISOString().slice(0, 10);
-      if (breakdownsByDay[key]) breakdownsByDay[key].breakdowns += 1;
+      const key = localDateKeyFromVisit(c.visitedAt);
+      if (key && breakdownsByDay[key]) breakdownsByDay[key].breakdowns += 1;
     });
 
     repairs.forEach((r) => {
-      const key = new Date(r.repairDate).toISOString().slice(0, 10);
-      if (breakdownsByDay[key]) {
+      const key = localDateKeyFromVisit(r.repairDate);
+      if (key && breakdownsByDay[key]) {
         breakdownsByDay[key].repairs += 1;
         breakdownsByDay[key].costKzt += estimateRepairCostRecord(r);
       }

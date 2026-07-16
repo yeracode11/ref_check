@@ -11,12 +11,26 @@ const {
   getCheckinFridgeIdsForCity,
   getAssignedCityId,
   userCanAccessCity,
+  ensureCityScopedUserHasCity,
+  findFridgeByIdentifier,
 } = require('../lib/cityScope');
+const {
+  buildCheckinFridgeIdCandidates,
+  expandCheckinFridgeIdsForInQuery,
+} = require('../lib/fridgeVisitHelpers');
+const {
+  resolveManagerIdCandidates,
+  buildFridgeIdInQueryForDedupe,
+  canonicalCheckinFridgeId,
+} = require('../lib/checkinDedup');
 
 const router = express.Router();
 
 /** Окно идемпотентности: повторная отправка с теми же координатами не создаёт вторую запись */
-const CHECKIN_IDEMPOTENCY_WINDOW_MS = 120 * 1000;
+const CHECKIN_IDEMPOTENCY_WINDOW_MS = (() => {
+  const n = parseInt(process.env.CHECKIN_IDEMPOTENCY_WINDOW_MS || '300000', 10);
+  return Number.isFinite(n) && n >= 30_000 ? n : 300_000;
+})();
 const CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M = 40;
 
 function calculateDistanceMeters(loc1, loc2) {
@@ -55,12 +69,11 @@ async function syncFridgeFromCheckin({
     return;
   }
 
-  const fridgeIdentifiers = [fridge.code];
-  if (fridge.number) fridgeIdentifiers.push(fridge.number);
-  if (fridge.clientInfo?.inn) fridgeIdentifiers.push(fridge.clientInfo.inn);
+  const fridgeIdentifiers = buildCheckinFridgeIdCandidates(fridge);
+  const expandedIds = expandCheckinFridgeIdsForInQuery(fridgeIdentifiers);
 
   const recentCheckins = await Checkin.find({
-    fridgeId: { $in: fridgeIdentifiers },
+    fridgeId: { $in: expandedIds },
   }).sort({ visitedAt: -1 }).limit(2).lean();
 
   let newWarehouseStatus = fridge.warehouseStatus;
@@ -126,15 +139,21 @@ function parseDate(dateString) {
 }
 
 // POST /api/checkins
-// body: { managerId, fridgeId, photos?, location: { lat, lng } | { type:'Point', coordinates:[lng,lat] }, address?, notes?, visitedAt? }
-router.post('/', async (req, res) => {
+// body: { fridgeId, photos?, location, ... } — managerId берётся из JWT
+router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { managerId } = req.body;
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only managers can create checkins' });
+    }
+
+    const managerId = req.user.role === 'admin' && req.body.managerId
+      ? req.body.managerId
+      : (req.user.username || req.user.id);
     const rawFridgeId = req.body?.fridgeId;
     const normalizedFridgeId = String(rawFridgeId || '').trim().replace(/^#/, '');
 
-    if (!managerId || !normalizedFridgeId) {
-      return res.status(400).json({ error: 'managerId and fridgeId are required' });
+    if (!normalizedFridgeId) {
+      return res.status(400).json({ error: 'fridgeId is required' });
     }
 
     let location = req.body.location;
@@ -158,8 +177,18 @@ router.post('/', async (req, res) => {
 
     const [reqLng, reqLat] = location.coordinates;
     const dupWindowStart = new Date(Date.now() - CHECKIN_IDEMPOTENCY_WINDOW_MS);
+
+    const [fridge, managerIdCandidates] = await Promise.all([
+      findFridgeByIdentifier(normalizedFridgeId),
+      resolveManagerIdCandidates(User, managerId),
+    ]);
+    const fridgeIdCandidates = fridge
+      ? buildCheckinFridgeIdCandidates(fridge)
+      : [normalizedFridgeId];
+    const storeFridgeId = canonicalCheckinFridgeId(fridge, normalizedFridgeId);
+
     const recentForDedupe = await Checkin.find({
-      fridgeId: normalizedFridgeId,
+      ...buildFridgeIdInQueryForDedupe(fridge, normalizedFridgeId),
       visitedAt: { $gte: dupWindowStart },
     })
       .sort({ visitedAt: -1 })
@@ -167,8 +196,8 @@ router.post('/', async (req, res) => {
       .lean();
 
     const duplicate = findRecentDuplicateCheckin(recentForDedupe, {
-      managerId: String(managerId),
-      fridgeId: normalizedFridgeId,
+      managerIds: managerIdCandidates,
+      fridgeIdCandidates,
       lng: reqLng,
       lat: reqLat,
       now: Date.now(),
@@ -206,8 +235,8 @@ router.post('/', async (req, res) => {
     const id = await getNextSequence('checkin');
     const checkin = await Checkin.create({
       id,
-      managerId,
-      fridgeId: normalizedFridgeId,
+      managerId: managerIdCandidates[0] || String(managerId),
+      fridgeId: storeFridgeId,
       photos: Array.isArray(req.body.photos) ? req.body.photos : [],
       location,
       address: req.body.address,
@@ -242,6 +271,8 @@ router.post('/', async (req, res) => {
 // Менеджеры видят только свои отметки, бухгалтеры - только из своего города, админы - все
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    if (!ensureCityScopedUserHasCity(req, res)) return;
+
     const { managerId, fridgeId } = req.query;
     const from = parseDate(req.query.from);
     const to = parseDate(req.query.to);

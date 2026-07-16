@@ -1,22 +1,51 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-key-in-production';
+const DEFAULT_JWT_SECRET = 'change-this-secret-key-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
 
-function authenticateToken(req, res, next) {
+if (!process.env.JWT_SECRET) {
+  console.warn('[Auth] JWT_SECRET не задан — используется небезопасный ключ по умолчанию');
+}
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === DEFAULT_JWT_SECRET) {
+  console.error('[Auth] FATAL: задайте JWT_SECRET в production (.env)');
+  process.exit(1);
+}
+
+async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
+  let decoded;
+  try {
+    decoded = jwt.verify(token, JWT_SECRET);
+  } catch {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
+
+  try {
+    const user = await User.findById(decoded.id).select('username role cityId active').lean();
+    if (!user) {
+      return res.status(403).json({ error: 'User not found' });
     }
-    req.user = user;
-    next();
-  });
+    if (!user.active) {
+      return res.status(403).json({ error: 'Account is disabled' });
+    }
+
+    req.user = {
+      id: String(user._id),
+      username: user.username,
+      role: user.role,
+      cityId: user.cityId,
+    };
+    return next();
+  } catch (err) {
+    return res.status(500).json({ error: 'Authentication failed', details: err.message });
+  }
 }
 
 function requireAdmin(req, res, next) {
@@ -65,7 +94,7 @@ function generateToken(user) {
   return jwt.sign(
     { id: user._id, username: user.username, role: user.role, cityId: user.cityId },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '7d' },
   );
 }
 
@@ -80,4 +109,3 @@ module.exports = {
   generateToken,
   JWT_SECRET,
 };
-

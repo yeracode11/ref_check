@@ -94,6 +94,39 @@ function expandCheckinFridgeIdsForInQuery(ids) {
  * Только строковый $in не находит документы с числовым fridgeId — из‑за этого lastVisit в деталях
  * мог отличаться от агрегата на /fridge-status (другая «последняя» отметка → другой цвет маркера).
  */
+function buildDailyCheckinsAggregationStages(matchFilter, timezone = DEFAULT_VISIT_TIMEZONE) {
+  return [
+    { $match: matchFilter },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$visitedAt',
+            timezone,
+          },
+        },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ];
+}
+
+function mapDailyCheckinsAggregationResult(rows) {
+  return rows.map((item) => ({
+    date: item._id,
+    count: item.count,
+  }));
+}
+
+/** Ключ YYYY-MM-DD в локальной зоне (для JS-агрегации без Mongo $dateToString). */
+function localDateKeyFromVisit(visitedAt, timezone = DEFAULT_VISIT_TIMEZONE) {
+  const d = visitedAt instanceof Date ? visitedAt : new Date(visitedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-CA', { timeZone: timezone });
+}
+
 function buildCheckinFridgeIdMatchCondition(fridgeLike) {
   const candidates = buildCheckinFridgeIdCandidates(fridgeLike);
   const or = [];
@@ -275,6 +308,9 @@ module.exports = {
   buildCheckinFridgeIdCandidates,
   expandCheckinFridgeIdsForInQuery,
   buildCheckinFridgeIdMatchCondition,
+  buildDailyCheckinsAggregationStages,
+  mapDailyCheckinsAggregationResult,
+  localDateKeyFromVisit,
   visitStatusFromLastVisit,
   combinedVisitMapStatus,
   mergeCheckinStatsAggregationIntoMap,

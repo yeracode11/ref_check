@@ -14,7 +14,7 @@ const {
   sanitizeCompletedWorks,
   workTypeFromCompletedWorks,
 } = require('../lib/mxoRepairWorks');
-const { getAssignedCityId, getFridgeObjectIdsForCity, userCanAccessCity } = require('../lib/cityScope');
+const { getAssignedCityId, getFridgeObjectIdsForCity, userCanAccessCity, ensureCityScopedUserHasCity } = require('../lib/cityScope');
 
 const router = express.Router();
 
@@ -149,6 +149,8 @@ router.patch('/:id/complete', authenticateToken, requireAdminOrServiceManager, a
 // GET /api/repairs?fridgeId=
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    if (!ensureCityScopedUserHasCity(req, res)) return;
+
     const { fridgeId, status, limit, skip } = req.query;
     const filter = {};
 

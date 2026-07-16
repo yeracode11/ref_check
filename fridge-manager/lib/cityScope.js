@@ -38,9 +38,22 @@ function resolveCityFilter(user, queryCityId) {
 function userCanAccessCity(user, cityId) {
   if (!user || user.role === 'admin') return true;
   const assigned = getAssignedCityId(user);
+  if (isCityScopedRole(user.role) && !assigned) return false;
   if (!assigned) return true;
   if (!cityId) return false;
   return String(assigned) === String(cityId);
+}
+
+function ensureCityScopedUserHasCity(req, res) {
+  if (!req.user || req.user.role === 'admin') return true;
+  if (!isCityScopedRole(req.user.role)) return true;
+  if (!getAssignedCityId(req.user)) {
+    res.status(403).json({
+      error: 'Для роли не назначен город. Обратитесь к администратору.',
+    });
+    return false;
+  }
+  return true;
 }
 
 async function getFridgeObjectIdsForCity(cityId) {
@@ -85,6 +98,7 @@ module.exports = {
   getAssignedCityId,
   resolveCityFilter,
   userCanAccessCity,
+  ensureCityScopedUserHasCity,
   getFridgeObjectIdsForCity,
   getCheckinFridgeIdsForCity,
   findFridgeByIdentifier,
