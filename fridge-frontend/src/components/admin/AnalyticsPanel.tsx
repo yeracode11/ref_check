@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell, Legend,
@@ -67,6 +67,8 @@ type AnalyticsPanelProps = {
   fixedCityId?: string;
   /** Для НОП: скрыть рейтинг менеджеров, показать сводку по непосещённым */
   hideManagerStats?: boolean;
+  /** Не грузить данные, пока блок не попадёт во viewport (карта и таблицы — первыми) */
+  lazy?: boolean;
 };
 
 export function AnalyticsPanel({
@@ -74,15 +76,37 @@ export function AnalyticsPanel({
   cities = [],
   fixedCityId,
   hideManagerStats = false,
+  lazy = false,
 }: AnalyticsPanelProps = {}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(!lazy);
   const [data, setData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!lazy);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
   const [selectedCityId, setSelectedCityId] = useState<string>('all');
   const effectiveCityId = fixedCityId || (selectedCityId !== 'all' ? selectedCityId : undefined);
 
   useEffect(() => {
+    if (!lazy || visible) return;
+    const node = rootRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [lazy, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
     let alive = true;
     (async () => {
       try {
@@ -103,25 +127,41 @@ export function AnalyticsPanel({
       }
     })();
     return () => { alive = false; };
-  }, [days, endpoint, effectiveCityId]);
+  }, [visible, days, endpoint, effectiveCityId]);
+
+  if (!visible) {
+    return (
+      <div ref={rootRef}>
+        <Card>
+          <div className="flex justify-center py-12 text-slate-500 text-sm">
+            Аналитика загрузится при прокрутке…
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
-      <Card>
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-slate-900"></div>
-        </div>
-      </Card>
+      <div ref={rootRef}>
+        <Card>
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-slate-900"></div>
+          </div>
+        </Card>
+      </div>
     );
   }
 
   if (error || !data) {
     return (
-      <Card>
-        <div className="text-center py-8 text-red-500">
-          <p>⚠️ {error || 'Не удалось загрузить аналитику'}</p>
-        </div>
-      </Card>
+      <div ref={rootRef}>
+        <Card>
+          <div className="text-center py-8 text-red-500">
+            <p>⚠️ {error || 'Не удалось загрузить аналитику'}</p>
+          </div>
+        </Card>
+      </div>
     );
   }
 

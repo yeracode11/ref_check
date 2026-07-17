@@ -3,134 +3,21 @@ const mongoose = require('mongoose');
 const Checkin = require('../models/Checkin');
 const Fridge = require('../models/Fridge');
 const User = require('../models/User');
-const { getNextSequence } = require('../models/Counter');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
-const { findRecentDuplicateCheckin } = require('../utils/checkinGeodesic');
-const { invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
 const {
   getCheckinFridgeIdsForCity,
   getAssignedCityId,
   userCanAccessCity,
   ensureCityScopedUserHasCity,
-  findFridgeByIdentifier,
 } = require('../lib/cityScope');
 const {
-  buildCheckinFridgeIdCandidates,
-  expandCheckinFridgeIdsForInQuery,
-} = require('../lib/fridgeVisitHelpers');
-const {
-  resolveManagerIdCandidates,
-  buildFridgeIdInQueryForDedupe,
-  canonicalCheckinFridgeId,
-} = require('../lib/checkinDedup');
+  createCheckinRecord,
+  locationFromLatLngFields,
+  normalizeLocationInput,
+} = require('../lib/checkinService');
+const { invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
 
 const router = express.Router();
-
-/** Окно идемпотентности: повторная отправка с теми же координатами не создаёт вторую запись */
-const CHECKIN_IDEMPOTENCY_WINDOW_MS = (() => {
-  const n = parseInt(process.env.CHECKIN_IDEMPOTENCY_WINDOW_MS || '300000', 10);
-  return Number.isFinite(n) && n >= 30_000 ? n : 300_000;
-})();
-const CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M = 40;
-
-function calculateDistanceMeters(loc1, loc2) {
-  if (!loc1 || !loc2 || !loc1.coordinates || !loc2.coordinates) {
-    return null;
-  }
-  const [lng1, lat1] = loc1.coordinates;
-  const [lng2, lat2] = loc2.coordinates;
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-async function syncFridgeFromCheckin({
-  normalizedFridgeId,
-  location,
-  fridgeCondition,
-  isSeasonalClosure,
-  address,
-}) {
-  const fridge = await Fridge.findOne({
-    $or: [
-      { code: normalizedFridgeId },
-      { number: normalizedFridgeId },
-      { 'clientInfo.inn': normalizedFridgeId },
-    ],
-  });
-  if (!fridge) {
-    console.warn(`[Checkins] Fridge with code/number/inn ${normalizedFridgeId} not found`);
-    return;
-  }
-
-  const fridgeIdentifiers = buildCheckinFridgeIdCandidates(fridge);
-  const expandedIds = expandCheckinFridgeIdsForInQuery(fridgeIdentifiers);
-
-  const recentCheckins = await Checkin.find({
-    fridgeId: { $in: expandedIds },
-  }).sort({ visitedAt: -1 }).limit(2).lean();
-
-  let newWarehouseStatus = fridge.warehouseStatus;
-  if (recentCheckins.length === 1) {
-    if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
-      newWarehouseStatus = 'installed';
-    }
-  } else if (recentCheckins.length >= 2) {
-    const secondLastLocation = recentCheckins[1].location;
-    const lastLocation = recentCheckins[0].location;
-    if (secondLastLocation && lastLocation) {
-      const distance = calculateDistanceMeters(secondLastLocation, lastLocation);
-      if (distance !== null && distance > 50) {
-        newWarehouseStatus = 'moved';
-      } else if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
-        newWarehouseStatus = 'installed';
-      } else if (fridge.warehouseStatus === 'moved') {
-        newWarehouseStatus = 'installed';
-      }
-    }
-  }
-
-  const fridgeStatusUpdate = {};
-  if (fridgeCondition === 'broken') {
-    fridgeStatusUpdate.status = 'broken';
-    if (!fridge.brokenSince) {
-      fridgeStatusUpdate.brokenSince = new Date();
-    }
-  } else if (fridge.status !== 'under_repair') {
-    fridgeStatusUpdate.status = 'working';
-    fridgeStatusUpdate.brokenSince = null;
-  }
-
-  const seasonalTypes = ['school', 'restricted'];
-  if (seasonalTypes.includes(fridge.type)) {
-    fridgeStatusUpdate.isSeasonalClosure = isSeasonalClosure;
-  }
-
-  await Fridge.findOneAndUpdate(
-    {
-      $or: [
-        { code: normalizedFridgeId },
-        { number: normalizedFridgeId },
-        { 'clientInfo.inn': normalizedFridgeId },
-      ],
-    },
-    {
-      $set: {
-        location,
-        warehouseStatus: newWarehouseStatus,
-        ...(address ? { address } : {}),
-        ...fridgeStatusUpdate,
-      },
-    },
-    { new: true },
-  );
-}
 
 function parseDate(dateString) {
   if (!dateString) return undefined;
@@ -142,126 +29,32 @@ function parseDate(dateString) {
 // body: { fridgeId, photos?, location, ... } — managerId берётся из JWT
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only managers can create checkins' });
-    }
+    const location = normalizeLocationInput(req.body.location)
+      || locationFromLatLngFields(req.body);
 
-    const managerId = req.user.role === 'admin' && req.body.managerId
-      ? req.body.managerId
-      : (req.user.username || req.user.id);
-    const rawFridgeId = req.body?.fridgeId;
-    const normalizedFridgeId = String(rawFridgeId || '').trim().replace(/^#/, '');
-
-    if (!normalizedFridgeId) {
-      return res.status(400).json({ error: 'fridgeId is required' });
-    }
-
-    let location = req.body.location;
-    if (!location) {
-      return res.status(400).json({ error: 'location is required' });
-    }
-
-    // Normalize location to GeoJSON Point
-    if (location && typeof location.lat === 'number' && typeof location.lng === 'number') {
-      location = { type: 'Point', coordinates: [location.lng, location.lat] };
-    }
-
-    if (!location.type || !Array.isArray(location.coordinates) || location.coordinates.length !== 2) {
-      return res.status(400).json({ error: 'location must be GeoJSON Point or {lat,lng}' });
-    }
-
-    const fridgeCondition =
-      req.body.fridgeCondition === 'broken' ? 'broken' : 'working';
-    const isSeasonalClosure = req.body.isSeasonalClosure === true
-      || req.body.isSeasonalClosure === 'true';
-
-    const [reqLng, reqLat] = location.coordinates;
-    const dupWindowStart = new Date(Date.now() - CHECKIN_IDEMPOTENCY_WINDOW_MS);
-
-    const [fridge, managerIdCandidates] = await Promise.all([
-      findFridgeByIdentifier(normalizedFridgeId),
-      resolveManagerIdCandidates(User, managerId),
-    ]);
-    const fridgeIdCandidates = fridge
-      ? buildCheckinFridgeIdCandidates(fridge)
-      : [normalizedFridgeId];
-    const storeFridgeId = canonicalCheckinFridgeId(fridge, normalizedFridgeId);
-
-    const recentForDedupe = await Checkin.find({
-      ...buildFridgeIdInQueryForDedupe(fridge, normalizedFridgeId),
-      visitedAt: { $gte: dupWindowStart },
-    })
-      .sort({ visitedAt: -1 })
-      .limit(30)
-      .lean();
-
-    const duplicate = findRecentDuplicateCheckin(recentForDedupe, {
-      managerIds: managerIdCandidates,
-      fridgeIdCandidates,
-      lng: reqLng,
-      lat: reqLat,
-      now: Date.now(),
-      windowMs: CHECKIN_IDEMPOTENCY_WINDOW_MS,
-      maxDistanceM: CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M,
-    });
-
-    if (duplicate && duplicate._id) {
-      const existing = await Checkin.findById(duplicate._id);
-      if (existing) {
-        if (existing.fridgeCondition !== fridgeCondition || existing.isSeasonalClosure !== isSeasonalClosure) {
-          existing.fridgeCondition = fridgeCondition;
-          existing.isSeasonalClosure = isSeasonalClosure;
-          await existing.save();
-        }
-        try {
-          await syncFridgeFromCheckin({
-            normalizedFridgeId,
-            location,
-            fridgeCondition,
-            isSeasonalClosure,
-            address: req.body.address,
-          });
-        } catch (updateErr) {
-          console.error('Failed to update fridge on idempotent checkin:', updateErr);
-        }
-        invalidateCheckinStatsCache();
-        return res.status(200).json({
-          ...existing.toJSON(),
-          idempotentReplay: true,
-        });
-      }
-    }
-
-    const id = await getNextSequence('checkin');
-    const checkin = await Checkin.create({
-      id,
-      managerId: managerIdCandidates[0] || String(managerId),
-      fridgeId: storeFridgeId,
-      photos: Array.isArray(req.body.photos) ? req.body.photos : [],
+    const result = await createCheckinRecord({
+      user: req.user,
+      fridgeId: req.body.fridgeId,
       location,
+      photos: req.body.photos,
       address: req.body.address,
       notes: req.body.notes,
-      visitedAt: req.body.visitedAt ? new Date(req.body.visitedAt) : undefined,
-      fridgeCondition,
-      isSeasonalClosure,
+      visitedAt: req.body.visitedAt,
+      fridgeCondition: req.body.fridgeCondition,
+      isSeasonalClosure: req.body.isSeasonalClosure,
+      managerIdOverride: req.body.managerId,
     });
-    
-    try {
-      await syncFridgeFromCheckin({
-        normalizedFridgeId,
-        location,
-        fridgeCondition,
-        isSeasonalClosure,
-        address: req.body.address,
-      });
-    } catch (updateErr) {
-      console.error('Failed to update fridge location from checkin:', updateErr);
-    }
 
-    invalidateCheckinStatsCache();
-    return res.status(201).json(checkin);
+    return res.status(result.status).json({
+      ...result.checkin,
+      idempotentReplay: result.idempotentReplay,
+    });
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to create checkin', details: err.message });
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || 'Failed to create checkin',
+      details: err.details,
+    });
   }
 });
 
@@ -288,13 +81,6 @@ router.get('/', authenticateToken, async (req, res) => {
       // Учитываем старые записи, где сохраняли username вместо _id
       const managerIds = [req.user.id, req.user.username].filter(Boolean);
       filter.managerId = { $in: managerIds };
-      // Логирование для отладки (можно убрать после проверки)
-      console.log('[Checkins] Manager filter:', { 
-        role: req.user.role, 
-        userId: req.user.id, 
-        username: req.user.username,
-        filterManagerId: managerIds 
-      });
     } else if (['accountant', 'service_manager', 'sales_head'].includes(req.user.role)) {
       const cityId = getAssignedCityId(req.user);
       if (cityId) {

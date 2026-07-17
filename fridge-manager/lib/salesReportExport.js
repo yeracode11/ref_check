@@ -9,6 +9,7 @@ const {
 } = require('./fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
 const { resolveCityFilter, getCheckinFridgeIdsForCity } = require('./cityScope');
+const { buildCaseInsensitiveRegex } = require('./stringHelpers');
 const {
   fetchFridgeListSheetRows,
   appendFridgeListSheet,
@@ -62,13 +63,15 @@ function buildFridgeQuery(user, query = {}, opts = {}) {
   }
 
   if (search && String(search).trim()) {
-    const searchRegex = new RegExp(String(search).trim(), 'i');
-    filter.$or = [
-      { name: searchRegex },
-      { code: searchRegex },
-      { number: searchRegex },
-      { address: searchRegex },
-    ];
+    const searchRegex = buildCaseInsensitiveRegex(search);
+    if (searchRegex) {
+      filter.$or = [
+        { name: searchRegex },
+        { code: searchRegex },
+        { number: searchRegex },
+        { address: searchRegex },
+      ];
+    }
   }
 
   return filter;

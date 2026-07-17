@@ -24,7 +24,7 @@ const CheckinSchema = new mongoose.Schema(
   {
     id: { type: Number, unique: true, index: true, required: true },
     managerId: { type: String, required: true, index: true },
-    fridgeId: { type: String, required: true, index: true },
+    fridgeId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
     photos: { type: [String], default: [] },
     location: { type: GeoPointSchema, index: '2dsphere', required: true },
     address: { type: String },

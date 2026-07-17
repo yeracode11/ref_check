@@ -13,8 +13,11 @@ const {
   resolveEquipmentStatus,
   expandCheckinFridgeIdsForInQuery,
   localDateKeyFromVisit,
+  buildDailyCheckinsAggregationStages,
+  mapDailyCheckinsAggregationResult,
+  DEFAULT_VISIT_TIMEZONE,
 } = require('../lib/fridgeVisitHelpers');
-const { getCheckinStatsForFridges } = require('../lib/checkinStatsCache');
+const { getCheckinStatsForFridges, getCheckinStatsForFridgeQuery } = require('../lib/checkinStatsCache');
 const {
   estimateRepairCostRecord,
   isComplexRepairRecord,
@@ -28,6 +31,7 @@ const {
   findFridgeByIdentifier,
   buildCheckinFilterForFridge,
 } = require('../lib/cityScope');
+const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const { labelsFromCompletedWorks } = require('../lib/mxoRepairWorks');
 
 const router = express.Router();
@@ -65,13 +69,15 @@ router.get('/fridges', authenticateToken, requireSalesHead, async (req, res) => 
     }
 
     if (search && String(search).trim()) {
-      const searchRegex = new RegExp(String(search).trim(), 'i');
-      filter.$or = [
-        { name: searchRegex },
-        { code: searchRegex },
-        { number: searchRegex },
-        { address: searchRegex },
-      ];
+      const searchRegex = buildCaseInsensitiveRegex(search);
+      if (searchRegex) {
+        filter.$or = [
+          { name: searchRegex },
+          { code: searchRegex },
+          { number: searchRegex },
+          { address: searchRegex },
+        ];
+      }
     }
 
     const limitNum = limit ? Math.max(1, Math.min(500, Number(limit))) : 100;
@@ -126,7 +132,7 @@ router.get('/map', authenticateToken, requireSalesHead, async (req, res) => {
       .lean();
 
     const cacheScopeKey = JSON.stringify({ ...fridgeQuery, route: 'sales-map' });
-    const statsByFridgeId = await getCheckinStatsForFridges(fridges, cacheScopeKey, { useCache: true });
+    const statsByFridgeId = await getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, { useCache: true });
     const now = Date.now();
 
     const result = fridges.map((f) => {
@@ -386,22 +392,45 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
     const citiesQuery = { active: true };
     if (scopedCityId) citiesQuery._id = scopedCityId;
 
-    const [repairs, brokenCheckins, allCheckins, cities] = await Promise.all([
+    const [repairs, checkinDailyRows, brokenDailyRows, cities] = await Promise.all([
       Repair.find({
         fridgeId: { $in: fridgeIds },
         repairDate: { $gte: since },
-      }).lean(),
-      Checkin.find({
-        fridgeCondition: 'broken',
+      })
+        .select('repairDate completedWorks replacedParts')
+        .lean(),
+      Checkin.aggregate(buildDailyCheckinsAggregationStages({
         visitedAt: { $gte: since },
         ...checkinIdQuery,
-      }).lean(),
-      Checkin.find({
-        visitedAt: { $gte: since },
-        ...checkinIdQuery,
-      }).lean(),
+      })),
+      Checkin.aggregate([
+        {
+          $match: {
+            fridgeCondition: 'broken',
+            visitedAt: { $gte: since },
+            ...checkinIdQuery,
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$visitedAt',
+                timezone: DEFAULT_VISIT_TIMEZONE,
+              },
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
       City.find(citiesQuery).select('name code').lean(),
     ]);
+
+    const dailyCheckins = mapDailyCheckinsAggregationResult(checkinDailyRows);
+    const brokenByDay = new Map(
+      brokenDailyRows.map((row) => [row._id, row.count]),
+    );
 
     const breakdownsByDay = {};
     for (let i = 0; i < days; i++) {
@@ -409,17 +438,19 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       d.setDate(d.getDate() - i);
       const key = localDateKeyFromVisit(d);
       if (!key) continue;
-      breakdownsByDay[key] = { date: key, checkins: 0, breakdowns: 0, repairs: 0, costKzt: 0 };
+      breakdownsByDay[key] = {
+        date: key,
+        checkins: 0,
+        breakdowns: brokenByDay.get(key) || 0,
+        repairs: 0,
+        costKzt: 0,
+      };
     }
 
-    allCheckins.forEach((c) => {
-      const key = localDateKeyFromVisit(c.visitedAt);
-      if (key && breakdownsByDay[key]) breakdownsByDay[key].checkins += 1;
-    });
-
-    brokenCheckins.forEach((c) => {
-      const key = localDateKeyFromVisit(c.visitedAt);
-      if (key && breakdownsByDay[key]) breakdownsByDay[key].breakdowns += 1;
+    dailyCheckins.forEach((row) => {
+      if (breakdownsByDay[row.date]) {
+        breakdownsByDay[row.date].checkins = row.count;
+      }
     });
 
     repairs.forEach((r) => {
@@ -463,6 +494,9 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       0,
     );
 
+    const totalCheckins = dailyCheckins.reduce((sum, row) => sum + row.count, 0);
+    const breakdownReports = brokenDailyRows.reduce((sum, row) => sum + row.count, 0);
+
     return res.json({
       dailyStats,
       statusCounts,
@@ -471,9 +505,9 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
         totalFridges: fridges.length,
         faultyFridges: statusCounts.broken + statusCounts.under_repair,
         totalRepairs: repairs.length,
-        totalCheckins: allCheckins.length,
+        totalCheckins,
         totalRepairCostKzt,
-        breakdownReports: brokenCheckins.length,
+        breakdownReports,
         days,
       },
       cities,

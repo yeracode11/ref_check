@@ -8,6 +8,9 @@ const {
 
 /** Роли, привязанные к одному городу (поле user.cityId) */
 const CITY_SCOPED_ROLES = ['manager', 'accountant', 'service_manager', 'sales_head'];
+const CITY_CHECKIN_IDS_TTL_MS = parseInt(process.env.CITY_CHECKIN_IDS_CACHE_TTL_MS || '300000', 10);
+/** @type {Map<string, { ids: string[], at: number }>} */
+const checkinIdsByCityCache = new Map();
 
 function isCityScopedRole(role) {
   return CITY_SCOPED_ROLES.includes(role);
@@ -64,6 +67,13 @@ async function getFridgeObjectIdsForCity(cityId) {
 
 async function getCheckinFridgeIdsForCity(cityId) {
   if (!cityId) return [];
+
+  const cacheKey = String(cityId);
+  const cached = checkinIdsByCityCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < CITY_CHECKIN_IDS_TTL_MS) {
+    return cached.ids;
+  }
+
   const fridges = await Fridge.find(
     { cityId },
     { code: 1, number: 1, 'clientInfo.inn': 1 },
@@ -72,7 +82,17 @@ async function getCheckinFridgeIdsForCity(cityId) {
   fridges.forEach((f) => {
     buildCheckinFridgeIdCandidates(f).forEach((id) => ids.add(id));
   });
-  return expandCheckinFridgeIdsForInQuery([...ids]);
+  const expanded = expandCheckinFridgeIdsForInQuery([...ids]);
+  checkinIdsByCityCache.set(cacheKey, { ids: expanded, at: Date.now() });
+  return expanded;
+}
+
+function invalidateCityCheckinIdsCache(cityId) {
+  if (cityId) {
+    checkinIdsByCityCache.delete(String(cityId));
+    return;
+  }
+  checkinIdsByCityCache.clear();
 }
 
 async function findFridgeByIdentifier(identifier) {
@@ -101,6 +121,7 @@ module.exports = {
   ensureCityScopedUserHasCity,
   getFridgeObjectIdsForCity,
   getCheckinFridgeIdsForCity,
+  invalidateCityCheckinIdsCache,
   findFridgeByIdentifier,
   buildCheckinFilterForFridge,
 };

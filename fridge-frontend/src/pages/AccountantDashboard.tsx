@@ -222,6 +222,7 @@ export default function AccountantDashboard() {
       const params = new URLSearchParams();
       params.append('limit', String(ITEMS_PER_PAGE));
       params.append('skip', String(skip));
+      params.append('simple', '1');
       if (search) params.append('search', search);
       if (statusFilter !== 'all') params.append('warehouseStatus', statusFilter);
 
@@ -644,7 +645,7 @@ export default function AccountantDashboard() {
       </div>
 
       {/* Аналитика */}
-      <AnalyticsPanel endpoint="/api/admin/analytics/accountant" />
+      <AnalyticsPanel endpoint="/api/admin/analytics/accountant" lazy />
 
       {/* Карта холодильников */}
       <Card>

@@ -12,9 +12,19 @@ const app = express();
 
 // Middleware
 // Настройка CORS с поддержкой загрузки файлов
+const corsOriginRaw = process.env.CORS_ORIGIN || '';
+const corsOrigins = corsOriginRaw.split(',').map((s) => s.trim()).filter(Boolean);
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN || '*',
-  credentials: true,
+  origin: corsOrigins.length
+    ? (origin, callback) => {
+      if (!origin || corsOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+    : true,
+  credentials: corsOrigins.length > 0 && corsOriginRaw !== '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
@@ -30,48 +40,49 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// Важно: express.json() не должен обрабатывать multipart/form-data
-// Multer должен обработать multipart/form-data до того, как express.json() попытается парсить тело
-// Multer автоматически обрабатывает все поля FormData (и файлы, и текстовые поля)
-// Используем условный middleware для body парсеров
+// Multer обработает multipart/form-data до json/urlencoded парсеров
+const bodyLimitMb = (() => {
+  const n = parseInt(process.env.BODY_LIMIT_MB || '10', 10);
+  return Number.isFinite(n) && n >= 1 ? n : 10;
+})();
+const bodyLimit = `${bodyLimitMb}mb`;
+
 app.use((req, res, next) => {
   const contentType = req.headers['content-type'] || '';
-  console.log('[Server] Request Content-Type:', contentType);
-  
-  // Если это multipart/form-data, пропускаем json и urlencoded парсеры
-  // Multer обработает все поля FormData (и файлы, и текстовые поля)
+
   if (contentType.includes('multipart/form-data')) {
-    console.log('[Server] Skipping body parsers for multipart/form-data request (multer will handle it)');
     return next();
   }
-  
-  // Для остальных запросов используем стандартные парсеры
+
   if (contentType.includes('application/json')) {
-    return express.json({ limit: '100mb' })(req, res, next);
+    return express.json({ limit: bodyLimit })(req, res, next);
   }
-  
-  // Для application/x-www-form-urlencoded
+
   if (contentType.includes('application/x-www-form-urlencoded')) {
-    return express.urlencoded({ extended: true, limit: '100mb' })(req, res, next);
+    return express.urlencoded({ extended: true, limit: bodyLimit })(req, res, next);
   }
-  
-  // Если Content-Type не указан или другой, пробуем оба парсера
-  express.json({ limit: '100mb' })(req, res, (err) => {
+
+  express.json({ limit: bodyLimit })(req, res, (err) => {
     if (err) return next(err);
-    express.urlencoded({ extended: true, limit: '100mb' })(req, res, next);
+    express.urlencoded({ extended: true, limit: bodyLimit })(req, res, next);
   });
 });
 
 app.use(morgan('dev'));
 
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 function healthPayload() {
-  return {
+  const payload = {
     status: 'ok',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
     mongoReady: mongoose.connection.readyState === 1,
   };
+  if (process.env.NODE_ENV !== 'production') {
+    payload.uptime = process.uptime();
+    payload.memory = process.memoryUsage();
+  }
+  return payload;
 }
 
 // Health check
@@ -107,6 +118,9 @@ app.use('/api/repairs', repairRoutes);
 
 const salesRoutes = require('./routes/sales');
 app.use('/api/sales', salesRoutes);
+
+const mobileRoutes = require('./routes/mobile');
+app.use('/api/mobile', mobileRoutes);
 
 // DB Connection
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fridge_manager';

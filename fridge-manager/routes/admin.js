@@ -20,7 +20,8 @@ const {
   buildDailyCheckinsAggregationStages,
   mapDailyCheckinsAggregationResult,
 } = require('../lib/fridgeVisitHelpers');
-const { getCheckinStatsForFridges, invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
+const { getCheckinStatsForFridges, getCheckinStatsForFridgeQuery, invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
+const { buildCheckinIdListFromFridges, buildTopUnvisitedFromFridges } = require('../lib/analyticsHelpers');
 const { deduplicateCityCheckins } = require('../lib/deduplicateCheckins');
 const {
   generateFullExportBuffer,
@@ -28,13 +29,18 @@ const {
   buildFridgesExportFileName,
 } = require('../lib/salesReportExport');
 const { getAssignedCityId, resolveCityFilter, getCheckinFridgeIdsForCity } = require('../lib/cityScope');
+const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const XLSX = require('xlsx');
 
-// Настройка multer для загрузки файлов в память
+// Настройка multer для загрузки Excel
+const uploadLimitMb = (() => {
+  const n = parseInt(process.env.UPLOAD_LIMIT_MB || '25', 10);
+  return Number.isFinite(n) && n >= 1 ? n : 25;
+})();
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB максимум
+    fileSize: uploadLimitMb * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
     // Проверяем тип файла
@@ -86,14 +92,16 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
     }
 
     if (search && String(search).trim()) {
-      const searchRegex = new RegExp(String(search).trim(), 'i');
-      fridgeQuery.$or = [
-        { name: searchRegex },
-        { code: searchRegex },
-        { number: searchRegex },
-        { address: searchRegex },
-        { description: searchRegex },
-      ];
+      const searchRegex = buildCaseInsensitiveRegex(search);
+      if (searchRegex) {
+        fridgeQuery.$or = [
+          { name: searchRegex },
+          { code: searchRegex },
+          { number: searchRegex },
+          { address: searchRegex },
+          { description: searchRegex },
+        ];
+      }
     }
 
     let query = Fridge.find(fridgeQuery)
@@ -105,13 +113,11 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
     }
 
     const cacheScopeKey = JSON.stringify(fridgeQuery);
-    const [total, fridges] = await Promise.all([
+    const [total, fridges, statsByFridgeId] = await Promise.all([
       Fridge.countDocuments(fridgeQuery),
       query.exec(),
+      getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, { useCache: true }),
     ]);
-    const statsByFridgeId = await getCheckinStatsForFridges(fridges, cacheScopeKey, {
-      useCache: !shouldPaginate,
-    });
 
     const now = Date.now();
 
@@ -1133,18 +1139,19 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         });
       }
 
-      const fridgeCodes = await getCheckinFridgeIdsForCity(cityId);
+      const fridgeCodes = buildCheckinIdListFromFridges(allFridges);
       fridgeFilter = { fridgeId: { $in: fridgeCodes.length ? fridgeCodes : ['__none__'] } };
     }
+
+    const statsCacheKey = JSON.stringify({ route: 'admin-analytics', cityId: cityId || 'all' });
+    const statsByFridgeId = await getCheckinStatsForFridges(allFridges, statsCacheKey, { useCache: true });
 
     const periodMatch = { visitedAt: { $gte: startDate }, ...fridgeFilter };
 
     const [
       checkinsByDay,
       managerStats,
-      lastCheckins,
       totalFridges,
-      uniqueFridgeIds,
       uniqueManagers,
       fridgesByStatus,
     ] = await Promise.all([
@@ -1161,18 +1168,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         { $sort: { count: -1 } },
         { $limit: 20 },
       ]),
-      Checkin.aggregate([
-        { $match: fridgeFilter },
-        { $sort: { visitedAt: -1 } },
-        {
-          $group: {
-            _id: '$fridgeId',
-            lastVisit: { $first: '$visitedAt' },
-          },
-        },
-      ]),
       Fridge.countDocuments(fridgeQuery),
-      Checkin.distinct('fridgeId', periodMatch),
       Checkin.distinct('managerId', periodMatch),
       Fridge.aggregate([
         { $match: fridgeQuery },
@@ -1235,55 +1231,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       enrichedManagerStats = Array.from(mergedMap.values());
     }
 
-    const lastVisitMap = new Map();
-    lastCheckins.forEach((c) => {
-      lastVisitMap.set(c._id, c.lastVisit);
-      lastVisitMap.set(String(c._id).trim(), c.lastVisit);
-      const n = Number(c._id);
-      if (Number.isFinite(n)) lastVisitMap.set(n, c.lastVisit);
-    });
-
-    const resolveLastVisit = (fridge) => {
-      for (const id of buildCheckinFridgeIdCandidates(fridge)) {
-        const hit =
-          lastVisitMap.get(id) ??
-          lastVisitMap.get(String(id).trim()) ??
-          (Number.isFinite(Number(id)) ? lastVisitMap.get(Number(id)) : undefined);
-        if (hit) return hit;
-      }
-      return null;
-    };
-
-    const fridgesWithLastVisit = allFridges.map((f) => {
-      const lastVisit = resolveLastVisit(f);
-      const lastVisitDate = lastVisit ? new Date(lastVisit) : null;
-      
-      return {
-        code: f.code,
-        number: f.number,
-        name: f.name,
-        address: f.address,
-        cityId: f.cityId ? { name: f.cityId.name } : null,
-        type: f.type || 'regular',
-        lastVisit: lastVisit,
-        daysSinceVisit: lastVisitDate
-          ? Math.floor((Date.now() - lastVisitDate.getTime()) / (1000 * 60 * 60 * 24))
-          : null,
-      };
-    });
-
-    const topUnvisited = fridgesWithLastVisit
-      .filter((row) => shouldIncludeInUnvisitedReport(
-        { type: row.type },
-        { lastVisit: row.lastVisit, daysSinceVisit: row.daysSinceVisit },
-      ))
-      .sort((a, b) => {
-        if (a.lastVisit === null && b.lastVisit === null) return 0;
-        if (a.lastVisit === null) return -1;
-        if (b.lastVisit === null) return 1;
-        return new Date(a.lastVisit).getTime() - new Date(b.lastVisit).getTime();
-      })
-      .slice(0, 20);
+    const topUnvisited = buildTopUnvisitedFromFridges(allFridges, statsByFridgeId);
 
     const totalCheckins = dailyCheckins.reduce((sum, row) => sum + row.count, 0);
 
@@ -1351,8 +1299,11 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
     const cityFridges = await Fridge.find({
       cityId: scopedCityId,
       active: true,
-    }).select('code number name address warehouseStatus clientInfo type').populate('cityId', 'name code');
-    const fridgeCodes = await getCheckinFridgeIdsForCity(scopedCityId);
+    })
+      .select('code number name address warehouseStatus clientInfo type')
+      .populate('cityId', 'name code')
+      .lean();
+    const fridgeCodes = buildCheckinIdListFromFridges(cityFridges);
 
     if (fridgeCodes.length === 0) {
       return res.json({
@@ -1376,10 +1327,12 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       visitedAt: { $gte: startDate },
     };
 
+    const statsCacheKey = JSON.stringify({ route: 'accountant-analytics', cityId: String(scopedCityId) });
+    const statsByFridgeId = await getCheckinStatsForFridges(cityFridges, statsCacheKey, { useCache: true });
+
     const [
       checkinsByDay,
       managerStats,
-      lastCheckins,
       uniqueFridgeIds,
       uniqueManagers,
     ] = await Promise.all([
@@ -1395,16 +1348,6 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
         },
         { $sort: { count: -1 } },
         { $limit: 20 },
-      ]),
-      Checkin.aggregate([
-        { $match: { fridgeId: { $in: fridgeCodes } } },
-        { $sort: { visitedAt: -1 } },
-        {
-          $group: {
-            _id: '$fridgeId',
-            lastVisit: { $first: '$visitedAt' },
-          },
-        },
       ]),
       Checkin.distinct('fridgeId', periodMatch),
       Checkin.distinct('managerId', periodMatch),
@@ -1462,11 +1405,15 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
     }
 
     const lastVisitMap = new Map();
-    lastCheckins.forEach((c) => {
-      lastVisitMap.set(c._id, c.lastVisit);
-      lastVisitMap.set(String(c._id).trim(), c.lastVisit);
-      const n = Number(c._id);
-      if (Number.isFinite(n)) lastVisitMap.set(n, c.lastVisit);
+    cityFridges.forEach((fridge) => {
+      const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeId, fridge);
+      if (!lastVisit) return;
+      for (const id of buildCheckinFridgeIdCandidates(fridge)) {
+        lastVisitMap.set(id, lastVisit);
+        lastVisitMap.set(String(id).trim(), lastVisit);
+        const n = Number(id);
+        if (Number.isFinite(n)) lastVisitMap.set(n, lastVisit);
+      }
     });
 
     const resolveLastVisit = (fridge) => {
@@ -1479,20 +1426,6 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       }
       return null;
     };
-
-    const visitedInPeriodSet = new Set();
-    uniqueFridgeIds.forEach((id) => {
-      visitedInPeriodSet.add(String(id).trim());
-      const n = Number(id);
-      if (Number.isFinite(n)) visitedInPeriodSet.add(String(n));
-    });
-
-    const fridgeVisitedInPeriod = (fridge) =>
-      buildCheckinFridgeIdCandidates(fridge).some((id) => {
-        const s = String(id).trim();
-        return visitedInPeriodSet.has(s)
-          || (Number.isFinite(Number(s)) && visitedInPeriodSet.has(String(Number(s))));
-      });
 
     const fridgesWithLastVisit = cityFridges.map((f) => {
       const lastVisit = resolveLastVisit(f);
@@ -1511,18 +1444,21 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       };
     });
 
-    const topUnvisited = fridgesWithLastVisit
-      .filter((row) => shouldIncludeInUnvisitedReport(
-        { type: row.type },
-        { lastVisit: row.lastVisit, daysSinceVisit: row.daysSinceVisit },
-      ))
-      .sort((a, b) => {
-        if (a.lastVisit === null && b.lastVisit === null) return 0;
-        if (a.lastVisit === null) return -1;
-        if (b.lastVisit === null) return 1;
-        return new Date(a.lastVisit).getTime() - new Date(b.lastVisit).getTime();
-      })
-      .slice(0, 20);
+    const topUnvisited = buildTopUnvisitedFromFridges(cityFridges, statsByFridgeId);
+
+    const visitedInPeriodSet = new Set();
+    uniqueFridgeIds.forEach((id) => {
+      visitedInPeriodSet.add(String(id).trim());
+      const n = Number(id);
+      if (Number.isFinite(n)) visitedInPeriodSet.add(String(n));
+    });
+
+    const fridgeVisitedInPeriod = (fridge) =>
+      buildCheckinFridgeIdCandidates(fridge).some((id) => {
+        const s = String(id).trim();
+        return visitedInPeriodSet.has(s)
+          || (Number.isFinite(Number(s)) && visitedInPeriodSet.has(String(Number(s))));
+      });
 
     const totalFridges = cityFridges.length;
     const totalCheckins = dailyCheckins.reduce((sum, row) => sum + row.count, 0);
@@ -1580,11 +1516,13 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
     if (role) filter.role = role;
     if (active !== undefined) filter.active = active === 'true';
     if (search) {
-      const searchRegex = new RegExp(search, 'i');
-      filter.$or = [
-        { username: searchRegex },
-        { fullName: searchRegex },
-      ];
+      const searchRegex = buildCaseInsensitiveRegex(search);
+      if (searchRegex) {
+        filter.$or = [
+          { username: searchRegex },
+          { fullName: searchRegex },
+        ];
+      }
     }
 
     const users = await User.find(filter)
@@ -2180,14 +2118,16 @@ router.delete('/fridges/:id/soft', authenticateToken, requireAdmin, async (req, 
 router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     // Для бухгалтера фильтруем по городу
-    let fridgeQuery = {};
+    let fridgeQuery = { active: true };
     if (req.user.role === 'accountant' && req.user.cityId) {
       fridgeQuery.cityId = req.user.cityId;
     }
 
-    const cacheScopeKey = JSON.stringify(fridgeQuery);
-    const fridges = await Fridge.find(fridgeQuery).populate('cityId', 'name code').lean();
-    const statsByFridgeId = await getCheckinStatsForFridges(fridges, cacheScopeKey);
+    const cacheScopeKey = JSON.stringify({ route: 'by-cities', ...fridgeQuery });
+    const [fridges, statsByFridgeId] = await Promise.all([
+      Fridge.find(fridgeQuery).populate('cityId', 'name code').lean(),
+      getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, { useCache: true }),
+    ]);
 
     const now = Date.now();
 

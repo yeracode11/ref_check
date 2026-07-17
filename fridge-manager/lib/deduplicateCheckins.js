@@ -11,6 +11,7 @@ const {
   DEFAULT_VISIT_TIMEZONE,
 } = require('./fridgeVisitHelpers');
 const { normalizeFridgeIdForCompare, resolveManagerIdCandidates } = require('./checkinDedup');
+const { escapeRegExp } = require('./stringHelpers');
 
 const WINDOW_MS = parseInt(process.env.CHECKIN_IDEMPOTENCY_WINDOW_MS || '300000', 10);
 const MAX_DISTANCE_M = 40;
@@ -60,9 +61,8 @@ async function resolveCity({ cityId, cityName }) {
     if (city) return city;
   }
   if (cityName) {
-    const escaped = String(cityName).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const city = await City.findOne({
-      name: { $regex: new RegExp(`^${escaped}$`, 'i') },
+      name: { $regex: new RegExp(`^${escapeRegExp(String(cityName).trim())}$`, 'i') },
     }).lean();
     if (city) return city;
   }

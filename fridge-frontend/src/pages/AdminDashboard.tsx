@@ -9,6 +9,7 @@ import { QRCode } from '../components/ui/QRCode';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 import { showToast } from '../components/ui/Toast';
+import { buildCityStatisticsFromMapFridges } from '../utils/cityStatistics';
 
 type ClientInfo = {
   name?: string;
@@ -211,11 +212,18 @@ export default function AdminDashboard() {
     };
   }, [user, loadAllFridgesForMap]);
 
-  // Загрузка статистики по городам
+  // Статистика по городам: для админа — из уже загруженной карты (без лишнего API)
   useEffect(() => {
-    if (!user || (user.role !== 'admin' && user.role !== 'accountant')) {
+    if (!user) return;
+
+    if (user.role === 'admin') {
+      if (allFridges.length === 0) return;
+      setCityStatistics(buildCityStatisticsFromMapFridges(allFridges));
+      setLoadingCityStats(false);
       return;
     }
+
+    if (user.role !== 'accountant') return;
 
     let alive = true;
     (async () => {
@@ -235,7 +243,7 @@ export default function AdminDashboard() {
     return () => {
       alive = false;
     };
-  }, [user]);
+  }, [user, allFridges]);
 
   // Загрузка холодильников для списка (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
@@ -1351,7 +1359,7 @@ export default function AdminDashboard() {
       </Card>
 
       {/* Аналитика */}
-      <AnalyticsPanel cities={cities} />
+      <AnalyticsPanel cities={cities} lazy />
 
       {/* Модальное окно для добавления холодильника */}
       {showAddFridgeModal && (

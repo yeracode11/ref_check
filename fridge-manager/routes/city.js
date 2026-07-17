@@ -50,7 +50,17 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 // PATCH /api/cities/:id (только админ)
 router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const city = await City.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const { name, code, active } = req.body;
+    const updates = {};
+    if (name !== undefined) updates.name = String(name).trim();
+    if (code !== undefined) updates.code = String(code).trim();
+    if (active !== undefined) updates.active = active === true || active === 'true';
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const city = await City.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (!city) return res.status(404).json({ error: 'Not found' });
     return res.json(city);
   } catch (err) {

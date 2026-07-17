@@ -57,11 +57,24 @@ router.post('/', authenticateToken, requireAdminOrServiceManager, async (req, re
       return res.status(403).json({ error: 'Access denied for this city' });
     }
 
+    const shouldComplete = completeImmediately === true || completeImmediately === 'true';
+    if (!shouldComplete) {
+      const existingActive = await Repair.findOne({
+        fridgeId: fridgeOid,
+        status: 'in_progress',
+      }).select('_id repairDate');
+      if (existingActive) {
+        return res.status(409).json({
+          error: 'У холодильника уже есть активный ремонт',
+          repairId: existingActive._id,
+        });
+      }
+    }
+
     const parts = Array.isArray(replacedParts)
       ? replacedParts.map((p) => String(p).trim()).filter(Boolean)
       : [];
 
-    const shouldComplete = completeImmediately === true || completeImmediately === 'true';
     const now = new Date();
     const parsedDate = repairDate ? new Date(repairDate) : now;
     if (Number.isNaN(parsedDate.getTime())) {

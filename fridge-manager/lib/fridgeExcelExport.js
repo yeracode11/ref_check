@@ -7,6 +7,7 @@ const {
 } = require('./fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
 const { resolveCityFilter } = require('./cityScope');
+const { buildCaseInsensitiveRegex } = require('./stringHelpers');
 
 const NUMBER_CITIES = new Set(['Шымкент', 'Кызылорда', 'Талдыкорган']);
 
@@ -46,13 +47,15 @@ function buildExportFridgeFilter(user, query = {}, opts = {}) {
     filter.status = statusFilter;
   }
   if (search && String(search).trim()) {
-    const searchRegex = new RegExp(String(search).trim(), 'i');
-    filter.$or = [
-      { name: searchRegex },
-      { code: searchRegex },
-      { number: searchRegex },
-      { address: searchRegex },
-    ];
+    const searchRegex = buildCaseInsensitiveRegex(search);
+    if (searchRegex) {
+      filter.$or = [
+        { name: searchRegex },
+        { code: searchRegex },
+        { number: searchRegex },
+        { address: searchRegex },
+      ];
+    }
   }
 
   return filter;

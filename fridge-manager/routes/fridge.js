@@ -6,6 +6,7 @@ const Repair = require('../models/Repair');
 const { authenticateToken, requireAdminOrAccountant } = require('../middleware/auth');
 const { isComplexRepairRecord, estimateRepairCostRecord } = require('../lib/repairHelpers');
 const { isCityScopedRole, userCanAccessCity, getAssignedCityId, ensureCityScopedUserHasCity } = require('../lib/cityScope');
+const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const {
   buildCheckinFridgeIdCandidates,
   visitStatusFromLastVisit,
@@ -160,24 +161,20 @@ router.get('/', authenticateToken, async (req, res) => {
 
     // Поиск по нескольким полям (если передан search)
     if (search && search.trim()) {
-      const searchRegex = new RegExp(search.trim(), 'i');
-      // Если уже есть $or от code, добавляем к нему условия search
-      if (filter.$or) {
-        filter.$or.push(
+      const searchRegex = buildCaseInsensitiveRegex(search);
+      if (searchRegex) {
+        const searchConditions = [
           { name: searchRegex },
           { code: searchRegex },
-          { number: searchRegex }, // Добавляем поиск по длинному номеру
-          { address: searchRegex },
-          { description: searchRegex }
-        );
-      } else {
-        filter.$or = [
-          { name: searchRegex },
-          { code: searchRegex },
-          { number: searchRegex }, // Добавляем поиск по длинному номеру
+          { number: searchRegex },
           { address: searchRegex },
           { description: searchRegex },
         ];
+        if (filter.$or) {
+          filter.$or.push(...searchConditions);
+        } else {
+          filter.$or = searchConditions;
+        }
       }
     }
 

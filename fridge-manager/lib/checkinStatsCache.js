@@ -1,10 +1,11 @@
 const Checkin = require('../models/Checkin');
+const Fridge = require('../models/Fridge');
 const {
   buildCheckinFridgeIdCandidates,
   mergeCheckinStatsAggregationIntoMap,
 } = require('./fridgeVisitHelpers');
 
-const TTL_MS = parseInt(process.env.CHECKIN_STATS_CACHE_TTL_MS || '30000', 10);
+const TTL_MS = parseInt(process.env.CHECKIN_STATS_CACHE_TTL_MS || '60000', 10);
 
 /** @type {Map<string, { stats: Map<string, object>, at: number }>} */
 const cacheByScope = new Map();
@@ -68,8 +69,28 @@ async function getCheckinStatsForFridges(fridgeLikeDocs, cacheScopeKey, opts = {
   return stats;
 }
 
+/**
+ * Статистика чекинов по всем холодильникам в scope (не только текущая страница).
+ * Кэшируется по fridgeQuery — пагинация списка не пересчитывает агрегацию.
+ */
+async function getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, opts = {}) {
+  if (opts.useCache !== false && cacheScopeKey) {
+    const cached = cacheByScope.get(cacheScopeKey);
+    if (cached && Date.now() - cached.at < TTL_MS) {
+      return cached.stats;
+    }
+  }
+
+  const fridgeDocs = await Fridge.find(fridgeQuery)
+    .select('code number clientInfo.inn type')
+    .lean();
+
+  return getCheckinStatsForFridges(fridgeDocs, cacheScopeKey, opts);
+}
+
 module.exports = {
   getCheckinStatsForFridges,
+  getCheckinStatsForFridgeQuery,
   invalidateCheckinStatsCache,
   buildFridgeIdMatchValues,
 };

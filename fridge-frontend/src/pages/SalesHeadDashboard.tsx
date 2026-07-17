@@ -194,6 +194,7 @@ export default function SalesHeadDashboard() {
       const params = new URLSearchParams();
       params.append('limit', String(ITEMS_PER_PAGE));
       params.append('skip', String(skip));
+      params.append('simple', '1');
       if (search) params.append('search', search);
       if (statusFilter !== 'all') params.append('warehouseStatus', statusFilter);
       if (equipmentFilter === 'faulty') params.append('equipmentStatus', 'faulty');
@@ -371,6 +372,7 @@ export default function SalesHeadDashboard() {
         endpoint="/api/admin/analytics/accountant"
         fixedCityId={isSalesHead ? user?.cityId : (selectedCityId || undefined)}
         hideManagerStats
+        lazy
       />
 
       {repairSummary && (

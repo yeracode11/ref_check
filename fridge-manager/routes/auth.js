@@ -1,81 +1,116 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { generateToken, authenticateToken } = require('../middleware/auth');
+const {
+  authenticateToken,
+  issueTokenPair,
+  JWT_SECRET,
+  ACCESS_TOKEN_EXPIRES,
+  REFRESH_TOKEN_EXPIRES,
+} = require('../middleware/auth');
+const { escapeRegExp } = require('../lib/stringHelpers');
 
 const router = express.Router();
+
+function userResponse(user) {
+  const userObj = user.toObject ? user.toObject() : { ...user };
+  delete userObj.password;
+  return userObj;
+}
+
+function authPayload(user) {
+  const tokens = issueTokenPair(user);
+  return {
+    token: tokens.accessToken,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresIn: tokens.expiresIn,
+    tokenType: tokens.tokenType,
+    user: userResponse(user),
+  };
+}
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    
-    // Log login attempt (without password)
-    console.log(`[Auth] Login attempt for username: ${username}`);
-    
+
     if (!username || !password) {
-      console.log('[Auth] Missing username or password');
       return res.status(400).json({ error: 'username and password are required' });
     }
 
-    // Normalize username: trim whitespace and convert to string
     const normalizedUsername = String(username).trim();
-    console.log(`[Auth] Normalized username: "${normalizedUsername}" (original: "${username}")`);
-
-    // Явно запрашиваем password (на случай select: false в схеме / плагинов)
-    const loginSelect = 'username password role active email cityId fullName';
+    const loginSelect = 'username password role active email cityId fullName phone';
     let user = await User.findOne({ username: normalizedUsername }).select(loginSelect);
     if (!user) {
-      const escaped = normalizedUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       user = await User.findOne({
-        username: { $regex: new RegExp(`^${escaped}$`, 'i') },
+        username: { $regex: new RegExp(`^${escapeRegExp(normalizedUsername)}$`, 'i') },
       }).select(loginSelect);
     }
 
     if (!user) {
-      // Log all usernames for debugging
-      const allUsers = await User.find({}, 'username').limit(10);
-      console.log(`[Auth] User not found: ${normalizedUsername}`);
-      console.log(`[Auth] Sample usernames in DB:`, allUsers.map(u => u.username));
       return res.status(401).json({ error: 'Invalid username or password' });
     }
-    
-    console.log(`[Auth] User found: ${user.username} (ID: ${user._id}, Role: ${user.role})`);
+
     const hashOk = typeof user.password === 'string' && user.password.startsWith('$2');
     if (!hashOk) {
       console.error('[Auth] Stored password is not a bcrypt hash — reset via node create_admin.js');
     }
 
     if (!user.active) {
-      console.log(`[Auth] Account disabled for user: ${username}`);
       return res.status(403).json({ error: 'Account is disabled' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      console.log(`[Auth] Invalid password for user: ${username}`);
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    console.log(`[Auth] Successful login for user: ${username} (${user.role})`);
-    const token = generateToken(user);
-    const userObj = user.toObject();
-    delete userObj.password;
-
-    return res.json({
-      token,
-      user: userObj,
-    });
+    return res.json(authPayload(user));
   } catch (err) {
     console.error('[Auth] Login error:', err);
     return res.status(500).json({ error: 'Login failed', details: err.message });
   }
 });
 
+// POST /api/auth/refresh — обновление access token по refresh token (для мобилки)
+router.post('/refresh', async (req, res) => {
+  try {
+    const refreshToken = req.body?.refreshToken || req.body?.token;
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'refreshToken is required' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_SECRET);
+    } catch {
+      return res.status(403).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    if (decoded.type !== 'refresh') {
+      return res.status(403).json({ error: 'Invalid refresh token' });
+    }
+
+    const user = await User.findById(decoded.id).select(
+      'username password role active email cityId fullName phone',
+    );
+    if (!user || !user.active) {
+      return res.status(403).json({ error: 'Account is disabled or not found' });
+    }
+
+    return res.json(authPayload(user));
+  } catch (err) {
+    console.error('[Auth] Refresh error:', err);
+    return res.status(500).json({ error: 'Failed to refresh token', details: err.message });
+  }
+});
+
 // GET /api/auth/me - get current user info (protected)
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user.id).select('-password').populate('cityId', 'name code');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -85,5 +120,13 @@ router.get('/me', authenticateToken, async (req, res) => {
   }
 });
 
-module.exports = router;
+// GET /api/auth/config — публичные настройки клиента (мобилка / веб)
+router.get('/config', (req, res) => {
+  res.json({
+    accessTokenExpires: ACCESS_TOKEN_EXPIRES,
+    refreshTokenExpires: REFRESH_TOKEN_EXPIRES,
+    apiVersion: '1',
+  });
+});
 
+module.exports = router;
