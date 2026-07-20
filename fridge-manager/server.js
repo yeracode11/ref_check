@@ -7,6 +7,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const morgan = require('morgan');
+const { createCorsOriginChecker } = require('./lib/corsOrigins');
 
 const app = express();
 
@@ -15,16 +16,8 @@ const app = express();
 const corsOriginRaw = process.env.CORS_ORIGIN || '';
 const corsOrigins = corsOriginRaw.split(',').map((s) => s.trim()).filter(Boolean);
 const corsOptions = {
-  origin: corsOrigins.length
-    ? (origin, callback) => {
-      if (!origin || corsOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    }
-    : true,
-  credentials: corsOrigins.length > 0 && corsOriginRaw !== '*',
+  origin: corsOrigins.length ? createCorsOriginChecker(corsOriginRaw) : true,
+  credentials: corsOrigins.length > 0 && corsOriginRaw.trim() !== '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
