@@ -47,6 +47,21 @@ function userCanAccessCity(user, cityId) {
   return String(assigned) === String(cityId);
 }
 
+/** cityId из документа Fridge (populate или ObjectId) */
+function resolveFridgeCityId(fridgeOrCityId) {
+  if (fridgeOrCityId == null) return null;
+  if (typeof fridgeOrCityId === 'object' && Object.prototype.hasOwnProperty.call(fridgeOrCityId, 'cityId')) {
+    const city = fridgeOrCityId.cityId;
+    if (city == null) return null;
+    return city._id || city;
+  }
+  return fridgeOrCityId;
+}
+
+function userCanAccessFridge(user, fridgeOrCityId) {
+  return userCanAccessCity(user, resolveFridgeCityId(fridgeOrCityId));
+}
+
 function ensureCityScopedUserHasCity(req, res) {
   if (!req.user || req.user.role === 'admin') return true;
   if (!isCityScopedRole(req.user.role)) return true;
@@ -118,6 +133,8 @@ module.exports = {
   getAssignedCityId,
   resolveCityFilter,
   userCanAccessCity,
+  resolveFridgeCityId,
+  userCanAccessFridge,
   ensureCityScopedUserHasCity,
   getFridgeObjectIdsForCity,
   getCheckinFridgeIdsForCity,

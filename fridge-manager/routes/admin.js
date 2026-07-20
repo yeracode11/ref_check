@@ -28,7 +28,7 @@ const {
   buildExportFileName,
   buildFridgesExportFileName,
 } = require('../lib/salesReportExport');
-const { getAssignedCityId, resolveCityFilter, getCheckinFridgeIdsForCity } = require('../lib/cityScope');
+const { getAssignedCityId, resolveCityFilter, getCheckinFridgeIdsForCity, userCanAccessFridge } = require('../lib/cityScope');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const XLSX = require('xlsx');
 
@@ -1043,14 +1043,12 @@ router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (r
     }
 
     // Для бухгалтеров проверяем, что холодильник из их города
-    if (req.user.role === 'accountant' && req.user.cityId) {
-      if (fridgeDoc.cityId?._id?.toString() !== req.user.cityId) {
-        console.log('Accountant access denied - wrong city:', {
-          accountantCityId: req.user.cityId,
-          fridgeCityId: fridgeDoc.cityId?._id
-        });
-        return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
-      }
+    if (req.user.role === 'accountant' && !userCanAccessFridge(req.user, fridgeDoc)) {
+      console.log('Accountant access denied - wrong city:', {
+        accountantCityId: req.user.cityId,
+        fridgeCityId: fridgeDoc.cityId?._id || fridgeDoc.cityId,
+      });
+      return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
     }
 
     const idMatch = buildCheckinFridgeIdMatchCondition(fridgeDoc);
@@ -1085,10 +1083,8 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
     }
 
     // Для бухгалтеров проверяем, что холодильник из их города
-    if (req.user.role === 'accountant' && req.user.cityId) {
-      if (fridge.cityId?.toString() !== req.user.cityId) {
-        return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
-      }
+    if (req.user.role === 'accountant' && !userCanAccessFridge(req.user, fridge)) {
+      return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
     }
 
     const idMatch = buildCheckinFridgeIdMatchCondition(fridge);
