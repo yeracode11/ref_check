@@ -1691,10 +1691,8 @@ router.patch('/fridges/:id/client', authenticateToken, requireAdminOrAccountant,
     }
 
     // Для бухгалтера проверяем, что холодильник принадлежит его городу
-    if (req.user.role === 'accountant' && req.user.cityId) {
-      if (fridge.cityId && fridge.cityId.toString() !== req.user.cityId.toString()) {
-        return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
-      }
+    if (req.user.role === 'accountant' && !userCanAccessFridge(req.user, fridge)) {
+      return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
     }
 
     // Обновляем clientInfo
@@ -1754,10 +1752,8 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
     }
 
     // Для бухгалтера проверяем, что холодильник принадлежит его городу
-    if (req.user.role === 'accountant' && req.user.cityId) {
-      if (fridge.cityId && fridge.cityId.toString() !== req.user.cityId.toString()) {
-        return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
-      }
+    if (req.user.role === 'accountant' && !userCanAccessFridge(req.user, fridge)) {
+      return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
     }
 
     // Обновляем warehouseStatus
@@ -1827,10 +1823,8 @@ router.patch('/fridges/:id', authenticateToken, requireAdminOrAccountant, async 
     }
 
     // Для бухгалтера проверяем, что холодильник принадлежит его городу
-    if (req.user.role === 'accountant' && req.user.cityId) {
-      if (fridge.cityId && fridge.cityId.toString() !== req.user.cityId.toString()) {
-        return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
-      }
+    if (req.user.role === 'accountant' && !userCanAccessFridge(req.user, fridge)) {
+      return res.status(403).json({ error: 'Доступ запрещён: можно редактировать только холодильники своего города' });
     }
 
     // Бухгалтер может редактировать только название, адрес и описание

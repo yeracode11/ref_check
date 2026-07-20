@@ -47,15 +47,25 @@ function userCanAccessCity(user, cityId) {
   return String(assigned) === String(cityId);
 }
 
-/** cityId из документа Fridge (populate или ObjectId) */
+/** cityId из документа Fridge (Mongoose doc, lean, populate или ObjectId) */
 function resolveFridgeCityId(fridgeOrCityId) {
   if (fridgeOrCityId == null) return null;
-  if (typeof fridgeOrCityId === 'object' && Object.prototype.hasOwnProperty.call(fridgeOrCityId, 'cityId')) {
-    const city = fridgeOrCityId.cityId;
-    if (city == null) return null;
-    return city._id || city;
+  if (typeof fridgeOrCityId !== 'object') return fridgeOrCityId;
+
+  const cityRef = fridgeOrCityId.cityId;
+  if (cityRef !== undefined) {
+    if (cityRef == null) return null;
+    if (typeof cityRef === 'object' && cityRef._id != null) {
+      return cityRef._id;
+    }
+    return cityRef;
   }
-  return fridgeOrCityId;
+
+  if (fridgeOrCityId._id != null && (fridgeOrCityId.name != null || fridgeOrCityId.code != null)) {
+    return fridgeOrCityId._id;
+  }
+
+  return fridgeOrCityId._id ?? fridgeOrCityId;
 }
 
 function userCanAccessFridge(user, fridgeOrCityId) {

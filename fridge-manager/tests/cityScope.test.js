@@ -25,6 +25,26 @@ describe('cityScope access', () => {
     assert.equal(resolveFridgeCityId(fridge).toString(), cityId.toString());
   });
 
+  it('userCanAccessFridge handles Mongoose-style getter cityId (not own property)', () => {
+    const fridgeLikeMongoose = { _id: new mongoose.Types.ObjectId() };
+    Object.setPrototypeOf(fridgeLikeMongoose, {
+      get cityId() {
+        return { _id: cityId, name: 'Test', code: 'T' };
+      },
+    });
+    assert.equal(userCanAccessFridge(accountant, fridgeLikeMongoose), true);
+  });
+
+  it('resolveFridgeCityId does not treat whole fridge as city id', () => {
+    const fridgeLikeMongoose = { _id: new mongoose.Types.ObjectId() };
+    Object.setPrototypeOf(fridgeLikeMongoose, {
+      get cityId() {
+        return { _id: cityId, name: 'Test', code: 'T' };
+      },
+    });
+    assert.equal(String(resolveFridgeCityId(fridgeLikeMongoose)), cityId.toString());
+  });
+
   it('admin always has access', () => {
     assert.equal(userCanAccessFridge({ role: 'admin' }, { cityId: otherCityId }), true);
   });
