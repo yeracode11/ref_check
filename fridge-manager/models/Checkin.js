@@ -25,6 +25,8 @@ const CheckinSchema = new mongoose.Schema(
     id: { type: Number, unique: true, index: true, required: true },
     managerId: { type: String, required: true, index: true },
     fridgeId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    /** Ссылка на Fridge — однозначная привязка к городу (новые отметки) */
+    fridgeRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Fridge', index: true },
     photos: { type: [String], default: [] },
     location: { type: GeoPointSchema, index: '2dsphere', required: true },
     address: { type: String },
@@ -43,6 +45,7 @@ const CheckinSchema = new mongoose.Schema(
 );
 
 CheckinSchema.index({ fridgeId: 1, visitedAt: -1 });
+CheckinSchema.index({ fridgeRef: 1, visitedAt: -1 });
 
 // Remove _id from JSON output, use id instead
 CheckinSchema.set('toJSON', {

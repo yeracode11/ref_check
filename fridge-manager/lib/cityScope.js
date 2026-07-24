@@ -5,6 +5,7 @@ const {
   expandCheckinFridgeIdsForInQuery,
   buildCheckinFridgeIdMatchCondition,
 } = require('./fridgeVisitHelpers');
+const { fridgeIdMatchesCandidates } = require('./checkinDedup');
 
 /** Роли, привязанные к одному городу (поле user.cityId) */
 const CITY_SCOPED_ROLES = ['manager', 'accountant', 'service_manager', 'sales_head'];
@@ -112,6 +113,44 @@ async function getCheckinFridgeIdsForCity(cityId) {
   return expanded;
 }
 
+/**
+ * Фильтр MongoDB для отметок одного города (fridgeRef + legacy fridgeId в scope города).
+ * Не использует общий $in по числовым номерам — иначе одинаковые number в разных городах смешиваются.
+ */
+async function getCheckinFilterForCity(cityId) {
+  if (!cityId) return {};
+
+  const fridges = await Fridge.find(
+    { cityId },
+    { _id: 1, code: 1, number: 1, 'clientInfo.inn': 1 },
+  ).lean();
+
+  if (!fridges.length) {
+    return { fridgeId: '__none__' };
+  }
+
+  const fridgeObjectIds = fridges.map((f) => f._id);
+  const legacyOr = fridges
+    .map((f) => buildCheckinFridgeIdMatchCondition(f))
+    .filter(Boolean);
+
+  const legacyClause = legacyOr.length === 1
+    ? legacyOr[0]
+    : { $or: legacyOr };
+
+  return {
+    $or: [
+      { fridgeRef: { $in: fridgeObjectIds } },
+      {
+        $and: [
+          { $or: [{ fridgeRef: null }, { fridgeRef: { $exists: false } }] },
+          legacyClause,
+        ],
+      },
+    ],
+  };
+}
+
 function invalidateCityCheckinIdsCache(cityId) {
   if (cityId) {
     checkinIdsByCityCache.delete(String(cityId));
@@ -120,21 +159,52 @@ function invalidateCityCheckinIdsCache(cityId) {
   checkinIdsByCityCache.clear();
 }
 
-async function findFridgeByIdentifier(identifier) {
+async function findFridgeByIdentifier(identifier, options = {}) {
   const normalized = String(identifier || '').trim().replace(/^#/, '');
   if (!normalized) return null;
-  return Fridge.findOne({
+
+  const query = {
+    active: { $ne: false },
     $or: [
       { code: normalized },
       { number: normalized },
       { 'clientInfo.inn': normalized },
     ],
-  }).lean();
+  };
+
+  if (options.cityId) {
+    query.cityId = options.cityId;
+  }
+
+  const matches = await Fridge.find(query).limit(5).lean();
+  if (!matches.length) return null;
+  if (matches.length === 1) return matches[0];
+
+  if (options.cityId) {
+    return matches[0];
+  }
+
+  return null;
 }
 
 function buildCheckinFilterForFridge(fridge) {
-  const idMatch = buildCheckinFridgeIdMatchCondition(fridge);
-  return idMatch || { fridgeId: '__none__' };
+  const legacy = buildCheckinFridgeIdMatchCondition(fridge);
+  if (!fridge?._id) {
+    return legacy || { fridgeId: '__none__' };
+  }
+  return {
+    $or: [
+      { fridgeRef: fridge._id },
+      legacy
+        ? {
+          $and: [
+            { $or: [{ fridgeRef: null }, { fridgeRef: { $exists: false } }] },
+            legacy,
+          ],
+        }
+        : { fridgeRef: fridge._id },
+    ],
+  };
 }
 
 module.exports = {
@@ -148,6 +218,7 @@ module.exports = {
   ensureCityScopedUserHasCity,
   getFridgeObjectIdsForCity,
   getCheckinFridgeIdsForCity,
+  getCheckinFilterForCity,
   invalidateCityCheckinIdsCache,
   findFridgeByIdentifier,
   buildCheckinFilterForFridge,

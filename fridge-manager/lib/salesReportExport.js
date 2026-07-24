@@ -8,7 +8,7 @@ const {
   getLastVisitFromStatsMap,
 } = require('./fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
-const { resolveCityFilter, getCheckinFridgeIdsForCity } = require('./cityScope');
+const { resolveCityFilter, getCheckinFilterForCity } = require('./cityScope');
 const { buildCaseInsensitiveRegex } = require('./stringHelpers');
 const {
   fetchFridgeListSheetRows,
@@ -221,8 +221,7 @@ async function fetchCheckinSheetRows(user, query, opts = {}) {
 
   let checkinFilter = {};
   if (scopedCityId) {
-    const ids = await getCheckinFridgeIdsForCity(scopedCityId);
-    checkinFilter = { fridgeId: { $in: ids.length ? ids : ['__none__'] } };
+    checkinFilter = await getCheckinFilterForCity(scopedCityId);
   } else if (fridges.length) {
     const ids = expandCheckinFridgeIdsForInQuery(
       fridges.flatMap((f) => buildCheckinFridgeIdCandidates(f)),

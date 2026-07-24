@@ -2,35 +2,37 @@ const Checkin = require('../models/Checkin');
 const Fridge = require('../models/Fridge');
 const {
   buildCheckinFridgeIdCandidates,
-  mergeCheckinStatsAggregationIntoMap,
+  parseVisitTimeMs,
 } = require('./fridgeVisitHelpers');
+const { fridgeIdMatchesCandidates } = require('./checkinDedup');
 
 const TTL_MS = parseInt(process.env.CHECKIN_STATS_CACHE_TTL_MS || '60000', 10);
 
 /** @type {Map<string, { stats: Map<string, object>, at: number }>} */
 const cacheByScope = new Map();
 
-function buildFridgeIdMatchValues(fridgeLikeDocs) {
-  const idSet = new Set();
-  for (const f of fridgeLikeDocs) {
-    for (const id of buildCheckinFridgeIdCandidates(f)) {
-      idSet.add(id);
-      const n = Number(id);
-      if (Number.isFinite(n)) idSet.add(n);
-    }
-  }
-  return [...idSet];
-}
-
 function invalidateCheckinStatsCache() {
   cacheByScope.clear();
 }
 
+function mergeStatsEntry(existing, visitAt, condition, addCount = 1) {
+  const visitMs = parseVisitTimeMs(visitAt);
+  const exMs = parseVisitTimeMs(existing?.lastVisit);
+  let nextVisit = existing?.lastVisit ?? null;
+  let nextCondition = existing?.lastFridgeCondition ?? null;
+  if (visitMs != null && (exMs == null || visitMs > exMs)) {
+    nextVisit = visitAt;
+    nextCondition = condition ?? null;
+  }
+  return {
+    lastVisit: nextVisit,
+    lastFridgeCondition: nextCondition,
+    totalCheckins: (existing?.totalCheckins || 0) + addCount,
+  };
+}
+
 /**
- * Агрегация lastVisit/totalCheckins только для переданных холодильников (не full scan).
- * @param {Array<object>} fridgeLikeDocs — lean-документы с code, number, clientInfo
- * @param {string} [cacheScopeKey] — ключ кэша (например JSON.stringify(fridgeQuery))
- * @param {{ useCache?: boolean }} [opts]
+ * Статистика lastVisit по каждому холодильнику в scope (без смешивания одинаковых number между городами).
  */
 async function getCheckinStatsForFridges(fridgeLikeDocs, cacheScopeKey, opts = {}) {
   const useCache = opts.useCache !== false && !!cacheScopeKey;
@@ -46,32 +48,72 @@ async function getCheckinStatsForFridges(fridgeLikeDocs, cacheScopeKey, opts = {
     }
   }
 
-  const ids = buildFridgeIdMatchValues(fridgeLikeDocs);
-  if (ids.length === 0) return new Map();
+  const fridgeDocs = fridgeLikeDocs.filter((f) => f && f._id);
+  if (!fridgeDocs.length) return new Map();
 
-  const rows = await Checkin.aggregate([
-    { $match: { fridgeId: { $in: ids } } },
-    { $sort: { visitedAt: -1 } },
-    {
-      $group: {
-        _id: '$fridgeId',
-        lastVisit: { $first: '$visitedAt' },
-        lastFridgeCondition: { $first: '$fridgeCondition' },
-        totalCheckins: { $sum: 1 },
-      },
-    },
-  ]);
-
-  const stats = mergeCheckinStatsAggregationIntoMap(rows);
-  if (useCache) {
-    cacheByScope.set(cacheScopeKey, { stats, at: Date.now() });
+  const fridgeObjectIds = fridgeDocs.map((f) => f._id);
+  const legacyIds = new Set();
+  for (const f of fridgeDocs) {
+    for (const id of buildCheckinFridgeIdCandidates(f)) {
+      legacyIds.add(id);
+      const n = Number(id);
+      if (Number.isFinite(n)) legacyIds.add(n);
+    }
   }
-  return stats;
+
+  const checkins = await Checkin.find({
+    $or: [
+      { fridgeRef: { $in: fridgeObjectIds } },
+      {
+        $and: [
+          { $or: [{ fridgeRef: null }, { fridgeRef: { $exists: false } }] },
+          { fridgeId: { $in: [...legacyIds] } },
+        ],
+      },
+    ],
+  })
+    .select('fridgeId fridgeRef visitedAt fridgeCondition')
+    .sort({ visitedAt: -1 })
+    .lean();
+
+  const statsByKey = new Map();
+
+  for (const f of fridgeDocs) {
+    const docKey = String(f._id);
+    const candidates = buildCheckinFridgeIdCandidates(f);
+    let bucket = statsByKey.get(docKey) || {
+      lastVisit: null,
+      lastFridgeCondition: null,
+      totalCheckins: 0,
+    };
+
+    for (const c of checkins) {
+      let matches = false;
+      if (c.fridgeRef && String(c.fridgeRef) === docKey) {
+        matches = true;
+      } else if (!c.fridgeRef && fridgeIdMatchesCandidates(c.fridgeId, candidates)) {
+        matches = true;
+      }
+      if (!matches) continue;
+      bucket = mergeStatsEntry(bucket, c.visitedAt, c.fridgeCondition, 1);
+    }
+
+    statsByKey.set(docKey, bucket);
+    for (const id of candidates) {
+      statsByKey.set(String(id).trim(), bucket);
+      const n = Number(id);
+      if (Number.isFinite(n)) statsByKey.set(n, bucket);
+    }
+  }
+
+  if (useCache) {
+    cacheByScope.set(cacheScopeKey, { stats: statsByKey, at: Date.now() });
+  }
+  return statsByKey;
 }
 
 /**
  * Статистика чекинов по всем холодильникам в scope (не только текущая страница).
- * Кэшируется по fridgeQuery — пагинация списка не пересчитывает агрегацию.
  */
 async function getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, opts = {}) {
   if (opts.useCache !== false && cacheScopeKey) {
@@ -82,7 +124,7 @@ async function getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, opts = 
   }
 
   const fridgeDocs = await Fridge.find(fridgeQuery)
-    .select('code number clientInfo.inn type')
+    .select('_id code number clientInfo.inn type')
     .lean();
 
   return getCheckinStatsForFridges(fridgeDocs, cacheScopeKey, opts);
@@ -92,5 +134,4 @@ module.exports = {
   getCheckinStatsForFridges,
   getCheckinStatsForFridgeQuery,
   invalidateCheckinStatsCache,
-  buildFridgeIdMatchValues,
 };

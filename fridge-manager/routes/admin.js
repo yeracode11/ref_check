@@ -28,7 +28,7 @@ const {
   buildExportFileName,
   buildFridgesExportFileName,
 } = require('../lib/salesReportExport');
-const { getAssignedCityId, resolveCityFilter, getCheckinFridgeIdsForCity, userCanAccessFridge } = require('../lib/cityScope');
+const { getAssignedCityId, resolveCityFilter, userCanAccessFridge } = require('../lib/cityScope');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const XLSX = require('xlsx');
 

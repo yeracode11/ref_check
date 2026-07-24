@@ -25,7 +25,7 @@ const {
 } = require('../lib/repairHelpers');
 const {
   resolveCityFilter,
-  getCheckinFridgeIdsForCity,
+  getCheckinFilterForCity,
   getFridgeObjectIdsForCity,
   getAssignedCityId,
   findFridgeByIdentifier,
@@ -191,7 +191,10 @@ router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) =>
     const scopedCityId = resolveCityFilter(req.user, cityId);
 
     if (fridgeId) {
-      const fridge = await findFridgeByIdentifier(fridgeId);
+      const fridge = await findFridgeByIdentifier(
+        fridgeId,
+        scopedCityId ? { cityId: scopedCityId } : {},
+      );
       if (!fridge) {
         return res.json({ data: [], total: 0, limit: limitNum, skip: skipNum });
       }
@@ -200,8 +203,7 @@ router.get('/checkins', authenticateToken, requireSalesHead, async (req, res) =>
       }
       Object.assign(filter, buildCheckinFilterForFridge(fridge));
     } else if (scopedCityId) {
-      const ids = await getCheckinFridgeIdsForCity(scopedCityId);
-      filter.fridgeId = { $in: ids.length ? ids : ['__none__'] };
+      Object.assign(filter, await getCheckinFilterForCity(scopedCityId));
     }
 
     const fromDate = parseDate(from);
@@ -272,11 +274,9 @@ router.get('/activity', authenticateToken, requireSalesHead, async (req, res) =>
       });
     });
 
-    const checkinFilter = {};
-    if (scopedCityId) {
-      const ids = await getCheckinFridgeIdsForCity(scopedCityId);
-      checkinFilter.fridgeId = { $in: ids.length ? ids : ['__none__'] };
-    }
+    const checkinFilter = scopedCityId
+      ? await getCheckinFilterForCity(scopedCityId)
+      : {};
 
     const fetchLimit = Math.min(limitNum * 3, 150);
     const [checkinItems, repairItems] = await Promise.all([
@@ -385,9 +385,25 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       buildCheckinFridgeIdCandidates(f).forEach((id) => checkinFridgeIds.add(id));
     });
     const checkinIdList = [...checkinFridgeIds];
-    const checkinIdQuery = checkinIdList.length
-      ? { fridgeId: { $in: expandCheckinFridgeIdsForInQuery(checkinIdList) } }
-      : { fridgeId: '__none__' };
+    const checkinScopeFilter = scopedCityId
+      ? await getCheckinFilterForCity(scopedCityId)
+      : (checkinIdList.length
+        ? { fridgeId: { $in: expandCheckinFridgeIdsForInQuery(checkinIdList) } }
+        : { fridgeId: '__none__' });
+
+    const checkinMatchBase = {
+      $and: [
+        { visitedAt: { $gte: since } },
+        checkinScopeFilter,
+      ],
+    };
+    const brokenCheckinMatch = {
+      $and: [
+        { fridgeCondition: 'broken' },
+        { visitedAt: { $gte: since } },
+        checkinScopeFilter,
+      ],
+    };
 
     const citiesQuery = { active: true };
     if (scopedCityId) citiesQuery._id = scopedCityId;
@@ -399,17 +415,10 @@ router.get('/analytics', authenticateToken, requireSalesHead, async (req, res) =
       })
         .select('repairDate completedWorks replacedParts')
         .lean(),
-      Checkin.aggregate(buildDailyCheckinsAggregationStages({
-        visitedAt: { $gte: since },
-        ...checkinIdQuery,
-      })),
+      Checkin.aggregate(buildDailyCheckinsAggregationStages(checkinMatchBase)),
       Checkin.aggregate([
         {
-          $match: {
-            fridgeCondition: 'broken',
-            visitedAt: { $gte: since },
-            ...checkinIdQuery,
-          },
+          $match: brokenCheckinMatch,
         },
         {
           $group: {

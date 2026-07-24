@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "clear-checkins": "node scripts/clear-all-checkins.js",
+    "backfill-checkin-refs": "node scripts/backfill-checkin-fridge-ref.js",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {

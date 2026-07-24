@@ -5,10 +5,11 @@ const Fridge = require('../models/Fridge');
 const User = require('../models/User');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const {
-  getCheckinFridgeIdsForCity,
+  getCheckinFilterForCity,
   getAssignedCityId,
   userCanAccessCity,
   ensureCityScopedUserHasCity,
+  findFridgeByIdentifier,
 } = require('../lib/cityScope');
 const {
   createCheckinRecord,
@@ -29,6 +30,8 @@ function parseDate(dateString) {
 // body: { fridgeId, photos?, location, ... } — managerId берётся из JWT
 router.post('/', authenticateToken, async (req, res) => {
   try {
+    if (req.user?.role === 'manager' && !ensureCityScopedUserHasCity(req, res)) return;
+
     const location = normalizeLocationInput(req.body.location)
       || locationFromLatLngFields(req.body);
 
@@ -84,8 +87,7 @@ router.get('/', authenticateToken, async (req, res) => {
     } else if (['accountant', 'service_manager', 'sales_head'].includes(req.user.role)) {
       const cityId = getAssignedCityId(req.user);
       if (cityId) {
-        const fridgeCodes = await getCheckinFridgeIdsForCity(cityId);
-        filter.fridgeId = { $in: fridgeCodes.length ? fridgeCodes : ['__none__'] };
+        Object.assign(filter, await getCheckinFilterForCity(cityId));
       }
     } else {
       // Для админов и других ролей можно использовать query параметры
@@ -230,15 +232,18 @@ router.get('/:id', authenticateToken, async (req, res) => {
         return res.status(403).json({ error: 'Access denied' });
       }
     } else if (['accountant', 'service_manager', 'sales_head'].includes(req.user.role)) {
-      const fridge = await Fridge.findOne({
-        $or: [
-          { code: item.fridgeId },
-          { number: item.fridgeId },
-          { 'clientInfo.inn': item.fridgeId },
-        ],
-      });
-      if (!fridge || !userCanAccessCity(req.user, fridge.cityId)) {
-        return res.status(403).json({ error: 'Access denied' });
+      if (item.fridgeRef) {
+        const fridge = await Fridge.findById(item.fridgeRef).select('cityId').lean();
+        if (!fridge || !userCanAccessCity(req.user, fridge.cityId)) {
+          return res.status(403).json({ error: 'Access denied' });
+        }
+      } else {
+        const fridge = await findFridgeByIdentifier(item.fridgeId, {
+          cityId: getAssignedCityId(req.user),
+        });
+        if (!fridge || !userCanAccessCity(req.user, fridge.cityId)) {
+          return res.status(403).json({ error: 'Access denied' });
+        }
       }
     }
     // Админы имеют доступ ко всем отметкам

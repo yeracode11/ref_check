@@ -4,7 +4,12 @@ const User = require('../models/User');
 const { getNextSequence } = require('../models/Counter');
 const { findRecentDuplicateCheckin } = require('../utils/checkinGeodesic');
 const { invalidateCheckinStatsCache } = require('./checkinStatsCache');
-const { findFridgeByIdentifier } = require('./cityScope');
+const {
+  findFridgeByIdentifier,
+  getAssignedCityId,
+  userCanAccessCity,
+  invalidateCityCheckinIdsCache,
+} = require('./cityScope');
 const {
   buildCheckinFridgeIdCandidates,
   expandCheckinFridgeIdsForInQuery,
@@ -13,6 +18,7 @@ const {
   resolveManagerIdCandidates,
   buildFridgeIdInQueryForDedupe,
   canonicalCheckinFridgeId,
+  fridgeIdMatchesCandidates,
 } = require('./checkinDedup');
 
 const CHECKIN_IDEMPOTENCY_WINDOW_MS = (() => {
@@ -39,35 +45,36 @@ function calculateDistanceMeters(loc1, loc2) {
 }
 
 async function syncFridgeFromCheckin({
+  fridge,
   normalizedFridgeId,
   location,
   fridgeCondition,
   isSeasonalClosure,
   address,
 }) {
-  const fridge = await Fridge.findOne({
-    $or: [
-      { code: normalizedFridgeId },
-      { number: normalizedFridgeId },
-      { 'clientInfo.inn': normalizedFridgeId },
-    ],
-  });
-  if (!fridge) {
-    console.warn(`[Checkins] Fridge with code/number/inn ${normalizedFridgeId} not found`);
+  let target = fridge;
+  if (!target && normalizedFridgeId) {
+    target = await findFridgeByIdentifier(normalizedFridgeId);
+  }
+  if (!target?._id) {
+    console.warn(`[Checkins] Fridge not found for sync: ${normalizedFridgeId}`);
     return;
   }
 
   const expandedIds = expandCheckinFridgeIdsForInQuery(
-    buildCheckinFridgeIdCandidates(fridge),
+    buildCheckinFridgeIdCandidates(target),
   );
 
   const recentCheckins = await Checkin.find({
-    fridgeId: { $in: expandedIds },
+    $or: [
+      { fridgeRef: target._id },
+      { fridgeId: { $in: expandedIds.length ? expandedIds : [normalizedFridgeId] } },
+    ],
   }).sort({ visitedAt: -1 }).limit(2).lean();
 
-  let newWarehouseStatus = fridge.warehouseStatus;
+  let newWarehouseStatus = target.warehouseStatus;
   if (recentCheckins.length === 1) {
-    if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
+    if (target.warehouseStatus === 'warehouse' || target.warehouseStatus === 'returned') {
       newWarehouseStatus = 'installed';
     }
   } else if (recentCheckins.length >= 2) {
@@ -77,9 +84,9 @@ async function syncFridgeFromCheckin({
       const distance = calculateDistanceMeters(secondLastLocation, lastLocation);
       if (distance !== null && distance > 50) {
         newWarehouseStatus = 'moved';
-      } else if (fridge.warehouseStatus === 'warehouse' || fridge.warehouseStatus === 'returned') {
+      } else if (target.warehouseStatus === 'warehouse' || target.warehouseStatus === 'returned') {
         newWarehouseStatus = 'installed';
-      } else if (fridge.warehouseStatus === 'moved') {
+      } else if (target.warehouseStatus === 'moved') {
         newWarehouseStatus = 'installed';
       }
     }
@@ -88,27 +95,21 @@ async function syncFridgeFromCheckin({
   const fridgeStatusUpdate = {};
   if (fridgeCondition === 'broken') {
     fridgeStatusUpdate.status = 'broken';
-    if (!fridge.brokenSince) {
+    if (!target.brokenSince) {
       fridgeStatusUpdate.brokenSince = new Date();
     }
-  } else if (fridge.status !== 'under_repair') {
+  } else if (target.status !== 'under_repair') {
     fridgeStatusUpdate.status = 'working';
     fridgeStatusUpdate.brokenSince = null;
   }
 
   const seasonalTypes = ['school', 'restricted'];
-  if (seasonalTypes.includes(fridge.type)) {
+  if (seasonalTypes.includes(target.type)) {
     fridgeStatusUpdate.isSeasonalClosure = isSeasonalClosure;
   }
 
-  await Fridge.findOneAndUpdate(
-    {
-      $or: [
-        { code: normalizedFridgeId },
-        { number: normalizedFridgeId },
-        { 'clientInfo.inn': normalizedFridgeId },
-      ],
-    },
+  await Fridge.findByIdAndUpdate(
+    target._id,
     {
       $set: {
         location,
@@ -155,6 +156,44 @@ function locationFromLatLngFields(body) {
     return { type: 'Point', coordinates: [lng, lat] };
   }
   return normalizeLocationInput(body?.location);
+}
+
+async function resolveFridgeForCheckin(user, normalizedFridgeId) {
+  if (user.role === 'manager') {
+    let cityId = getAssignedCityId(user);
+    if (!cityId && user.id) {
+      const dbUser = await User.findById(user.id).select('cityId').lean();
+      cityId = dbUser?.cityId || null;
+    }
+    if (!cityId) {
+      const err = new Error('Для менеджера не назначен город');
+      err.status = 403;
+      throw err;
+    }
+
+    const fridge = await findFridgeByIdentifier(normalizedFridgeId, { cityId });
+    if (!fridge) {
+      const err = new Error('Холодильник не найден в вашем городе');
+      err.status = 404;
+      throw err;
+    }
+    if (!userCanAccessCity(user, fridge.cityId)) {
+      const err = new Error('Холодильник из другого города');
+      err.status = 403;
+      throw err;
+    }
+    return fridge;
+  }
+
+  const fridge = await findFridgeByIdentifier(normalizedFridgeId);
+  if (!fridge) {
+    const err = new Error(
+      'Холодильник не найден. Если номер совпадает в нескольких городах — уточните у администратора.',
+    );
+    err.status = 404;
+    throw err;
+  }
+  return fridge;
 }
 
 /**
@@ -204,12 +243,10 @@ async function createCheckinRecord(params) {
   const dupWindowStart = new Date(Date.now() - CHECKIN_IDEMPOTENCY_WINDOW_MS);
 
   const [fridge, managerIdCandidates] = await Promise.all([
-    findFridgeByIdentifier(normalizedFridgeId),
+    resolveFridgeForCheckin(user, normalizedFridgeId),
     resolveManagerIdCandidates(User, managerId),
   ]);
-  const fridgeIdCandidates = fridge
-    ? buildCheckinFridgeIdCandidates(fridge)
-    : [normalizedFridgeId];
+  const fridgeIdCandidates = buildCheckinFridgeIdCandidates(fridge);
   const storeFridgeId = canonicalCheckinFridgeId(fridge, normalizedFridgeId);
 
   const recentForDedupe = await Checkin.find({
@@ -238,6 +275,10 @@ async function createCheckinRecord(params) {
     const existing = await Checkin.findById(duplicate._id);
     if (existing) {
       let changed = false;
+      if (!existing.fridgeRef && fridge._id) {
+        existing.fridgeRef = fridge._id;
+        changed = true;
+      }
       if (existing.fridgeCondition !== fridgeCondition) {
         existing.fridgeCondition = fridgeCondition;
         changed = true;
@@ -257,6 +298,7 @@ async function createCheckinRecord(params) {
 
       try {
         await syncFridgeFromCheckin({
+          fridge,
           normalizedFridgeId,
           location,
           fridgeCondition,
@@ -267,6 +309,7 @@ async function createCheckinRecord(params) {
         console.error('Failed to update fridge on idempotent checkin:', updateErr);
       }
       invalidateCheckinStatsCache();
+      invalidateCityCheckinIdsCache(fridge.cityId);
       return {
         checkin: existing.toJSON(),
         status: 200,
@@ -280,6 +323,7 @@ async function createCheckinRecord(params) {
     id,
     managerId: managerIdCandidates[0] || String(managerId),
     fridgeId: storeFridgeId,
+    fridgeRef: fridge._id,
     photos,
     location,
     address: params.address,
@@ -291,6 +335,7 @@ async function createCheckinRecord(params) {
 
   try {
     await syncFridgeFromCheckin({
+      fridge,
       normalizedFridgeId,
       location,
       fridgeCondition,
@@ -302,6 +347,7 @@ async function createCheckinRecord(params) {
   }
 
   invalidateCheckinStatsCache();
+  invalidateCityCheckinIdsCache(fridge.cityId);
   return {
     checkin: checkin.toJSON(),
     status: 201,
@@ -316,4 +362,5 @@ module.exports = {
   normalizeLocationInput,
   locationFromLatLngFields,
   createCheckinRecord,
+  resolveFridgeForCheckin,
 };

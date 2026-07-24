@@ -1,10 +1,12 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
+const Fridge = require('../models/Fridge');
 const {
   userCanAccessCity,
   userCanAccessFridge,
   resolveFridgeCityId,
+  findFridgeByIdentifier,
 } = require('../lib/cityScope');
 
 describe('cityScope access', () => {
@@ -43,6 +45,44 @@ describe('cityScope access', () => {
       },
     });
     assert.equal(String(resolveFridgeCityId(fridgeLikeMongoose)), cityId.toString());
+  });
+
+  it('findFridgeByIdentifier scopes by cityId', async () => {
+    const cityA = new mongoose.Types.ObjectId();
+    const cityB = new mongoose.Types.ObjectId();
+    const originalFind = Fridge.find;
+    Fridge.find = (query) => ({
+      limit: () => ({
+        lean: async () => {
+          assert.equal(String(query.cityId), String(cityA));
+          return [{ _id: new mongoose.Types.ObjectId(), cityId: cityA, code: 'X1' }];
+        },
+      }),
+    });
+    try {
+      const f = await findFridgeByIdentifier('X1', { cityId: cityA });
+      assert.ok(f);
+      assert.equal(String(f.cityId), String(cityA));
+    } finally {
+      Fridge.find = originalFind;
+    }
+  });
+
+  it('findFridgeByIdentifier returns null when same code exists in multiple cities', async () => {
+    const originalFind = Fridge.find;
+    Fridge.find = () => ({
+      limit: () => ({
+        lean: async () => ([
+          { _id: new mongoose.Types.ObjectId(), code: 'DUP' },
+          { _id: new mongoose.Types.ObjectId(), code: 'DUP' },
+        ]),
+      }),
+    });
+    try {
+      assert.equal(await findFridgeByIdentifier('DUP'), null);
+    } finally {
+      Fridge.find = originalFind;
+    }
   });
 
   it('admin always has access', () => {

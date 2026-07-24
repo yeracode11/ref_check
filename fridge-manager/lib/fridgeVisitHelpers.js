@@ -273,6 +273,18 @@ function mergeCheckinStatsAggregationIntoMap(rows) {
  * statsMap: ключ — точное значение checkins.fridgeId (после trim), значение — { lastVisit, totalCheckins? }
  */
 function getLastVisitFromStatsMap(statsByFridgeId, fridgeLike) {
+  if (fridgeLike?._id) {
+    const byDoc = statsByFridgeId.get(String(fridgeLike._id));
+    if (byDoc) {
+      return {
+        lastVisit: byDoc.lastVisit ?? null,
+        lastVisitTime: parseVisitTimeMs(byDoc.lastVisit),
+        lastFridgeCondition: byDoc.lastFridgeCondition ?? null,
+        totalCheckins: byDoc.totalCheckins || 0,
+      };
+    }
+  }
+
   const candidateIds = buildCheckinFridgeIdCandidates(fridgeLike);
   let lastVisit = null;
   let lastVisitTime = null;
