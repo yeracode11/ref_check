@@ -48,6 +48,19 @@ function parseArgs(argv) {
   return args;
 }
 
+function missingFridgeRefQuery() {
+  return { $or: [{ fridgeRef: null }, { fridgeRef: { $exists: false } }] };
+}
+
+async function countCheckinFridgeRefStats(Checkin) {
+  const [total, withRef, withoutRef] = await Promise.all([
+    Checkin.countDocuments({}),
+    Checkin.countDocuments({ fridgeRef: { $exists: true, $ne: null } }),
+    Checkin.countDocuments(missingFridgeRefQuery()),
+  ]);
+  return { total, withRef, withoutRef };
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const mongoUri = loadMongoUri();
@@ -81,9 +94,12 @@ async function main() {
     const fridgeIndex = buildFridgeCandidateIndex(fridges);
     const managerCityMap = buildManagerCityMap(users);
 
-    const checkinQuery = args.force
-      ? {}
-      : { $or: [{ fridgeRef: null }, { fridgeRef: { $exists: false } }] };
+    const checkinQuery = args.force ? {} : missingFridgeRefQuery();
+
+    const refStatsBefore = await countCheckinFridgeRefStats(Checkin);
+    console.log(
+      `[backfill-fridgeRef] Сейчас в БД: всего=${refStatsBefore.total}, с fridgeRef=${refStatsBefore.withRef}, без=${refStatsBefore.withoutRef}`,
+    );
 
     const totalToScan = await Checkin.countDocuments(checkinQuery);
     console.log(`[backfill-fridgeRef] Отметок к обработке: ${totalToScan}`);
@@ -103,10 +119,17 @@ async function main() {
       .cursor();
 
     let bulk = [];
+    let bulkModified = 0;
     const flush = async () => {
       if (!bulk.length) return;
       if (!args.dryRun) {
-        await Checkin.bulkWrite(bulk, { ordered: false });
+        const result = await Checkin.collection.bulkWrite(bulk, { ordered: false });
+        bulkModified += result.modifiedCount || 0;
+        if ((result.modifiedCount || 0) === 0 && bulk.length > 0) {
+          console.warn(
+            `[backfill-fridgeRef] ⚠ bulkWrite: 0 modified при ${bulk.length} операциях — проверьте git pull (models/Checkin.js) и повторите --apply`,
+          );
+        }
       }
       stats.updated += bulk.length;
       bulk = [];
@@ -161,6 +184,19 @@ async function main() {
     console.log(`  no_match: ${stats.noMatch}`);
     console.log(`  ambiguous: ${stats.ambiguous}`);
     console.log('  by_reason:', stats.byReason);
+    if (!args.dryRun) {
+      console.log(`  bulk_modified (MongoDB): ${bulkModified}`);
+      const refStatsAfter = await countCheckinFridgeRefStats(Checkin);
+      console.log(
+        `[backfill-fridgeRef] После записи: с fridgeRef=${refStatsAfter.withRef}, без=${refStatsAfter.withoutRef}`,
+      );
+      if (stats.updated > 0 && refStatsAfter.withRef <= refStatsBefore.withRef) {
+        console.error(
+          '[backfill-fridgeRef] ❌ fridgeRef в БД не вырос — сделайте git pull и снова node scripts/backfill-checkin-fridge-ref.js --apply',
+        );
+        process.exitCode = 1;
+      }
+    }
 
     if (args.dryRun && stats.updated > 0) {
       console.log('[backfill-fridgeRef] Dry-run — добавьте --apply для записи в БД.');
