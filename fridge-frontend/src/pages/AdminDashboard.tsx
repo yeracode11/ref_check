@@ -9,7 +9,6 @@ import { QRCode } from '../components/ui/QRCode';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 import { showToast } from '../components/ui/Toast';
-import { buildCityStatisticsFromMapFridges } from '../utils/cityStatistics';
 
 type ClientInfo = {
   name?: string;
@@ -129,7 +128,9 @@ export default function AdminDashboard() {
   const [newFridge, setNewFridge] = useState({ name: '', address: '', description: '', cityId: '', number: '', clientInn: '' });
   const [creatingFridge, setCreatingFridge] = useState(false);
   const [cities, setCities] = useState<Array<{ _id: string; name: string; code: string }>>([]);
-  const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>('all'); // 'all' для всех городов
+  const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>(''); // '' → первый город после загрузки
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   // Метки на карте отключены по требованию (показываем пустую карту)
   const observerTarget = useRef<HTMLDivElement | null>(null);
   const isCreatingRef = useRef(false); // Защита от двойного вызова
@@ -144,9 +145,11 @@ export default function AdminDashboard() {
         const res = await api.get('/api/cities?active=true');
         if (!alive) return;
         setCities(res.data);
-        // Устанавливаем первый город по умолчанию
-        if (res.data.length > 0 && !newFridge.cityId) {
-          setNewFridge(prev => ({ ...prev, cityId: res.data[0]._id }));
+        if (res.data.length > 0) {
+          setSelectedCityIdForMap((prev) => (prev ? prev : res.data[0]._id));
+          if (!newFridge.cityId) {
+            setNewFridge(prev => ({ ...prev, cityId: res.data[0]._id }));
+          }
         }
       } catch (e: any) {
         console.error('Ошибка загрузки городов:', e);
@@ -156,31 +159,58 @@ export default function AdminDashboard() {
     return () => { alive = false; };
   }, [user]);
 
-  const loadAllFridgesForMap = useCallback(async () => {
+  const loadAllFridgesForMap = useCallback(async (cityId: string) => {
     if (!user || user.role !== 'admin') return;
+    if (!cityId) return;
 
-    const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
-    const fridgesData = Array.isArray(fridgeStatusRes.data)
-      ? fridgeStatusRes.data
-      : (fridgeStatusRes.data?.data || []);
-    setAllFridges(fridgesData);
-    setError(null);
+    const params = new URLSearchParams({ all: 'true' });
+    if (cityId !== 'all') {
+      params.set('cityId', cityId);
+    }
+    const timeoutMs = cityId === 'all' ? 600000 : 180000;
+
+    setMapLoading(true);
+    setMapError(null);
+    try {
+      const fridgeStatusRes = await api.get(`/api/admin/fridge-status?${params.toString()}`, {
+        timeout: timeoutMs,
+      });
+      const fridgesData = Array.isArray(fridgeStatusRes.data)
+        ? fridgeStatusRes.data
+        : (fridgeStatusRes.data?.data || []);
+      setAllFridges(fridgesData);
+    } catch (e: any) {
+      console.error('[AdminDashboard] Map data load failed:', e);
+      const msg =
+        e?.response?.status === 502
+          ? 'Сервер не успел ответить (502). Выберите один город на карте или повторите позже.'
+          : e?.message || 'Ошибка загрузки карты';
+      setMapError(msg);
+    } finally {
+      setMapLoading(false);
+    }
   }, [user]);
 
-  // Загрузка всех холодильников для карты и статистики
-  // ВАЖНО: грузим это в фоне, не блокируя первый рендер и список
+  const reloadMapFridges = useCallback(async () => {
+    const cityId = selectedCityIdForMap || cities[0]?._id || 'all';
+    await loadAllFridgesForMap(cityId);
+  }, [selectedCityIdForMap, cities, loadAllFridgesForMap]);
+
+  // Загрузка всех холодильников для карты
   useEffect(() => {
     if (!user || user.role !== 'admin') {
+      return;
+    }
+    if (!selectedCityIdForMap) {
       return;
     }
 
     let alive = true;
     (async () => {
       try {
-        await loadAllFridgesForMap();
+        await loadAllFridgesForMap(selectedCityIdForMap);
         if (!alive) return;
 
-        // Чекины догружаем отдельно: meta=1 даёт точный total в БД, в теле — только последние N.
         api.get(`/api/checkins?meta=1&limit=${ADMIN_CHECKINS_PREVIEW_LIMIT}`)
           .then((checkinsRes) => {
             if (!alive) return;
@@ -195,14 +225,16 @@ export default function AdminDashboard() {
           });
       } catch (e: any) {
         if (!alive) return;
-        setError(e?.message || 'Ошибка загрузки данных');
+        console.error('[AdminDashboard] Map load:', e);
       }
     })();
 
     const onFocus = () => {
-      loadAllFridgesForMap().catch((e) => {
-        console.error('[AdminDashboard] Map refresh failed:', e);
-      });
+      if (selectedCityIdForMap) {
+        loadAllFridgesForMap(selectedCityIdForMap).catch((e) => {
+          console.error('[AdminDashboard] Map refresh failed:', e);
+        });
+      }
     };
     window.addEventListener('focus', onFocus);
 
@@ -210,40 +242,32 @@ export default function AdminDashboard() {
       alive = false;
       window.removeEventListener('focus', onFocus);
     };
-  }, [user, loadAllFridgesForMap]);
+  }, [user, loadAllFridgesForMap, selectedCityIdForMap]);
 
   // Статистика по городам: для админа — из уже загруженной карты (без лишнего API)
   useEffect(() => {
     if (!user) return;
 
-    if (user.role === 'admin') {
-      if (allFridges.length === 0) return;
-      setCityStatistics(buildCityStatisticsFromMapFridges(allFridges));
-      setLoadingCityStats(false);
-      return;
+    if (user.role === 'admin' || user.role === 'accountant') {
+      let alive = true;
+      (async () => {
+        try {
+          setLoadingCityStats(true);
+          const res = await api.get('/api/admin/statistics/by-cities', { timeout: 300000 });
+          if (!alive) return;
+          setCityStatistics(res.data);
+        } catch (e: any) {
+          if (!alive) return;
+          console.error('Ошибка загрузки статистики по городам:', e);
+        } finally {
+          if (alive) setLoadingCityStats(false);
+        }
+      })();
+      return () => {
+        alive = false;
+      };
     }
-
-    if (user.role !== 'accountant') return;
-
-    let alive = true;
-    (async () => {
-      try {
-        setLoadingCityStats(true);
-        const res = await api.get('/api/admin/statistics/by-cities');
-        if (!alive) return;
-        setCityStatistics(res.data);
-      } catch (e: any) {
-        if (!alive) return;
-        console.error('Ошибка загрузки статистики по городам:', e);
-      } finally {
-        if (alive) setLoadingCityStats(false);
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [user, allFridges]);
+  }, [user]);
 
   // Загрузка холодильников для списка (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
@@ -481,13 +505,7 @@ export default function AdminDashboard() {
 
       // Перезагружаем данные
       if (user && user.role === 'admin') {
-        const [fridgeStatusRes] = await Promise.all([
-          api.get('/api/admin/fridge-status?all=true'),
-        ]);
-        const fridgesData = Array.isArray(fridgeStatusRes.data) 
-          ? fridgeStatusRes.data 
-          : (fridgeStatusRes.data?.data || []);
-        setAllFridges(fridgesData);
+        await reloadMapFridges();
         loadFridges(0, true);
       }
 
@@ -655,14 +673,7 @@ export default function AdminDashboard() {
       // Перезагружаем данные в фоне для синхронизации (не блокируя UI)
       (async () => {
         try {
-          const [fridgeStatusRes] = await Promise.all([
-            api.get('/api/admin/fridge-status?all=true'),
-          ]);
-          const fridgesData = Array.isArray(fridgeStatusRes.data) 
-            ? fridgeStatusRes.data 
-            : (fridgeStatusRes.data?.data || []);
-          setAllFridges(fridgesData);
-          // Обновляем список с сервера для синхронизации
+          await reloadMapFridges();
           loadFridges(0, true);
         } catch (e) {
           console.error('Ошибка обновления данных после создания:', e);
@@ -1310,6 +1321,14 @@ export default function AdminDashboard() {
                 ))}
               </select>
             </div>
+            {mapLoading && (
+              <p className="text-sm text-slate-500 w-full">Загрузка карты…</p>
+            )}
+            {mapError && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 w-full">
+                {mapError}
+              </p>
+            )}
             {selectedCityIdForMap !== 'all' && (
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -1579,11 +1598,7 @@ export default function AdminDashboard() {
                     setCheckinsTotal(parsed.total);
                     setCheckinsDistinctManagers(parsed.distinctManagers);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
-                    const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
-                    const fridgesData = Array.isArray(fridgeStatusRes.data) 
-                      ? fridgeStatusRes.data 
-                      : (fridgeStatusRes.data?.data || []);
-                    setAllFridges(fridgesData);
+                    await reloadMapFridges();
                     setDeleteCheckinId(null);
                     alert('Отметка удалена. Карта обновлена.');
                   } catch (e: any) {
@@ -1633,11 +1648,7 @@ export default function AdminDashboard() {
                     setCheckinsDistinctManagers(0);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     // После удаления всех отметок все холодильники должны получить status = 'never'
-                    const fridgeStatusRes = await api.get('/api/admin/fridge-status?all=true');
-                    const fridgesData = Array.isArray(fridgeStatusRes.data) 
-                      ? fridgeStatusRes.data 
-                      : (fridgeStatusRes.data?.data || []);
-                    setAllFridges(fridgesData);
+                    await reloadMapFridges();
                     setShowDeleteAllCheckins(false);
                     // Принудительно обновляем страницу, чтобы карта точно обновилась и старые метки исчезли
                     setTimeout(() => {

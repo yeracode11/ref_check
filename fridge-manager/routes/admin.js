@@ -113,11 +113,24 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
     }
 
     const cacheScopeKey = JSON.stringify(fridgeQuery);
-    const [total, fridges, statsByFridgeId] = await Promise.all([
+    const statsScopeSuffix = shouldPaginate
+      ? `:p:${skipNum}:${limitNum ?? 'all'}`
+      : ':all';
+    const [total, fridges] = await Promise.all([
       Fridge.countDocuments(fridgeQuery),
       query.exec(),
-      getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, { useCache: true }),
     ]);
+    const statsByFridgeId = await getCheckinStatsForFridges(
+      fridges.map((f) => ({
+        _id: f._id,
+        code: f.code,
+        number: f.number,
+        clientInfo: f.clientInfo,
+        type: f.type,
+      })),
+      cacheScopeKey + statsScopeSuffix,
+      { useCache: true },
+    );
 
     const now = Date.now();
 
