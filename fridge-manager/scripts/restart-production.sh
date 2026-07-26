@@ -22,6 +22,15 @@ npm install --omit=dev
 echo "[restart] Syntax check..."
 node --check server.js
 
+if ! grep -q 'createCorsOriginChecker' "$APP_DIR/server.js"; then
+  echo "[restart] ERROR: server.js без lib/corsOrigins — выполните git pull в репозитории"
+  exit 1
+fi
+if [[ ! -f "$APP_DIR/lib/corsOrigins.js" ]]; then
+  echo "[restart] ERROR: отсутствует lib/corsOrigins.js — выполните git pull"
+  exit 1
+fi
+
 if pm2 describe fridge-manager >/dev/null 2>&1; then
   echo "[restart] Restarting PM2 process fridge-manager..."
   pm2 restart ecosystem.config.js --update-env
