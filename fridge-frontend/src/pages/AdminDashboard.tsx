@@ -76,6 +76,17 @@ function parseCheckinsApiResponse(raw: unknown): {
   return { list: arr, total: arr.length, distinctManagers: null };
 }
 
+const ADMIN_MAP_CITY_STORAGE_KEY = 'stellref_admin_map_city_id';
+
+function readStoredMapCityId(): string {
+  try {
+    const v = localStorage.getItem(ADMIN_MAP_CITY_STORAGE_KEY);
+    return v === 'all' || (v && v.length > 0) ? v : 'all';
+  } catch {
+    return 'all';
+  }
+}
+
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [fridges, setFridges] = useState<AdminFridge[]>([]); // Для списка (пагинация)
@@ -128,7 +139,7 @@ export default function AdminDashboard() {
   const [newFridge, setNewFridge] = useState({ name: '', address: '', description: '', cityId: '', number: '', clientInn: '' });
   const [creatingFridge, setCreatingFridge] = useState(false);
   const [cities, setCities] = useState<Array<{ _id: string; name: string; code: string }>>([]);
-  const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>(''); // '' → первый город после загрузки
+  const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>(() => readStoredMapCityId());
   const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<{
@@ -155,7 +166,14 @@ export default function AdminDashboard() {
         if (!alive) return;
         setCities(res.data);
         if (res.data.length > 0) {
-          setSelectedCityIdForMap((prev) => (prev ? prev : res.data[0]._id));
+          setSelectedCityIdForMap((prev) => {
+            if (prev === 'all') return 'all';
+            if (prev && res.data.some((c: { _id: string }) => c._id === prev)) return prev;
+            const stored = readStoredMapCityId();
+            if (stored === 'all') return 'all';
+            if (res.data.some((c: { _id: string }) => c._id === stored)) return stored;
+            return 'all';
+          });
           if (!newFridge.cityId) {
             setNewFridge(prev => ({ ...prev, cityId: res.data[0]._id }));
           }
@@ -1383,8 +1401,16 @@ export default function AdminDashboard() {
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Фильтр по городу:</label>
                 <select
-                  value={selectedCityIdForMap}
-                  onChange={(e) => setSelectedCityIdForMap(e.target.value)}
+                  value={selectedCityIdForMap || 'all'}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setSelectedCityIdForMap(next);
+                    try {
+                      localStorage.setItem(ADMIN_MAP_CITY_STORAGE_KEY, next);
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px] shadow-sm"
                 >
                   <option value="all">🌍 Все города</option>
