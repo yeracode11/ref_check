@@ -67,6 +67,46 @@ const router = express.Router();
 const WAREHOUSE_STATUS_ENUM = ['warehouse', 'installed', 'returned', 'moved'];
 const USER_ROLES = ['manager', 'accountant', 'admin', 'service_manager', 'sales_head'];
 
+// GET /api/admin/dashboard-summary — быстрые счётчики для шапки (без обхода всех ХО)
+router.get('/dashboard-summary', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
+  try {
+    let fridgeQuery = { active: true };
+    const scopedCityId = resolveCityFilter(req.user, req.query.cityId);
+    if (scopedCityId) {
+      fridgeQuery.cityId = scopedCityId;
+    }
+
+    let checkinMatch = {};
+    if (scopedCityId) {
+      const { getCheckinFilterForCity } = require('../lib/cityScope');
+      checkinMatch = await getCheckinFilterForCity(scopedCityId);
+    }
+
+    const [totalFridges, totalCheckins, managerGroups] = await Promise.all([
+      Fridge.countDocuments(fridgeQuery),
+      Object.keys(checkinMatch).length
+        ? Checkin.countDocuments(checkinMatch)
+        : Checkin.estimatedDocumentCount(),
+      Checkin.aggregate([
+        ...(Object.keys(checkinMatch).length ? [{ $match: checkinMatch }] : []),
+        { $group: { _id: '$managerId' } },
+        { $count: 'n' },
+      ]),
+    ]);
+
+    const distinctManagers = managerGroups[0]?.n ?? 0;
+
+    return res.json({
+      totalFridges,
+      totalCheckins,
+      distinctManagers,
+    });
+  } catch (err) {
+    console.error('[Admin] dashboard-summary:', err);
+    return res.status(500).json({ error: 'Failed to load dashboard summary', details: err.message });
+  }
+});
+
 router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
   try {
     const { limit, skip, all, warehouseStatus, search } = req.query;
@@ -2128,7 +2168,10 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
 
     const cacheScopeKey = JSON.stringify({ route: 'by-cities', ...fridgeQuery });
     const [fridges, statsByFridgeId] = await Promise.all([
-      Fridge.find(fridgeQuery).populate('cityId', 'name code').lean(),
+      Fridge.find(fridgeQuery)
+        .select('_id code number clientInfo.inn type cityId warehouseStatus')
+        .populate('cityId', 'name code')
+        .lean(),
       getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, { useCache: true }),
     ]);
 

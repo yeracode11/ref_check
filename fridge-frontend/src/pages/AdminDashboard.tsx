@@ -131,6 +131,15 @@ export default function AdminDashboard() {
   const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>(''); // '' → первый город после загрузки
   const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<{
+    totalFridges: number;
+    totalCheckins: number;
+    distinctManagers: number;
+  } | null>(null);
+  const cityStatsSectionRef = useRef<HTMLDivElement | null>(null);
+  const mapSectionRef = useRef<HTMLDivElement | null>(null);
+  const [cityStatsRequested, setCityStatsRequested] = useState(false);
+  const [mapDataRequested, setMapDataRequested] = useState(false);
   // Метки на карте отключены по требованию (показываем пустую карту)
   const observerTarget = useRef<HTMLDivElement | null>(null);
   const isCreatingRef = useRef(false); // Защита от двойного вызова
@@ -196,44 +205,79 @@ export default function AdminDashboard() {
     await loadAllFridgesForMap(cityId);
   }, [selectedCityIdForMap, cities, loadAllFridgesForMap]);
 
-  // Загрузка всех холодильников для карты
+  // Быстрые счётчики + последние отметки (не ждём карту)
   useEffect(() => {
-    if (!user || user.role !== 'admin') {
-      return;
-    }
-    if (!selectedCityIdForMap) {
-      return;
-    }
+    if (!user || user.role !== 'admin') return;
 
     let alive = true;
     (async () => {
       try {
-        await loadAllFridgesForMap(selectedCityIdForMap);
+        const [summaryRes, checkinsRes] = await Promise.all([
+          api.get('/api/admin/dashboard-summary', { timeout: 120000 }),
+          api.get(`/api/checkins?meta=1&limit=${ADMIN_CHECKINS_PREVIEW_LIMIT}`, { timeout: 120000 }),
+        ]);
         if (!alive) return;
-
-        api.get(`/api/checkins?meta=1&limit=${ADMIN_CHECKINS_PREVIEW_LIMIT}`)
-          .then((checkinsRes) => {
-            if (!alive) return;
-            const { list, total, distinctManagers } = parseCheckinsApiResponse(checkinsRes.data);
-            setCheckins(list);
-            setCheckinsTotal(total);
-            setCheckinsDistinctManagers(distinctManagers);
-          })
-          .catch((checkinsErr: any) => {
-            if (!alive) return;
-            console.error('[AdminDashboard] Error loading checkins:', checkinsErr);
-          });
-      } catch (e: any) {
-        if (!alive) return;
-        console.error('[AdminDashboard] Map load:', e);
+        setDashboardSummary(summaryRes.data);
+        const { list, total, distinctManagers } = parseCheckinsApiResponse(checkinsRes.data);
+        setCheckins(list);
+        setCheckinsTotal(total);
+        setCheckinsDistinctManagers(distinctManagers);
+      } catch (e) {
+        console.error('[AdminDashboard] summary/checkins:', e);
       }
     })();
 
+    return () => {
+      alive = false;
+    };
+  }, [user]);
+
+  // Карта — грузим, когда блок попадает в viewport (или через 2 с fallback)
+  useEffect(() => {
+    if (!user || user.role !== 'admin' || !selectedCityIdForMap) return;
+
+    let cancelled = false;
+    let observer: IntersectionObserver | null = null;
+    const startLoad = () => {
+      if (!cancelled) setMapDataRequested(true);
+    };
+
+    const fallback = window.setTimeout(startLoad, 2000);
+
+    const el = mapSectionRef.current;
+    if (el && typeof IntersectionObserver !== 'undefined') {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            startLoad();
+            observer?.disconnect();
+          }
+        },
+        { rootMargin: '200px' },
+      );
+      observer.observe(el);
+    } else {
+      startLoad();
+    }
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(fallback);
+      observer?.disconnect();
+    };
+  }, [user, selectedCityIdForMap]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'admin' || !selectedCityIdForMap || !mapDataRequested) return;
+
+    let alive = true;
+    loadAllFridgesForMap(selectedCityIdForMap).catch((e) => {
+      if (alive) console.error('[AdminDashboard] Map load:', e);
+    });
+
     const onFocus = () => {
-      if (selectedCityIdForMap) {
-        loadAllFridgesForMap(selectedCityIdForMap).catch((e) => {
-          console.error('[AdminDashboard] Map refresh failed:', e);
-        });
+      if (selectedCityIdForMap && mapDataRequested) {
+        loadAllFridgesForMap(selectedCityIdForMap).catch(() => {});
       }
     };
     window.addEventListener('focus', onFocus);
@@ -242,32 +286,55 @@ export default function AdminDashboard() {
       alive = false;
       window.removeEventListener('focus', onFocus);
     };
-  }, [user, loadAllFridgesForMap, selectedCityIdForMap]);
+  }, [user, loadAllFridgesForMap, selectedCityIdForMap, mapDataRequested]);
 
-  // Статистика по городам: для админа — из уже загруженной карты (без лишнего API)
+  // Таблица «по городам» — только когда секция видна
+  useEffect(() => {
+    if (!user || (user.role !== 'admin' && user.role !== 'accountant')) return;
+
+    const el = cityStatsSectionRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setCityStatsRequested(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setCityStatsRequested(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '120px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
+    if (!cityStatsRequested) return;
+    if (user.role !== 'admin' && user.role !== 'accountant') return;
 
-    if (user.role === 'admin' || user.role === 'accountant') {
-      let alive = true;
-      (async () => {
-        try {
-          setLoadingCityStats(true);
-          const res = await api.get('/api/admin/statistics/by-cities', { timeout: 300000 });
-          if (!alive) return;
-          setCityStatistics(res.data);
-        } catch (e: any) {
-          if (!alive) return;
-          console.error('Ошибка загрузки статистики по городам:', e);
-        } finally {
-          if (alive) setLoadingCityStats(false);
-        }
-      })();
-      return () => {
-        alive = false;
-      };
-    }
-  }, [user]);
+    let alive = true;
+    (async () => {
+      try {
+        setLoadingCityStats(true);
+        const res = await api.get('/api/admin/statistics/by-cities', { timeout: 600000 });
+        if (!alive) return;
+        setCityStatistics(res.data);
+      } catch (e: any) {
+        if (!alive) return;
+        console.error('Ошибка загрузки статистики по городам:', e);
+      } finally {
+        if (alive) setLoadingCityStats(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [user, cityStatsRequested]);
 
   // Загрузка холодильников для списка (с пагинацией)
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
@@ -750,24 +817,27 @@ export default function AdminDashboard() {
 
   const filteredFridges = fridges;
 
-  // Статистика по статусам
-  // Зеленые: свежие отметки (today/week)
-  const greenFridges = filteredAllFridges.filter((f) => 
-    f.status === 'today' || f.status === 'week'
-  ).length;
-  // Красные: старые отметки (old)
-  const redFridges = filteredAllFridges.filter((f) => 
-    f.status === 'old'
-  ).length;
-  // ВРЕМЕННО ОТКЛЮЧЕНО: Черные: перемещенные
-  // const blackFridges = filteredAllFridges.filter((f) => f.status === 'location_changed').length;
-  // Синие: нет отметок (на складе)
-  const blueFridges = filteredAllFridges.filter((f) => f.status === 'never').length;
-  // На складе: для информации
-  const warehouseFridges = filteredAllFridges.filter((f) => f.warehouseStatus === 'warehouse' || f.warehouseStatus === 'returned').length;
-  const totalCheckins = checkinsTotal ?? checkins.length;
+  const visitSummary = cityStatistics?.summary;
+  const displayTotalFridges =
+    visitSummary?.totalFridges ??
+    dashboardSummary?.totalFridges ??
+    totalFridges ??
+    0;
+  const greenFridges =
+    visitSummary?.totalFresh ??
+    filteredAllFridges.filter((f) => f.status === 'today' || f.status === 'week').length;
+  const redFridges =
+    visitSummary?.totalOld ??
+    filteredAllFridges.filter((f) => f.status === 'old').length;
+  const blueFridges =
+    visitSummary?.totalNever ??
+    filteredAllFridges.filter((f) => f.status === 'never').length;
+  const totalCheckins =
+    dashboardSummary?.totalCheckins ?? checkinsTotal ?? checkins.length;
   const uniqueManagers =
-    checkinsDistinctManagers ?? new Set(checkins.map((c) => c.managerId)).size;
+    dashboardSummary?.distinctManagers ??
+    checkinsDistinctManagers ??
+    new Set(checkins.map((c) => c.managerId)).size;
 
   const recentCheckins = checkins.slice(0, ADMIN_CHECKINS_PREVIEW_LIMIT);
 
@@ -898,7 +968,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <p className="text-sm text-slate-500">Всего холодильников</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{allFridges.length}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{displayTotalFridges.toLocaleString('ru-RU')}</p>
           <div className="text-xs text-slate-500 mt-2 flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Свежие отметки: {greenFridges}
@@ -917,7 +987,7 @@ export default function AdminDashboard() {
         </Card>
         <Card>
           <p className="text-sm text-slate-500">Всего отметок</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{totalCheckins}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{totalCheckins.toLocaleString('ru-RU')}</p>
           {checkinsTotal != null && checkinsTotal > checkins.length ? (
             <p className="text-xs text-slate-400 mt-1">
               В блоке «Последние отметки» — {checkins.length} из {checkinsTotal}
@@ -936,7 +1006,8 @@ export default function AdminDashboard() {
       </div>
 
       {/* Статистика по городам */}
-      {cityStatistics && (
+      <div ref={cityStatsSectionRef}>
+      {(cityStatistics || loadingCityStats || cityStatsRequested) && (
         <Card>
           <h2 className="text-lg font-semibold text-slate-900 mb-4">
             📊 Статистика по городам
@@ -945,7 +1016,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-center py-8">
               <LoadingSpinner />
             </div>
-          ) : cityStatistics.cities && cityStatistics.cities.length > 0 ? (
+          ) : cityStatistics?.cities && cityStatistics.cities.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -1037,6 +1108,7 @@ export default function AdminDashboard() {
           )}
         </Card>
       )}
+      </div>
 
       {/* Recent checkins */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1295,6 +1367,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Карта холодильников */}
+      <div ref={mapSectionRef}>
       <Card>
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h2 className="font-semibold text-slate-900">
@@ -1376,6 +1449,7 @@ export default function AdminDashboard() {
           <AdminFridgeMap fridges={fridgesForMap} />
         )}
       </Card>
+      </div>
 
       {/* Аналитика */}
       <AnalyticsPanel cities={cities} lazy />
