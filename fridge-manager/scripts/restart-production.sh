@@ -13,6 +13,12 @@ else
   echo "[restart] WARNING: scripts/ensure-mongodb.sh not found — проверьте, что mongod запущен"
 fi
 
+if [[ -f "$APP_DIR/scripts/sync-mongodb-user-from-env.js" ]]; then
+  if ! node "$APP_DIR/scripts/sync-mongodb-user-from-env.js" 2>/dev/null; then
+    echo "[restart] NOTE: sync MongoDB user skipped or failed (run: node scripts/sync-mongodb-user-from-env.js)"
+  fi
+fi
+
 if [[ ! -f "$APP_DIR/server.js" ]]; then
   echo "[restart] ERROR: server.js not found in $APP_DIR"
   exit 1

@@ -86,10 +86,28 @@ else
   fi
 fi
 
-if systemctl is-active --quiet mongod; then
-  echo "[recover] mongod: active"
+bash "$SCRIPT_DIR/sync-mongodb-user-from-env.sh" || {
+  echo "[recover] WARNING: не удалось синхронизировать пользователя Mongo — см. scripts/sync-mongodb-user-from-env.sh"
+}
+
+mongo_running() {
+  if command -v mongosh >/dev/null 2>&1; then
+    mongosh --quiet "mongodb://127.0.0.1:27017/admin" --eval 'db.runCommand({ping:1}).ok' 2>/dev/null | grep -q '^1$'
+    return $?
+  fi
+  (echo >/dev/tcp/127.0.0.1/27017) 2>/dev/null
+}
+
+if mongo_running; then
+  echo "[recover] MongoDB отвечает на 127.0.0.1:27017"
+elif systemctl list-unit-files mongod.service 2>/dev/null | grep -q mongod.service; then
+  systemctl start mongod || true
+  sleep 2
+  mongo_running || echo "[recover] WARNING: mongod unit exists but ping failed"
+elif docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^(fridge-mongodb|mongo)$'; then
+  echo "[recover] MongoDB в Docker — OK"
 else
-  systemctl start mongod
+  echo "[recover] WARNING: MongoDB не ping. Проверьте: systemctl status mongod || docker ps"
 fi
 
 echo ""
