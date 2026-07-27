@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Установка MongoDB Community на Ubuntu (22.04 jammy / 24.04 noble).
-# Для VPS 4 GB задаёт wiredTiger cache ~1.25 GB.
+# Для VPS 4 GB задаёт wiredTiger cache (по умолчанию 1 GB — после OOM mongod ~2.8 GB RSS).
+# На 4 GB: MONGO_CACHE_GB=1 sudo bash scripts/install-mongodb-ubuntu.sh
 #
 # Использование (на сервере root):
 #   bash scripts/install-mongodb-ubuntu.sh
@@ -11,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/../.env}"
 MONGO_VERSION="${MONGO_VERSION:-7.0}"
-CACHE_GB="${MONGO_CACHE_GB:-1.25}"
+CACHE_GB="${MONGO_CACHE_GB:-1}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "[install-mongo] Запустите от root: sudo bash scripts/install-mongodb-ubuntu.sh"
