@@ -62,7 +62,8 @@ for f in /etc/apt/trusted.gpg.d/mongodb*.gpg; do
 done
 
 KEYRING="/usr/share/keyrings/mongodb-server-${MONGO_VERSION}.gpg"
-curl -fsSL "https://www.mongodb.org/static/pgp/server-${MONGO_VERSION}.asc" | gpg --dearmor -o "$KEYRING"
+rm -f "$KEYRING"
+curl -fsSL "https://www.mongodb.org/static/pgp/server-${MONGO_VERSION}.asc" | gpg --dearmor --yes -o "$KEYRING"
 
 LIST="/etc/apt/sources.list.d/mongodb-org-${MONGO_VERSION}.list"
 echo "deb [ arch=amd64,arm64 signed-by=${KEYRING} ] https://repo.mongodb.org/apt/ubuntu ${UBUNTU_CODENAME}/mongodb-org/${MONGO_VERSION} multiverse" >"$LIST"
