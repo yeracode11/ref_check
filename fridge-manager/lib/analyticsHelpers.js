@@ -7,6 +7,7 @@ const {
   calendarDaysFromVisitToNow,
   parseVisitTimeMs,
   DEFAULT_VISIT_TIMEZONE,
+  formatVisitDateTimeRu,
 } = require('./fridgeVisitHelpers');
 
 const FRIDGE_TYPE_LABELS = {
@@ -22,15 +23,7 @@ const EQUIPMENT_LABELS = {
 };
 
 function formatExportDateTime(value) {
-  if (!value) return '';
-  return new Date(value).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: DEFAULT_VISIT_TIMEZONE,
-  });
+  return formatVisitDateTimeRu(value);
 }
 
 function visitStatusLabel(mapSt) {

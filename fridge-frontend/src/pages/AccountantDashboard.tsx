@@ -127,7 +127,7 @@ export default function AccountantDashboard() {
       // Можно добавить опцию для пользователя, но пока отключаем для скорости
       const response = await api.get('/api/admin/export-fridges?geocode=false', {
         responseType: 'blob',
-        timeout: 600000,
+        timeout: 900000,
       });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));

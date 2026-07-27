@@ -468,15 +468,13 @@ export default function AdminDashboard() {
     };
   }, [hasMore, loadingMore, loading, fridges.length, loadFridges]);
 
-  // Функция для экспорта холодильников в Excel
+  // Экспорт: админ — всегда все города (фильтр карты не влияет)
   const handleExportExcel = async () => {
     try {
       setExporting(true);
-      // Для больших объемов отключаем геокодирование (быстрее)
-      // Можно добавить опцию для пользователя, но пока отключаем для скорости
       const response = await api.get('/api/admin/export-fridges?geocode=false', {
         responseType: 'blob',
-        timeout: 600000,
+        timeout: 900000,
       });
       
       // Создаем ссылку для скачивания
@@ -501,7 +499,15 @@ export default function AdminDashboard() {
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
       console.error('Ошибка экспорта:', e);
-      alert('Ошибка при экспорте файла: ' + (e?.message || 'Неизвестная ошибка'));
+      const isTimeout =
+        e?.code === 'ECONNABORTED' ||
+        e?.message?.includes('timeout') ||
+        e?.response?.status === 504;
+      alert(
+        isTimeout
+          ? 'Экспорт не успел завершиться (таймаут). Отчёт по всем городам может идти до 15 минут — проверьте nginx: proxy_read_timeout 900s; и дождитесь завершения.'
+          : `Ошибка при экспорте файла: ${e?.message || 'Неизвестная ошибка'}`,
+      );
     } finally {
       setExporting(false);
     }

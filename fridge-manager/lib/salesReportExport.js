@@ -117,8 +117,9 @@ async function countBrokenCheckinsByFridge(fridges, checkinIdList) {
   }
 
   // Legacy отметки без fridgeRef (редко после backfill)
+  const skipLegacy = process.env.EXPORT_SKIP_LEGACY_BROKEN !== 'false';
   const expandedIds = expandCheckinFridgeIdsForInQuery(checkinIdList);
-  if (expandedIds.length) {
+  if (!skipLegacy && expandedIds.length) {
     const legacyRows = await Checkin.find({
       fridgeCondition: 'broken',
       $or: [{ fridgeRef: null }, { fridgeRef: { $exists: false } }],
@@ -150,23 +151,29 @@ async function countBrokenCheckinsByFridge(fridges, checkinIdList) {
 async function loadFullExportContext(user, query, opts = {}) {
   const fridgeFilter = buildFridgeQuery(user, query, opts);
   const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').lean();
-  const statsByFridgeId = await getCheckinStatsForFridges(
-    fridges.map((f) => ({
-      _id: f._id,
-      code: f.code,
-      number: f.number,
-      clientInfo: f.clientInfo,
-      type: f.type,
-    })),
-    JSON.stringify({ export: 'full', ...fridgeFilter }),
-    { useCache: true },
-  );
 
   const checkinIdSet = new Set();
   fridges.forEach((f) => {
     buildCheckinFridgeIdCandidates(f).forEach((id) => checkinIdSet.add(id));
   });
-  const brokenByFridgeId = await countBrokenCheckinsByFridge(fridges, [...checkinIdSet]);
+  const checkinIdList = [...checkinIdSet];
+
+  const statsPayload = fridges.map((f) => ({
+    _id: f._id,
+    code: f.code,
+    number: f.number,
+    clientInfo: f.clientInfo,
+    type: f.type,
+  }));
+
+  const [statsByFridgeId, brokenByFridgeId] = await Promise.all([
+    getCheckinStatsForFridges(
+      statsPayload,
+      JSON.stringify({ export: 'full', ...fridgeFilter }),
+      { useCache: true },
+    ),
+    countBrokenCheckinsByFridge(fridges, checkinIdList),
+  ]);
 
   return { fridges, statsByFridgeId, brokenByFridgeId, fridgeFilter };
 }
@@ -229,31 +236,16 @@ async function fetchRepairSheetRows(user, query, opts = {}, repairScope = {}) {
 
   if (!fridgeIds.length) return [];
 
-  const repairs = await Repair.aggregate([
-    { $match: { fridgeId: { $in: fridgeIds } } },
-    { $sort: { repairDate: -1 } },
-    { $limit: Math.max(1, maxRows) },
-    {
-      $lookup: {
-        from: 'fridges',
-        localField: 'fridgeId',
-        foreignField: '_id',
-        as: 'fridge',
-      },
-    },
-    { $unwind: { path: '$fridge', preserveNullAndEmptyArrays: true } },
-    {
-      $lookup: {
-        from: 'users',
-        localField: 'technicianId',
-        foreignField: '_id',
-        as: 'technician',
-      },
-    },
-    { $unwind: { path: '$technician', preserveNullAndEmptyArrays: true } },
-  ]);
+  const repairDocs = await Repair.find({ fridgeId: { $in: fridgeIds } })
+    .sort({ repairDate: -1 })
+    .limit(Math.max(1, maxRows))
+    .populate('fridgeId', 'code number address')
+    .populate('technicianId', 'fullName username')
+    .lean();
 
-  return repairs.map((r) => {
+  return repairDocs.map((r) => {
+    const fridge = r.fridgeId;
+    const technician = r.technicianId;
     const workLabels = labelsFromCompletedWorks(r.completedWorks);
     const partsList = workLabels.length
       ? workLabels.join(', ')
@@ -269,11 +261,15 @@ async function fetchRepairSheetRows(user, query, opts = {}, repairScope = {}) {
         minute: '2-digit',
         timeZone: 'Asia/Almaty',
       }) : '',
-      'ID Холодильника': r.fridge ? getFridgeDisplayId(r.fridge) : String(r.fridgeId),
-      'Адрес точки': r.fridge?.address || '',
+      'ID Холодильника': fridge && typeof fridge === 'object'
+        ? getFridgeDisplayId(fridge)
+        : String(r.fridgeId),
+      'Адрес точки': (fridge && typeof fridge === 'object' ? fridge.address : '') || '',
       'Вид выполненных работ': r.workType || '',
       'Перечень замененных деталей': partsList,
-      'Ответственный сотрудник МХО': r.technician?.fullName || r.technician?.username || '',
+      'Ответственный сотрудник МХО': technician && typeof technician === 'object'
+        ? (technician.fullName || technician.username || '')
+        : '',
       'Комментарий МХО': r.comment || '',
       'Сложный ремонт': complex ? 'Да' : 'Нет',
       _isComplexRepair: complex,

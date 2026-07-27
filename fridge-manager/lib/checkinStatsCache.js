@@ -32,13 +32,8 @@ function mergeStatsEntry(existing, visitAt, condition, addCount = 1) {
   };
 }
 
-function mergeBucketIntoMap(statsByKey, docKey, candidates, bucket) {
-  statsByKey.set(docKey, bucket);
-  for (const id of candidates) {
-    statsByKey.set(String(id).trim(), bucket);
-    const n = Number(id);
-    if (Number.isFinite(n)) statsByKey.set(n, bucket);
-  }
+function mergeBucketIntoMap(statsByKey, docKey, _candidates, bucket) {
+  statsByKey.set(String(docKey), bucket);
 }
 
 /**
@@ -155,7 +150,9 @@ async function getCheckinStatsForFridges(fridgeLikeDocs, cacheScopeKey, opts = {
   const fridgeObjectIds = fridgeDocs.map((f) => f._id);
   const [byRef, legacyByFridgeId] = await Promise.all([
     aggregateStatsByFridgeRef(fridgeObjectIds),
-    aggregateLegacyStatsByFridgeId(),
+    process.env.CHECKIN_STATS_USE_LEGACY === 'true'
+      ? aggregateLegacyStatsByFridgeId()
+      : Promise.resolve(new Map()),
   ]);
 
   const statsByKey = new Map();
@@ -169,7 +166,9 @@ async function getCheckinStatsForFridges(fridgeLikeDocs, cacheScopeKey, opts = {
       totalCheckins: 0,
     };
 
-    const legacyBucket = pickLegacyBucket(legacyByFridgeId, candidates);
+    const legacyBucket = process.env.CHECKIN_STATS_USE_LEGACY === 'true'
+      ? pickLegacyBucket(legacyByFridgeId, candidates)
+      : null;
     if (legacyBucket) {
       bucket = mergeStatsEntry(
         bucket,

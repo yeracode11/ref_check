@@ -4,6 +4,7 @@ const Fridge = require('../models/Fridge');
 const {
   combinedVisitMapStatus,
   getLastVisitFromStatsMap,
+  formatVisitDateTimeRu,
 } = require('./fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
 const { resolveCityFilter } = require('./cityScope');
@@ -62,16 +63,7 @@ function buildExportFridgeFilter(user, query = {}, opts = {}) {
 }
 
 function formatLastVisitLocal(lastVisit) {
-  if (!lastVisit) return '';
-  const date = new Date(lastVisit);
-  const localTime = new Date(date.getTime() + 5 * 60 * 60 * 1000);
-  return localTime.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatVisitDateTimeRu(lastVisit);
 }
 
 async function createReverseGeocoder(enableGeocoding) {

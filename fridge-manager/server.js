@@ -168,7 +168,7 @@ async function start() {
     });
     
     // Увеличиваем таймауты для длительных операций (импорт больших файлов)
-    server.timeout = 600000; // 10 минут
+    server.timeout = 900000; // 15 минут (экспорт / импорт)
     server.keepAliveTimeout = 65000; // 65 секунд
     server.headersTimeout = 66000; // 66 секунд (должен быть больше keepAliveTimeout)
   } catch (err) {

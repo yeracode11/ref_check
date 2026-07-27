@@ -270,19 +270,17 @@ function mergeCheckinStatsAggregationIntoMap(rows) {
 }
 
 /**
- * statsMap: ключ — точное значение checkins.fridgeId (после trim), значение — { lastVisit, totalCheckins? }
+ * statsMap: ключ — String(Fridge._id); значение — { lastVisit, totalCheckins?, ... }
  */
 function getLastVisitFromStatsMap(statsByFridgeId, fridgeLike) {
-  if (fridgeLike?._id) {
+  if (fridgeLike?._id != null) {
     const byDoc = statsByFridgeId.get(String(fridgeLike._id));
-    if (byDoc) {
-      return {
-        lastVisit: byDoc.lastVisit ?? null,
-        lastVisitTime: parseVisitTimeMs(byDoc.lastVisit),
-        lastFridgeCondition: byDoc.lastFridgeCondition ?? null,
-        totalCheckins: byDoc.totalCheckins || 0,
-      };
-    }
+    return {
+      lastVisit: byDoc?.lastVisit ?? null,
+      lastVisitTime: parseVisitTimeMs(byDoc?.lastVisit),
+      lastFridgeCondition: byDoc?.lastFridgeCondition ?? null,
+      totalCheckins: byDoc?.totalCheckins || 0,
+    };
   }
 
   const candidateIds = buildCheckinFridgeIdCandidates(fridgeLike);
@@ -316,6 +314,18 @@ function resolveEquipmentStatus(fridgeStatus, lastFridgeCondition) {
   return status;
 }
 
+function formatVisitDateTimeRu(value, timeZone = DEFAULT_VISIT_TIMEZONE) {
+  if (!value) return '';
+  return new Date(value).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone,
+  });
+}
+
 module.exports = {
   buildCheckinFridgeIdCandidates,
   expandCheckinFridgeIdsForInQuery,
@@ -338,4 +348,5 @@ module.exports = {
   shouldIncludeInUnvisitedReport,
   shouldCountAsWithoutCheckinsInPeriod,
   shouldCountAsNeverVisited,
+  formatVisitDateTimeRu,
 };

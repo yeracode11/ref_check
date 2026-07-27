@@ -31,6 +31,7 @@ const {
 const { getAssignedCityId, resolveCityFilter, userCanAccessFridge } = require('../lib/cityScope');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const { buildMapLocationFilter, isMapMarkersRequest } = require('../lib/mapFridgeQuery');
+const { attachLongRunningTimeouts } = require('../lib/longRunningHttp');
 const XLSX = require('xlsx');
 
 // Настройка multer для загрузки Excel
@@ -293,7 +294,12 @@ router.get('/export-sales-report', authenticateToken, requireSalesHead, async (r
 // GET /api/admin/export-fridges
 // Полный Excel: холодильники + состояние фонда + ремонты + отметки ТП
 // Доступно админам, бухгалтерам и НОП (по своему городу)
-router.get('/export-fridges', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
+router.get(
+  '/export-fridges',
+  authenticateToken,
+  requireAdminOrAccountantOrSalesHead,
+  attachLongRunningTimeouts(),
+  async (req, res) => {
   try {
     if (req.user.role === 'sales_head' && !getAssignedCityId(req.user)) {
       return res.status(403).json({
@@ -302,7 +308,10 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountantOrSales
     }
 
     const enableGeocoding = req.query.geocode !== 'false';
-    const { cityId, equipmentStatus, search } = req.query;
+    let { cityId, equipmentStatus, search } = req.query;
+    if (req.user.role === 'admin') {
+      cityId = undefined;
+    }
 
     let cityName = '';
     const scopedCityId = resolveCityFilter(req.user, cityId);
@@ -331,7 +340,8 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountantOrSales
       .status(500)
       .json({ error: 'Failed to export fridges', details: err.message });
   }
-});
+},
+);
 
 // POST /api/admin/import-fridges
 // Импорт холодильников из Excel файла (доступен для админов и бухгалтеров)
