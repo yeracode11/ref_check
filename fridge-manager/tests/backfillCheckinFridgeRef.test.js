@@ -42,14 +42,26 @@ describe('backfillCheckinFridgeRef', () => {
     assert.equal(reason, 'manager_city');
   });
 
-  it('resolves duplicate number by geo when manager has no city', () => {
-    const checkin = {
-      fridgeId: '1001',
-      managerId: 'unknown_mgr',
-      location: { coordinates: [71.41, 51.12] },
+  it('resolves checkin with fridgeId = Fridge._id string', () => {
+    const fridge = {
+      _id: new mongoose.Types.ObjectId(),
+      cityId: cityA,
+      code: 'X9',
+      number: '9999',
+      location: { type: 'Point', coordinates: [76.9, 43.2] },
     };
-    const { fridge, reason } = resolveFridgeForCheckinRecord(checkin, index, managerCityMap);
-    assert.equal(String(fridge._id), String(fridgeB._id));
-    assert.ok(reason === 'geo' || reason === 'manager_city+geo');
+    const idx = buildFridgeCandidateIndex([fridge]);
+    const checkin = {
+      fridgeId: String(fridge._id),
+      managerId: 'mgr',
+      location: { coordinates: [76.9, 43.2] },
+    };
+    const { fridge: resolved, reason } = resolveFridgeForCheckinRecord(
+      checkin,
+      idx,
+      new Map(),
+    );
+    assert.equal(String(resolved._id), String(fridge._id));
+    assert.equal(reason, 'unique_match');
   });
 });

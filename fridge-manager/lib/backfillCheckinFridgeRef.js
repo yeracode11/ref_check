@@ -12,7 +12,11 @@ function buildFridgeCandidateIndex(fridges) {
   const index = new Map();
 
   for (const fridge of fridges) {
-    for (const candidate of buildCheckinFridgeIdCandidates(fridge)) {
+    const idKeys = [
+      ...buildCheckinFridgeIdCandidates(fridge),
+      String(fridge._id),
+    ];
+    for (const candidate of idKeys) {
       const key = normalizeFridgeIdForCompare(candidate);
       if (!key) continue;
       if (!index.has(key)) index.set(key, []);

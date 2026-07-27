@@ -83,8 +83,8 @@ async function main() {
 
   try {
     const [fridges, users] = await Promise.all([
-      Fridge.find({ active: { $ne: false } })
-        .select('_id code number clientInfo.inn cityId location')
+      Fridge.find({})
+        .select('_id code number clientInfo.inn cityId location active')
         .lean(),
       User.find({ role: { $in: ['manager', 'admin', 'service_manager'] } })
         .select('username cityId role')
