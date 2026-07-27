@@ -57,7 +57,10 @@ pick_archive() {
 echo "[recover] === MongoDB recovery (OOM-safe cache ${MONGO_CACHE_GB} GB) ==="
 echo "[recover] Причина простоя: ядро убило mongod (Out of memory). См. dmesg."
 
-bash "$SCRIPT_DIR/install-mongodb-ubuntu.sh"
+if ! bash "$SCRIPT_DIR/install-mongodb-ubuntu.sh"; then
+  echo "[recover] apt install failed — пробуем Docker..."
+  bash "$SCRIPT_DIR/install-mongodb-docker.sh"
+fi
 
 read_uri_from_env
 ARCHIVE="$(pick_archive)"
