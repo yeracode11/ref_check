@@ -186,26 +186,47 @@ export default function AdminDashboard() {
     return () => { alive = false; };
   }, [user]);
 
-  const loadAllFridgesForMap = useCallback(async (cityId: string) => {
+  const loadAllFridgesForMap = useCallback(async (cityId: string, cityList: typeof cities) => {
     if (!user || user.role !== 'admin') return;
     if (!cityId) return;
 
-    const params = new URLSearchParams({ all: 'true' });
-    if (cityId !== 'all') {
-      params.set('cityId', cityId);
-    }
-    const timeoutMs = cityId === 'all' ? 600000 : 180000;
+    const mapParams = (cid?: string) => {
+      const params = new URLSearchParams({ all: 'true', map: '1' });
+      if (cid && cid !== 'all') params.set('cityId', cid);
+      return params;
+    };
 
     setMapLoading(true);
     setMapError(null);
     try {
-      const fridgeStatusRes = await api.get(`/api/admin/fridge-status?${params.toString()}`, {
-        timeout: timeoutMs,
-      });
-      const fridgesData = Array.isArray(fridgeStatusRes.data)
-        ? fridgeStatusRes.data
-        : (fridgeStatusRes.data?.data || []);
-      setAllFridges(fridgesData);
+      const parseRows = (data: unknown): AdminFridge[] =>
+        Array.isArray(data) ? data : ((data as { data?: AdminFridge[] })?.data || []);
+
+      if (cityId === 'all' && cityList.length > 0) {
+        const merged: AdminFridge[] = [];
+        const chunkSize = 3;
+        for (let i = 0; i < cityList.length; i += chunkSize) {
+          const chunk = cityList.slice(i, i + chunkSize);
+          const responses = await Promise.all(
+            chunk.map((c) =>
+              api.get(`/api/admin/fridge-status?${mapParams(c._id).toString()}`, {
+                timeout: 300000,
+              }),
+            ),
+          );
+          for (const res of responses) {
+            merged.push(...parseRows(res.data));
+          }
+          setAllFridges([...merged]);
+        }
+      } else {
+        const timeoutMs = cityId === 'all' ? 600000 : 180000;
+        const fridgeStatusRes = await api.get(
+          `/api/admin/fridge-status?${mapParams(cityId === 'all' ? undefined : cityId).toString()}`,
+          { timeout: timeoutMs },
+        );
+        setAllFridges(parseRows(fridgeStatusRes.data));
+      }
     } catch (e: any) {
       console.error('[AdminDashboard] Map data load failed:', e);
       const msg =
@@ -219,8 +240,8 @@ export default function AdminDashboard() {
   }, [user]);
 
   const reloadMapFridges = useCallback(async () => {
-    const cityId = selectedCityIdForMap || cities[0]?._id || 'all';
-    await loadAllFridgesForMap(cityId);
+    const cityId = selectedCityIdForMap || 'all';
+    await loadAllFridgesForMap(cityId, cities);
   }, [selectedCityIdForMap, cities, loadAllFridgesForMap]);
 
   // Быстрые счётчики + последние отметки (не ждём карту)
@@ -289,13 +310,13 @@ export default function AdminDashboard() {
     if (!user || user.role !== 'admin' || !selectedCityIdForMap || !mapDataRequested) return;
 
     let alive = true;
-    loadAllFridgesForMap(selectedCityIdForMap).catch((e) => {
+    loadAllFridgesForMap(selectedCityIdForMap, cities).catch((e) => {
       if (alive) console.error('[AdminDashboard] Map load:', e);
     });
 
     const onFocus = () => {
       if (selectedCityIdForMap && mapDataRequested) {
-        loadAllFridgesForMap(selectedCityIdForMap).catch(() => {});
+        loadAllFridgesForMap(selectedCityIdForMap, cities).catch(() => {});
       }
     };
     window.addEventListener('focus', onFocus);
@@ -304,7 +325,7 @@ export default function AdminDashboard() {
       alive = false;
       window.removeEventListener('focus', onFocus);
     };
-  }, [user, loadAllFridgesForMap, selectedCityIdForMap, mapDataRequested]);
+  }, [user, loadAllFridgesForMap, selectedCityIdForMap, mapDataRequested, cities]);
 
   // Таблица «по городам» — только когда секция видна
   useEffect(() => {

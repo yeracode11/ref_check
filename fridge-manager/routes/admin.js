@@ -30,6 +30,7 @@ const {
 } = require('../lib/salesReportExport');
 const { getAssignedCityId, resolveCityFilter, userCanAccessFridge } = require('../lib/cityScope');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
+const { buildMapLocationFilter, isMapMarkersRequest } = require('../lib/mapFridgeQuery');
 const XLSX = require('xlsx');
 
 // Настройка multer для загрузки Excel
@@ -110,6 +111,7 @@ router.get('/dashboard-summary', authenticateToken, requireAdminOrAccountantOrSa
 router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
   try {
     const { limit, skip, all, warehouseStatus, search } = req.query;
+    const forMap = all === 'true' && isMapMarkersRequest(req.query);
     
     // Если all=true, возвращаем все холодильники (для карты)
     const shouldPaginate = all !== 'true';
@@ -144,18 +146,26 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
       }
     }
 
-    let query = Fridge.find(fridgeQuery)
-      .populate('cityId', 'name code')
-      .sort({ createdAt: -1 })
-      .lean();
+    if (forMap) {
+      Object.assign(fridgeQuery, buildMapLocationFilter());
+    }
+
+    let query = Fridge.find(fridgeQuery);
+    if (forMap) {
+      query = query.select('_id code name address location warehouseStatus status type').lean();
+    } else {
+      query = query.populate('cityId', 'name code').sort({ createdAt: -1 }).lean();
+    }
     if (shouldPaginate && limitNum) {
       query = query.limit(limitNum).skip(skipNum);
     }
 
-    const cacheScopeKey = JSON.stringify(fridgeQuery);
+    const cacheScopeKey = JSON.stringify({ ...fridgeQuery, forMap: !!forMap });
     const statsScopeSuffix = shouldPaginate
       ? `:p:${skipNum}:${limitNum ?? 'all'}`
-      : ':all';
+      : forMap
+        ? ':map'
+        : ':all';
     const [total, fridges] = await Promise.all([
       Fridge.countDocuments(fridgeQuery),
       query.exec(),
@@ -191,6 +201,20 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
         fridgeType: f.type,
       });
       const finalStatus = status === 'location_changed' ? (visitStatus || 'never') : status;
+
+      if (forMap) {
+        return {
+          id: f._id,
+          code: f.code,
+          name: f.name,
+          address: f.address,
+          location: f.location,
+          status: finalStatus,
+          warehouseStatus,
+          visitStatus,
+          equipmentStatus: resolveEquipmentStatus(f.status, lastFridgeCondition),
+        };
+      }
 
       return {
         id: f._id,
