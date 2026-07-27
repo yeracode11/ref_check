@@ -1369,7 +1369,7 @@ export default function AdminDashboard() {
       {/* Карта холодильников */}
       <div ref={mapSectionRef}>
       <Card>
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="mb-4 space-y-3">
           <h2 className="font-semibold text-slate-900">
             Карта холодильников
             {selectedCityIdForMap !== 'all' && (
@@ -1378,63 +1378,65 @@ export default function AdminDashboard() {
               </span>
             )}
           </h2>
-            <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Фильтр по городу:</label>
-              <select
-                value={selectedCityIdForMap}
-                onChange={(e) => setSelectedCityIdForMap(e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px] shadow-sm"
-              >
-                <option value="all">🌍 Все города</option>
-                {cities.map((city) => (
-                  <option key={city._id} value={city._id}>
-                    {city.name}
-                  </option>
-                ))}
-              </select>
+          <div className="flex flex-col items-start gap-3 w-full">
+            <div className="flex flex-wrap items-center justify-start gap-3">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Фильтр по городу:</label>
+                <select
+                  value={selectedCityIdForMap}
+                  onChange={(e) => setSelectedCityIdForMap(e.target.value)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px] shadow-sm"
+                >
+                  <option value="all">🌍 Все города</option>
+                  {cities.map((city) => (
+                    <option key={city._id} value={city._id}>
+                      {city.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedCityIdForMap !== 'all' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={geocodingMap}
+                    onClick={() => runGeocodeForCity('zero_only')}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                    title="Только точки с координатами 0,0"
+                  >
+                    {geocodingMap ? '…' : 'Координаты по адресу (только 0,0)'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={geocodingMap}
+                    onClick={() => runGeocodeForCity('all_with_address')}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-500 bg-amber-100 text-amber-950 hover:bg-amber-200 disabled:opacity-50"
+                    title="Перезаписать координаты по адресу для всех с заполненным адресом"
+                  >
+                    {geocodingMap ? '…' : 'Перезаписать все по адресу'}
+                  </button>
+                </div>
+              )}
+              {(checkinsTotal ?? checkins.length) > 0 && (
+                <button
+                  onClick={() => setShowDeleteAllCheckins(true)}
+                  className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium shadow-sm flex items-center gap-2"
+                  title="Удалить все отметки и очистить карту"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Очистить все отметки
+                </button>
+              )}
             </div>
             {mapLoading && (
-              <p className="text-sm text-slate-500 w-full">Загрузка карты…</p>
+              <p className="text-sm text-slate-500">Загрузка карты…</p>
             )}
             {mapError && (
-              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 w-full">
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 max-w-2xl">
                 {mapError}
               </p>
-            )}
-            {selectedCityIdForMap !== 'all' && (
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={geocodingMap}
-                  onClick={() => runGeocodeForCity('zero_only')}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-                  title="Только точки с координатами 0,0"
-                >
-                  {geocodingMap ? '…' : 'Координаты по адресу (только 0,0)'}
-                </button>
-                <button
-                  type="button"
-                  disabled={geocodingMap}
-                  onClick={() => runGeocodeForCity('all_with_address')}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-500 bg-amber-100 text-amber-950 hover:bg-amber-200 disabled:opacity-50"
-                  title="Перезаписать координаты по адресу для всех с заполненным адресом"
-                >
-                  {geocodingMap ? '…' : 'Перезаписать все по адресу'}
-                </button>
-              </div>
-            )}
-            {(checkinsTotal ?? checkins.length) > 0 && (
-              <button
-                onClick={() => setShowDeleteAllCheckins(true)}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium shadow-sm flex items-center gap-2"
-                title="Удалить все отметки и очистить карту"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                Очистить все отметки
-              </button>
             )}
           </div>
         </div>
