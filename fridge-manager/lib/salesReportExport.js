@@ -6,9 +6,11 @@ const {
   buildCheckinFridgeIdCandidates,
   expandCheckinFridgeIdsForInQuery,
   getLastVisitFromStatsMap,
+  combinedVisitMapStatus,
 } = require('./fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
-const { resolveCityFilter, getCheckinFilterForCity } = require('./cityScope');
+const { resolveCityFilter } = require('./cityScope');
+const { buildVisitCategoryExportRows } = require('./analyticsHelpers');
 const { buildCaseInsensitiveRegex } = require('./stringHelpers');
 const {
   fetchFridgeListSheetRows,
@@ -29,6 +31,13 @@ const EQUIPMENT_STATUS_LABELS = {
   broken: 'Сломан (broken)',
   under_repair: 'На ремонте (under_repair)',
 };
+
+/** Максимум строк на листе «История ремонтов» (весь охват отчёта). */
+const REPAIR_EXPORT_MAX_ROWS = parseInt(process.env.EXPORT_REPAIR_MAX_ROWS || '5000', 10);
+/** Последние отметки ТП на листе «Отметки ТП» (не вся история). */
+const CHECKIN_SUMMARY_MAX_ROWS = parseInt(process.env.EXPORT_CHECKIN_MAX_ROWS || '5000', 10);
+const CHECKIN_SUMMARY_SELECT =
+  'visitedAt fridgeId fridgeRef managerId fridgeCondition isSeasonalClosure notes address';
 
 function getFridgeDisplayId(fridge) {
   return fridge.number || fridge.code || String(fridge._id);
@@ -77,52 +86,118 @@ function buildFridgeQuery(user, query = {}, opts = {}) {
   return filter;
 }
 
-async function countBrokenCheckinsByFridge(fridges, checkinIdList) {
-  const expandedIds = expandCheckinFridgeIdsForInQuery(checkinIdList);
-  const brokenRows = await Checkin.find({
-    fridgeId: { $in: expandedIds.length ? expandedIds : ['__none__'] },
-    fridgeCondition: 'broken',
-  }).select('fridgeId').lean();
+function filterFridgesExcludingFreshVisits(fridges, statsByFridgeId, nowMs = Date.now()) {
+  return fridges.filter((f) => {
+    const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeId, f);
+    const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, {
+      nowMs,
+      fridgeType: f.type,
+    });
+    return mapSt !== 'today' && mapSt !== 'week';
+  });
+}
 
-  const fridgeByCheckinId = new Map();
-  for (const fridge of fridges) {
-    const fridgeKey = String(fridge._id);
-    for (const id of buildCheckinFridgeIdCandidates(fridge)) {
-      fridgeByCheckinId.set(String(id).trim(), fridgeKey);
-      const n = Number(id);
-      if (Number.isFinite(n)) {
-        fridgeByCheckinId.set(String(n), fridgeKey);
-      }
+async function countBrokenCheckinsByFridge(fridges, checkinIdList) {
+  const fridgeObjectIds = fridges.map((f) => f._id).filter(Boolean);
+  const result = new Map();
+  if (!fridgeObjectIds.length) return result;
+
+  const chunkSize = 8000;
+  for (let i = 0; i < fridgeObjectIds.length; i += chunkSize) {
+    const chunk = fridgeObjectIds.slice(i, i + chunkSize);
+    const rows = await Checkin.aggregate([
+      { $match: { fridgeCondition: 'broken', fridgeRef: { $in: chunk } } },
+      { $group: { _id: '$fridgeRef', n: { $sum: 1 } } },
+    ]);
+    for (const row of rows) {
+      if (row._id == null) continue;
+      const key = String(row._id);
+      result.set(key, (result.get(key) || 0) + row.n);
     }
   }
 
-  const result = new Map();
-  for (const row of brokenRows) {
-    const fridgeKey = fridgeByCheckinId.get(String(row.fridgeId).trim());
-    if (!fridgeKey) continue;
-    result.set(fridgeKey, (result.get(fridgeKey) || 0) + 1);
+  // Legacy отметки без fridgeRef (редко после backfill)
+  const expandedIds = expandCheckinFridgeIdsForInQuery(checkinIdList);
+  if (expandedIds.length) {
+    const legacyRows = await Checkin.find({
+      fridgeCondition: 'broken',
+      $or: [{ fridgeRef: null }, { fridgeRef: { $exists: false } }],
+      fridgeId: { $in: expandedIds.slice(0, 5000) },
+    })
+      .select('fridgeId')
+      .limit(50000)
+      .lean();
+
+    const fridgeByCheckinId = new Map();
+    for (const fridge of fridges) {
+      const fridgeKey = String(fridge._id);
+      for (const id of buildCheckinFridgeIdCandidates(fridge)) {
+        fridgeByCheckinId.set(String(id).trim(), fridgeKey);
+        const n = Number(id);
+        if (Number.isFinite(n)) fridgeByCheckinId.set(String(n), fridgeKey);
+      }
+    }
+    for (const row of legacyRows) {
+      const fridgeKey = fridgeByCheckinId.get(String(row.fridgeId).trim());
+      if (!fridgeKey) continue;
+      result.set(fridgeKey, (result.get(fridgeKey) || 0) + 1);
+    }
   }
+
   return result;
 }
 
-/**
- * Лист 1: состояние фонда холодильников региона НОП.
- */
-async function fetchFundSheetRows(user, query, opts = {}) {
+async function loadFullExportContext(user, query, opts = {}) {
   const fridgeFilter = buildFridgeQuery(user, query, opts);
-  const fridges = await Fridge.find(fridgeFilter)
-    .populate('cityId', 'name code')
-    .sort({ createdAt: -1 })
-    .lean();
-
-  const cacheScopeKey = JSON.stringify({ ...fridgeFilter, export: 'sales-fund' });
-  const statsByFridgeId = await getCheckinStatsForFridges(fridges, cacheScopeKey, { useCache: false });
+  const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').lean();
+  const statsByFridgeId = await getCheckinStatsForFridges(
+    fridges.map((f) => ({
+      _id: f._id,
+      code: f.code,
+      number: f.number,
+      clientInfo: f.clientInfo,
+      type: f.type,
+    })),
+    JSON.stringify({ export: 'full', ...fridgeFilter }),
+    { useCache: true },
+  );
 
   const checkinIdSet = new Set();
   fridges.forEach((f) => {
     buildCheckinFridgeIdCandidates(f).forEach((id) => checkinIdSet.add(id));
   });
   const brokenByFridgeId = await countBrokenCheckinsByFridge(fridges, [...checkinIdSet]);
+
+  return { fridges, statsByFridgeId, brokenByFridgeId, fridgeFilter };
+}
+
+/**
+ * Лист 1: состояние фонда холодильников региона НОП.
+ */
+async function fetchFundSheetRows(user, query, opts = {}, exportContext = null) {
+  let fridges;
+  let statsByFridgeId;
+  let brokenByFridgeId;
+
+  if (exportContext) {
+    ({ fridges, statsByFridgeId, brokenByFridgeId } = exportContext);
+    if (opts.excludeFreshVisits) {
+      fridges = filterFridgesExcludingFreshVisits(fridges, statsByFridgeId);
+    }
+  } else {
+    const fridgeFilter = buildFridgeQuery(user, query, opts);
+    fridges = await Fridge.find(fridgeFilter)
+      .populate('cityId', 'name code')
+      .sort({ createdAt: -1 })
+      .lean();
+    const cacheScopeKey = JSON.stringify({ ...fridgeFilter, export: 'sales-fund' });
+    statsByFridgeId = await getCheckinStatsForFridges(fridges, cacheScopeKey, { useCache: true });
+    const checkinIdSet = new Set();
+    fridges.forEach((f) => {
+      buildCheckinFridgeIdCandidates(f).forEach((id) => checkinIdSet.add(id));
+    });
+    brokenByFridgeId = await countBrokenCheckinsByFridge(fridges, [...checkinIdSet]);
+  }
 
   return fridges.map((f) => {
     const { totalCheckins } = getLastVisitFromStatsMap(statsByFridgeId, f);
@@ -141,17 +216,23 @@ async function fetchFundSheetRows(user, query, opts = {}) {
 }
 
 /**
- * Лист 2: лог ремонтов МХО ($lookup fridges + users).
+ * Лист: ремонты МХО по всем холодильникам в охвате отчёта (админ / бухгалтер — свой город).
  */
-async function fetchRepairSheetRows(user, query, opts = {}) {
-  const fridgeFilter = buildFridgeQuery(user, query, opts);
-  const fridgeIds = await Fridge.find(fridgeFilter).distinct('_id');
+async function fetchRepairSheetRows(user, query, opts = {}, repairScope = {}) {
+  let fridgeIds = repairScope.fridgeIds;
+  const maxRows = repairScope.maxRows ?? REPAIR_EXPORT_MAX_ROWS;
+
+  if (!fridgeIds?.length) {
+    const fridgeFilter = buildFridgeQuery(user, query, opts);
+    fridgeIds = await Fridge.find(fridgeFilter).distinct('_id');
+  }
 
   if (!fridgeIds.length) return [];
 
   const repairs = await Repair.aggregate([
     { $match: { fridgeId: { $in: fridgeIds } } },
     { $sort: { repairDate: -1 } },
+    { $limit: Math.max(1, maxRows) },
     {
       $lookup: {
         from: 'fridges',
@@ -200,18 +281,30 @@ async function fetchRepairSheetRows(user, query, opts = {}) {
   });
 }
 
-/**
- * Лист 3: история отметок ТП по городу НОП.
- */
-async function fetchCheckinSheetRows(user, query, opts = {}) {
-  const fridgeFilter = buildFridgeQuery(user, query, opts);
-  const scopedCityId = resolveCityFilter(user, query.cityId);
-  const fridges = await Fridge.find(fridgeFilter)
-    .select('_id code number name address clientInfo')
-    .lean();
+function fetchVisitCategorySheets(exportContext, nowMs = Date.now()) {
+  if (!exportContext?.fridges?.length) {
+    return {
+      neverRows: [],
+      oldRows: [],
+      freshRows: [],
+      scopeFridgeIds: exportContext?.fridges?.map((f) => f._id) || [],
+    };
+  }
+  return buildVisitCategoryExportRows(
+    exportContext.fridges,
+    exportContext.statsByFridgeId,
+    nowMs,
+  );
+}
 
+async function fetchCheckinSummarySheetRows(fridges, limit = CHECKIN_SUMMARY_MAX_ROWS) {
+  if (!fridges?.length) return [];
+
+  const fridgeObjectIds = fridges.map((f) => f._id).filter(Boolean);
+  const fridgeByRef = new Map();
   const fridgeByCheckinId = new Map();
   fridges.forEach((f) => {
+    fridgeByRef.set(String(f._id), f);
     for (const id of buildCheckinFridgeIdCandidates(f)) {
       fridgeByCheckinId.set(String(id).trim(), f);
       const n = Number(id);
@@ -219,31 +312,22 @@ async function fetchCheckinSheetRows(user, query, opts = {}) {
     }
   });
 
-  let checkinFilter = {};
-  if (scopedCityId) {
-    checkinFilter = await getCheckinFilterForCity(scopedCityId);
-  } else if (fridges.length) {
-    const ids = expandCheckinFridgeIdsForInQuery(
-      fridges.flatMap((f) => buildCheckinFridgeIdCandidates(f)),
-    );
-    checkinFilter = { fridgeId: { $in: ids.length ? ids : ['__none__'] } };
-  } else {
-    return [];
-  }
-
-  const User = require('../models/User');
-  const checkins = await Checkin.find(checkinFilter)
+  const checkins = await Checkin.find({ fridgeRef: { $in: fridgeObjectIds } })
     .sort({ visitedAt: -1 })
-    .limit(5000)
+    .limit(Math.max(1, limit))
+    .select(CHECKIN_SUMMARY_SELECT)
     .lean();
 
+  const User = require('../models/User');
   const managerIds = [...new Set(checkins.map((c) => c.managerId).filter(Boolean))];
-  const users = await User.find({
-    $or: [
-      { username: { $in: managerIds } },
-      { _id: { $in: managerIds.filter((id) => /^[a-fA-F0-9]{24}$/.test(String(id))) } },
-    ],
-  }).select('username fullName').lean();
+  const users = managerIds.length
+    ? await User.find({
+      $or: [
+        { username: { $in: managerIds } },
+        { _id: { $in: managerIds.filter((id) => /^[a-fA-F0-9]{24}$/.test(String(id))) } },
+      ],
+    }).select('username fullName').lean()
+    : [];
   const userMap = new Map();
   users.forEach((u) => {
     if (u.username) userMap.set(u.username, u);
@@ -251,7 +335,9 @@ async function fetchCheckinSheetRows(user, query, opts = {}) {
   });
 
   return checkins.map((c) => {
-    const fridge = fridgeByCheckinId.get(String(c.fridgeId).trim());
+    const fridge =
+      (c.fridgeRef && fridgeByRef.get(String(c.fridgeRef))) ||
+      fridgeByCheckinId.get(String(c.fridgeId).trim());
     const manager = userMap.get(c.managerId) || userMap.get(String(c.managerId));
     return {
       'Дата отметки': c.visitedAt ? new Date(c.visitedAt).toLocaleString('ru-RU', {
@@ -263,6 +349,7 @@ async function fetchCheckinSheetRows(user, query, opts = {}) {
         timeZone: 'Asia/Almaty',
       }) : '',
       'ID Холодильника': fridge ? getFridgeDisplayId(fridge) : c.fridgeId,
+      'Город': fridge?.cityId?.name || '',
       'Название точки': fridge?.name || '',
       'Адрес точки': fridge?.address || c.address || '',
       'Сотрудник ТП': manager?.fullName || manager?.username || c.managerId || '',
@@ -271,6 +358,10 @@ async function fetchCheckinSheetRows(user, query, opts = {}) {
       'Комментарий': c.notes || '',
     };
   });
+}
+
+function stripInternalExportFields(rows) {
+  return rows.map(({ _fridgeId, ...row }) => row);
 }
 
 function applyComplexRepairRowMark(worksheet, rowCount, colCount) {
@@ -291,13 +382,48 @@ function applyComplexRepairRowMark(worksheet, rowCount, colCount) {
   }
 }
 
-function appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows = []) {
+function appendVisitStatusSheet(workbook, sheetName, rows, columnWidths) {
+  const forSheet = stripInternalExportFields(rows);
+  const sheet = XLSX.utils.json_to_sheet(
+    forSheet.length ? forSheet : [{
+      'ID Холодильника': '',
+      'Город': '',
+      'Название': '',
+      'Адрес': '',
+      'Тип объекта': '',
+      'Статус визита': '',
+      'Последний визит': '',
+      'Дней без визита': '',
+      'Всего отметок': '',
+      'Статус ХО': '',
+    }],
+  );
+  sheet['!cols'] = columnWidths;
+  XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+}
+
+const VISIT_SHEET_COLS = [
+  { wch: 18 }, { wch: 14 }, { wch: 28 }, { wch: 40 }, { wch: 14 },
+  { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 18 },
+];
+
+function appendFundAndRepairSheets(workbook, sheets) {
+  const {
+    fundRows,
+    repairRows,
+    neverRows,
+    oldRows,
+  } = sheets;
+
   const fundSheet = XLSX.utils.json_to_sheet(fundRows);
   fundSheet['!cols'] = [
     { wch: 18 }, { wch: 16 }, { wch: 40 }, { wch: 14 }, { wch: 28 },
     { wch: 14 }, { wch: 18 }, { wch: 22 },
   ];
   XLSX.utils.book_append_sheet(workbook, fundSheet, 'Состояние фонда');
+
+  appendVisitStatusSheet(workbook, 'Нет отметок', neverRows, VISIT_SHEET_COLS);
+  appendVisitStatusSheet(workbook, 'Давно', oldRows, VISIT_SHEET_COLS);
 
   const repairForSheet = repairRows.map(({ _isComplexRepair, ...row }) => row);
   const repairSheet = XLSX.utils.json_to_sheet(repairForSheet);
@@ -310,22 +436,32 @@ function appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows =
   ];
   applyComplexRepairRowMark(repairSheet, repairForSheet.length + 1, repairColCount);
   XLSX.utils.book_append_sheet(workbook, repairSheet, 'История ремонтов');
-
-  const checkinSheet = XLSX.utils.json_to_sheet(checkinRows);
-  checkinSheet['!cols'] = [
-    { wch: 20 }, { wch: 18 }, { wch: 28 }, { wch: 40 }, { wch: 24 },
-    { wch: 14 }, { wch: 18 }, { wch: 30 },
-  ];
-  XLSX.utils.book_append_sheet(workbook, checkinSheet, 'Отметки ТП');
 }
 
-function buildSalesReportWorkbook(fundRows, repairRows, checkinRows = [], fridgeRows = null) {
+function buildSalesReportWorkbook(reportSheets, fridgeRows = null) {
   const workbook = XLSX.utils.book_new();
   if (fridgeRows) {
     appendFridgeListSheet(workbook, fridgeRows);
   }
-  appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows);
+  appendFundAndRepairSheets(workbook, reportSheets);
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+}
+
+async function buildExportReportSheets(user, query, exportContext, exportOpts) {
+  const visitCategories = fetchVisitCategorySheets(exportContext);
+  const fridgeIdsForRepairs = exportContext.fridges.map((f) => f._id);
+
+  const [fundRows, repairRows] = await Promise.all([
+    fetchFundSheetRows(user, query, { ...exportOpts, excludeFreshVisits: true }, exportContext),
+    fetchRepairSheetRows(user, query, exportOpts, { fridgeIds: fridgeIdsForRepairs }),
+  ]);
+
+  return {
+    fundRows,
+    repairRows,
+    neverRows: visitCategories.neverRows,
+    oldRows: visitCategories.oldRows,
+  };
 }
 
 /**
@@ -333,24 +469,26 @@ function buildSalesReportWorkbook(fundRows, repairRows, checkinRows = [], fridge
  * Для админского экспорта: activeOnly=false — тот же охват, что и лист «Холодильники».
  */
 async function appendSalesReportSheets(workbook, user, query = {}, opts = {}) {
-  const [fundRows, repairRows, checkinRows] = await Promise.all([
-    fetchFundSheetRows(user, query, opts),
-    fetchRepairSheetRows(user, query, opts),
-    fetchCheckinSheetRows(user, query, opts),
-  ]);
-  appendFundAndRepairSheets(workbook, fundRows, repairRows, checkinRows);
-  return { fundCount: fundRows.length, repairCount: repairRows.length, checkinCount: checkinRows.length };
+  const exportOpts = { activeOnly: false, ...opts };
+  const exportContext = await loadFullExportContext(user, query, exportOpts);
+  const reportSheets = await buildExportReportSheets(user, query, exportContext, exportOpts);
+  appendFundAndRepairSheets(workbook, reportSheets);
+  return {
+    fundCount: reportSheets.fundRows.length,
+    repairCount: reportSheets.repairRows.length,
+    neverCount: reportSheets.neverRows.length,
+    oldCount: reportSheets.oldRows.length,
+  };
 }
 
 async function generateFullExportBuffer(user, query = {}, opts = {}) {
   const exportOpts = { activeOnly: false, geocode: opts.geocode !== false, ...opts };
-  const [fridgeRows, fundRows, repairRows, checkinRows] = await Promise.all([
-    fetchFridgeListSheetRows(user, query, exportOpts),
-    fetchFundSheetRows(user, query, exportOpts),
-    fetchRepairSheetRows(user, query, exportOpts),
-    fetchCheckinSheetRows(user, query, exportOpts),
+  const exportContext = await loadFullExportContext(user, query, exportOpts);
+  const [fridgeRows, reportSheets] = await Promise.all([
+    fetchFridgeListSheetRows(user, query, { ...exportOpts, excludeFreshVisits: true }, exportContext),
+    buildExportReportSheets(user, query, exportContext, exportOpts),
   ]);
-  return buildSalesReportWorkbook(fundRows, repairRows, checkinRows, fridgeRows);
+  return buildSalesReportWorkbook(reportSheets, fridgeRows);
 }
 
 async function generateSalesReportBuffer(user, query, opts = {}) {
@@ -365,7 +503,8 @@ module.exports = {
   buildFridgeQuery,
   fetchFundSheetRows,
   fetchRepairSheetRows,
-  fetchCheckinSheetRows,
+  fetchVisitCategorySheets,
+  fetchCheckinSummarySheetRows,
   fetchFridgeListSheetRows,
   generateFullExportBuffer,
   generateSalesReportBuffer,

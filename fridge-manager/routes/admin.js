@@ -312,10 +312,14 @@ router.get('/export-fridges', authenticateToken, requireAdminOrAccountantOrSales
     }
 
     console.log(`[Export] Generating full report for ${req.user.role}${cityName ? ` (${cityName})` : ''}...`);
+    const started = Date.now();
     const excelBuffer = await generateFullExportBuffer(
       req.user,
       { cityId, equipmentStatus, search },
       { geocode: enableGeocoding, activeOnly: false },
+    );
+    console.log(
+      `[Export] Done in ${((Date.now() - started) / 1000).toFixed(1)}s, ${excelBuffer.length} bytes`,
     );
 
     const fileName = buildFridgesExportFileName(cityName);

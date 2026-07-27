@@ -475,8 +475,8 @@ export default function AdminDashboard() {
       // Для больших объемов отключаем геокодирование (быстрее)
       // Можно добавить опцию для пользователя, но пока отключаем для скорости
       const response = await api.get('/api/admin/export-fridges?geocode=false', {
-        responseType: 'blob', // Важно для скачивания файла
-        timeout: 300000, // 5 минут
+        responseType: 'blob',
+        timeout: 600000,
       });
       
       // Создаем ссылку для скачивания

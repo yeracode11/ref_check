@@ -3,7 +3,43 @@ const {
   buildCheckinFridgeIdCandidates,
   expandCheckinFridgeIdsForInQuery,
   shouldIncludeInUnvisitedReport,
+  combinedVisitMapStatus,
+  calendarDaysFromVisitToNow,
+  parseVisitTimeMs,
+  DEFAULT_VISIT_TIMEZONE,
 } = require('./fridgeVisitHelpers');
+
+const FRIDGE_TYPE_LABELS = {
+  regular: 'Обычный',
+  school: 'Школа',
+  restricted: 'Режимный',
+};
+
+const EQUIPMENT_LABELS = {
+  working: 'Исправен',
+  broken: 'Сломан',
+  under_repair: 'На ремонте',
+};
+
+function formatExportDateTime(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: DEFAULT_VISIT_TIMEZONE,
+  });
+}
+
+function visitStatusLabel(mapSt) {
+  if (mapSt === 'never') return 'Нет отметок';
+  if (mapSt === 'old') return 'Давно';
+  if (mapSt === 'today') return 'Сегодня';
+  if (mapSt === 'week') return 'Неделя';
+  return mapSt || '';
+}
 
 function buildCheckinIdListFromFridges(fridges) {
   const ids = new Set();
@@ -57,7 +93,113 @@ function buildTopUnvisitedFromFridges(fridges, statsByFridgeId, limit = 20) {
     .slice(0, limit);
 }
 
+function buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt) {
+  const { lastVisit, totalCheckins } = getLastVisitFromStatsMap(statsByFridgeId, f);
+  const visitMs = parseVisitTimeMs(lastVisit);
+  const daysSinceVisit = visitMs != null
+    ? calendarDaysFromVisitToNow(nowMs, visitMs, DEFAULT_VISIT_TIMEZONE)
+    : null;
+  const statusKey = f.status || 'working';
+
+  return {
+    'ID Холодильника': f.number || f.code || String(f._id),
+    'Город': f.cityId?.name || '',
+    'Название': f.name || '',
+    'Адрес': f.address || '',
+    'Тип объекта': FRIDGE_TYPE_LABELS[f.type] || FRIDGE_TYPE_LABELS.regular,
+    'Статус визита': visitStatusLabel(mapSt),
+    'Последний визит': lastVisit ? formatExportDateTime(lastVisit) : '',
+    'Дней без визита': daysSinceVisit != null ? daysSinceVisit : '',
+    'Всего отметок': totalCheckins || 0,
+    'Статус ХО': EQUIPMENT_LABELS[statusKey] || statusKey,
+    _fridgeId: f._id,
+  };
+}
+
+function sortProblemVisitRows(rows) {
+  return [...rows].sort((a, b) => {
+    const aNever = !a['Последний визит'];
+    const bNever = !b['Последний визит'];
+    if (aNever && !bNever) return -1;
+    if (!aNever && bNever) return 1;
+    const ad = Number(a['Дней без визита']) || 0;
+    const bd = Number(b['Дней без визита']) || 0;
+    return bd - ad;
+  });
+}
+
+function sortFreshVisitRows(rows) {
+  return [...rows].sort((a, b) => {
+    const ad = Number(a['Дней без визита']) || 0;
+    const bd = Number(b['Дней без визита']) || 0;
+    return ad - bd;
+  });
+}
+
+/**
+ * Листы визитов для Excel: нет отметок / давно / сегодня+неделя + id всего охвата (кроме склада).
+ */
+function buildVisitCategoryExportRows(fridges, statsByFridgeId, nowMs = Date.now()) {
+  const neverRows = [];
+  const oldRows = [];
+  const freshRows = [];
+  const scopeFridgeIds = [];
+
+  for (const f of fridges) {
+    if (f.warehouseStatus === 'warehouse') continue;
+
+    scopeFridgeIds.push(f._id);
+
+    const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeId, f);
+    const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, {
+      nowMs,
+      fridgeType: f.type,
+    });
+
+    const visitMs = parseVisitTimeMs(lastVisit);
+    const daysSinceVisit = visitMs != null
+      ? calendarDaysFromVisitToNow(nowMs, visitMs, DEFAULT_VISIT_TIMEZONE)
+      : null;
+
+    if (mapSt === 'never') {
+      neverRows.push(buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt));
+      continue;
+    }
+
+    if (mapSt === 'old') {
+      if (!shouldIncludeInUnvisitedReport(f, { lastVisit, daysSinceVisit })) continue;
+      oldRows.push(buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt));
+      continue;
+    }
+
+    if (mapSt === 'today' || mapSt === 'week') {
+      freshRows.push(buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt));
+    }
+  }
+
+  return {
+    neverRows: sortProblemVisitRows(neverRows),
+    oldRows: sortProblemVisitRows(oldRows),
+    freshRows: sortFreshVisitRows(freshRows),
+    scopeFridgeIds,
+  };
+}
+
+/** @deprecated используйте buildVisitCategoryExportRows */
+function buildUnvisitedExportRows(fridges, statsByFridgeId, nowMs = Date.now()) {
+  const { neverRows, oldRows, scopeFridgeIds } = buildVisitCategoryExportRows(
+    fridges,
+    statsByFridgeId,
+    nowMs,
+  );
+  const rows = sortProblemVisitRows([...neverRows, ...oldRows]);
+  return { rows, fridgeIds: scopeFridgeIds };
+}
+
 module.exports = {
   buildCheckinIdListFromFridges,
   buildTopUnvisitedFromFridges,
+  buildVisitCategoryExportRows,
+  buildUnvisitedExportRows,
+  visitStatusLabel,
 };

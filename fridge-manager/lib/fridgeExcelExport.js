@@ -129,16 +129,25 @@ async function createReverseGeocoder(enableGeocoding) {
 /**
  * Лист «Холодильники» — тот же формат, что у бухгалтера.
  */
-async function fetchFridgeListSheetRows(user, query = {}, opts = {}) {
+async function fetchFridgeListSheetRows(user, query = {}, opts = {}, exportContext = null) {
   const enableGeocoding = opts.geocode !== false;
-  const fridgeFilter = buildExportFridgeFilter(user, query, opts);
-  const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').lean();
-  const sorted = sortFridgesForExport(fridges);
-  const statsByFridgeId = await getCheckinStatsForFridges(
-    sorted,
-    JSON.stringify({ ...fridgeFilter, sheet: 'fridges' }),
-    { useCache: false },
-  );
+  let sorted;
+  let statsByFridgeId;
+
+  if (exportContext) {
+    sorted = sortFridgesForExport(exportContext.fridges);
+    statsByFridgeId = exportContext.statsByFridgeId;
+  } else {
+    const fridgeFilter = buildExportFridgeFilter(user, query, opts);
+    const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').lean();
+    sorted = sortFridgesForExport(fridges);
+    statsByFridgeId = await getCheckinStatsForFridges(
+      sorted,
+      JSON.stringify({ ...fridgeFilter, sheet: 'fridges' }),
+      { useCache: true },
+    );
+  }
+
   const reverseGeocode = await createReverseGeocoder(enableGeocoding);
   const now = Date.now();
   const rows = [];
@@ -150,6 +159,9 @@ async function fetchFridgeListSheetRows(user, query = {}, opts = {}) {
       nowMs: now,
       fridgeType: f.type,
     });
+    if (opts.excludeFreshVisits && (mapSt === 'today' || mapSt === 'week')) {
+      continue;
+    }
     const status =
       mapSt === 'today' ? 'Сегодня'
         : mapSt === 'week' ? 'Неделя'
