@@ -7,6 +7,12 @@ cd "$APP_DIR"
 
 echo "[restart] Directory: $APP_DIR"
 
+if [[ -x "$APP_DIR/scripts/ensure-mongodb.sh" ]]; then
+  bash "$APP_DIR/scripts/ensure-mongodb.sh" || exit 1
+else
+  echo "[restart] WARNING: scripts/ensure-mongodb.sh not found — проверьте, что mongod запущен"
+fi
+
 if [[ ! -f "$APP_DIR/server.js" ]]; then
   echo "[restart] ERROR: server.js not found in $APP_DIR"
   exit 1
@@ -43,12 +49,15 @@ pm2 save
 sleep 2
 
 echo "[restart] Health check:"
-curl -sf "http://127.0.0.1:${PORT:-4000}/health" | head -c 300 || {
-  echo "[restart] ERROR: backend did not respond on port ${PORT:-4000}"
-  echo "[restart] PM2 logs:"
+HEALTH="$(curl -sf "http://127.0.0.1:${PORT:-4000}/health" || true)"
+echo "$HEALTH" | head -c 400
+if echo "$HEALTH" | grep -q '"mongoReady":true'; then
+  echo ""
+  echo "[restart] OK — backend and MongoDB are up"
+else
+  echo ""
+  echo "[restart] ERROR: backend up but MongoDB not ready (or no response)"
+  echo "[restart] Run: bash scripts/ensure-mongodb.sh && pm2 restart fridge-manager"
   pm2 logs fridge-manager --lines 30 --nostream || true
   exit 1
-}
-
-echo ""
-echo "[restart] OK — backend is up"
+fi

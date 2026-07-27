@@ -34,6 +34,14 @@ else
 fi
 echo ""
 
+echo "--- MongoDB (127.0.0.1:27017) ---"
+if [[ -x "$APP_DIR/scripts/ensure-mongodb.sh" ]]; then
+  bash "$APP_DIR/scripts/ensure-mongodb.sh" || true
+else
+  (echo >/dev/tcp/127.0.0.1/27017) 2>/dev/null && echo "port 27017: open" || echo "port 27017: CLOSED — sudo systemctl start mongod"
+fi
+echo ""
+
 echo "--- Backend health (localhost) ---"
 if curl -sf "http://127.0.0.1:${PORT}/health" | head -c 400; then
   echo ""

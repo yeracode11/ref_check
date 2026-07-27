@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const User = require('../models/User');
 const { authenticateToken, generateToken } = require('../middleware/auth');
+const { mapMongoErrorResponse } = require('../lib/mongoConnection');
 const { escapeRegExp } = require('../lib/stringHelpers');
 
 const router = express.Router();
@@ -55,7 +56,7 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     console.error('[Auth] Login error:', err);
-    return res.status(500).json({ error: 'Login failed', details: err.message });
+    return mapMongoErrorResponse(err, res, 'Login failed');
   }
 });
 
@@ -68,7 +69,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     }
     return res.json(user);
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to get user info', details: err.message });
+    return mapMongoErrorResponse(err, res, 'Failed to get user info');
   }
 });
 

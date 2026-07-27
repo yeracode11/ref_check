@@ -8,6 +8,11 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const morgan = require('morgan');
 const { createCorsOriginChecker } = require('./lib/corsOrigins');
+const {
+  isMongoConnected,
+  setupMongoConnectionMonitoring,
+  requireMongoMiddleware,
+} = require('./lib/mongoConnection');
 
 const app = express();
 
@@ -66,11 +71,15 @@ app.use(morgan('dev'));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 function healthPayload() {
+  const mongoReady = isMongoConnected(mongoose);
   const payload = {
-    status: 'ok',
+    status: mongoReady ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
-    mongoReady: mongoose.connection.readyState === 1,
+    mongoReady,
   };
+  if (!mongoReady) {
+    payload.hint = 'Start MongoDB: sudo systemctl start mongod';
+  }
   if (process.env.NODE_ENV !== 'production') {
     payload.uptime = process.uptime();
     payload.memory = process.memoryUsage();
@@ -78,16 +87,18 @@ function healthPayload() {
   return payload;
 }
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json(healthPayload());
-});
+// Health check (без requireMongo — для мониторинга)
+function sendHealth(req, res) {
+  const payload = healthPayload();
+  const code = payload.mongoReady ? 200 : 503;
+  res.status(code).json(payload);
+}
 
-app.get('/api/health', (req, res) => {
-  res.json(healthPayload());
-});
+app.get('/health', sendHealth);
 
-// Routes
+app.get('/api/health', sendHealth);
+
+app.use('/api', requireMongoMiddleware(mongoose));
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
 
@@ -129,9 +140,11 @@ async function start() {
     const sel = parseMs(process.env.MONGOOSE_SERVER_SELECTION_TIMEOUT_MS, 2000, 120000);
     const conn = parseMs(process.env.MONGOOSE_CONNECT_TIMEOUT_MS, 2000, 120000);
     const sock = parseMs(process.env.MONGOOSE_SOCKET_TIMEOUT_MS, 10000, 360000);
-    if (sel != null) mongooseOpts.serverSelectionTimeoutMS = sel;
-    if (conn != null) mongooseOpts.connectTimeoutMS = conn;
+    mongooseOpts.serverSelectionTimeoutMS = sel != null ? sel : 10000;
+    mongooseOpts.connectTimeoutMS = conn != null ? conn : 10000;
     if (sock != null) mongooseOpts.socketTimeoutMS = sock;
+
+    setupMongoConnectionMonitoring(mongoose);
 
     await mongoose.connect(mongoUri, mongooseOpts);
     
