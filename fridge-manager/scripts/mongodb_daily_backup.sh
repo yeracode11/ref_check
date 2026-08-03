@@ -9,8 +9,9 @@
 #   RETENTION_DAYS  — удалять архивы старше N дней (по умолчанию: 30)
 #   RETENTION_COUNT — доп. лимит: хранить не больше N последних (0 = только по дням)
 #   LOG_FILE        — лог (по умолчанию: BACKUP_DIR/backup.log)
+#   MONGO_DOCKER_CONTAINER — имя контейнера (по умолчанию: fridge-mongodb или mongo)
 #
-# Требования: mongodump в PATH (пакет mongodb-database-tools).
+# mongodump: на хосте или внутри Docker-контейнера MongoDB (mongo:7.0 уже содержит mongodump).
 #
 set -euo pipefail
 
@@ -23,9 +24,52 @@ RETENTION_DAYS="${RETENTION_DAYS:-30}"
 RETENTION_COUNT="${RETENTION_COUNT:-0}"
 LOG_FILE="${LOG_FILE:-$BACKUP_DIR/backup.log}"
 ARCHIVE_PREFIX="fridge_manager_"
+MONGO_DOCKER_CONTAINER="${MONGO_DOCKER_CONTAINER:-}"
+MONGODUMP_MODE=""
 
 mkdir -p "$BACKUP_DIR"
 touch "$LOG_FILE" 2>/dev/null || true
+
+resolve_docker_mongo_container() {
+  if [[ -n "$MONGO_DOCKER_CONTAINER" ]]; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$MONGO_DOCKER_CONTAINER"; then
+      echo "$MONGO_DOCKER_CONTAINER"
+      return 0
+    fi
+    return 1
+  fi
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(fridge-mongodb|mongo)$' | head -1
+}
+
+detect_mongodump_mode() {
+  if command -v mongodump >/dev/null 2>&1; then
+    MONGODUMP_MODE="host"
+    return 0
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    return 1
+  fi
+  local container
+  container="$(resolve_docker_mongo_container || true)"
+  if [[ -n "$container" ]] && docker exec "$container" mongodump --version >/dev/null 2>&1; then
+    MONGO_DOCKER_CONTAINER="$container"
+    MONGODUMP_MODE="docker"
+    return 0
+  fi
+  return 1
+}
+
+run_mongodump() {
+  local archive_path="$1"
+  local uri="$2"
+  if [[ "$MONGODUMP_MODE" == "host" ]]; then
+    mongodump --uri="$uri" --gzip --archive="$archive_path"
+  elif [[ "$MONGODUMP_MODE" == "docker" ]]; then
+    docker exec "$MONGO_DOCKER_CONTAINER" mongodump --uri="$uri" --gzip --archive=- >"$archive_path"
+  else
+    return 127
+  fi
+}
 
 log() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" | tee -a "$LOG_FILE"
@@ -78,8 +122,9 @@ on_fail() {
 }
 trap 'on_fail $LINENO' ERR
 
-if ! command -v mongodump >/dev/null 2>&1; then
-  log_error "mongodump не найден. Установите: apt install mongodb-database-tools (или скачайте с сайта MongoDB)."
+if ! detect_mongodump_mode; then
+  log_error "mongodump не найден на хосте и в Docker (контейнер fridge-mongodb / mongo)."
+  log_error "На stellho: docker ps | grep fridge-mongodb"
   exit 127
 fi
 
@@ -117,11 +162,12 @@ STAMP="$(date -u '+%Y-%m-%d_%H%M%S')"
 ARCHIVE_PATH="${BACKUP_DIR}/${ARCHIVE_PREFIX}${STAMP}.gz"
 
 log "=== Начало бэкапа ==="
+log "Режим: $MONGODUMP_MODE${MONGO_DOCKER_CONTAINER:+ (контейнер $MONGO_DOCKER_CONTAINER)}"
 log "Архив: $ARCHIVE_PATH"
 SAFE_URI="$(printf '%s' "$MONGODB_URI" | sed -E 's|(//)[^/@]+@|\1***@|')"
 log "URI (маскировано): $SAFE_URI"
 
-if mongodump --uri="$MONGODB_URI" --gzip --archive="$ARCHIVE_PATH" >>"$LOG_FILE" 2>&1; then
+if run_mongodump "$ARCHIVE_PATH" "$MONGODB_URI" >>"$LOG_FILE" 2>&1; then
   log "mongodump выполнен"
 else
   log_error "mongodump завершился с ошибкой (см. сообщения выше в этом логе)"
