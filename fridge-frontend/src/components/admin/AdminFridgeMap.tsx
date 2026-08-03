@@ -39,6 +39,8 @@ type Props = {
   cityId?: string;
 };
 
+type Phase = 'loading' | 'mounting' | 'ready' | 'error';
+
 const DEFAULT_CENTER: L.LatLngTuple = [42.8996, 71.3696];
 const DEFAULT_ZOOM = 12;
 const BULK_CHUNK = 3000;
@@ -91,6 +93,15 @@ function buildPopupHtml(f: AdminFridgeForMap): string {
   `;
 }
 
+function refreshMapLayout(map: L.Map) {
+  map.invalidateSize({ animate: false });
+  map.eachLayer((layer) => {
+    if (layer instanceof L.TileLayer) {
+      layer.redraw();
+    }
+  });
+}
+
 function MapLegend({ pointCount, hint }: { pointCount?: number; hint?: string | null }) {
   return (
     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
@@ -123,10 +134,10 @@ function MapLegend({ pointCount, hint }: { pointCount?: number; hint?: string | 
 }
 
 function LoadingPanel({
-  phase,
+  title,
   progress,
 }: {
-  phase: 'loading' | 'rendering';
+  title: string;
   progress: { loaded: number; total: number };
 }) {
   const progressPct = progress.total > 0
@@ -139,9 +150,7 @@ function LoadingPanel({
       style={{ height: MAP_HEIGHT }}
     >
       <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-      <p className="text-base font-medium text-slate-800">
-        {phase === 'rendering' ? 'Отрисовка карты…' : 'Загрузка холодильников…'}
-      </p>
+      <p className="text-base font-medium text-slate-800">{title}</p>
       {progress.total > 0 ? (
         <>
           <p className="text-sm text-slate-600">
@@ -171,7 +180,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
   const abortRef = useRef<AbortController | null>(null);
   const pointsRef = useRef<MapPointItem[]>([]);
 
-  const [phase, setPhase] = useState<'loading' | 'rendering' | 'ready' | 'error'>('loading');
+  const [phase, setPhase] = useState<Phase>('loading');
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [hint, setHint] = useState<string | null>(null);
   const [pointCount, setPointCount] = useState(0);
@@ -194,23 +203,21 @@ function AdminFridgeMapInner({ cityId }: Props) {
   const renderAllPoints = useCallback((points: MapPointItem[]) => {
     const map = mapInstanceRef.current;
     const cluster = pointClusterRef.current;
-    if (!map || !cluster) return;
+    if (!map || !cluster) return 0;
 
     cluster.clearLayers();
     popupDataRef.current.clear();
 
     const markerLayers: L.Marker[] = [];
-    const bounds: L.LatLngTuple[] = [];
     let popupId = 0;
 
     for (const f of points) {
       if (!f.location?.coordinates) continue;
       const [lng, lat] = f.location.coordinates;
       if (lat === 0 && lng === 0) continue;
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
 
       const position: L.LatLngTuple = [lat, lng];
-      bounds.push(position);
-
       const equipmentStatus = f.equipmentStatus || 'working';
       const visitForIcon = equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
         ? 'never'
@@ -242,20 +249,16 @@ function AdminFridgeMapInner({ cityId }: Props) {
 
     if (markerLayers.length) {
       cluster.addLayers(markerLayers);
-    }
-
-    setPointCount(markerLayers.length);
-
-    if (bounds.length > 0) {
-      try {
+      const bounds = cluster.getBounds();
+      if (bounds.isValid()) {
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-      } catch {
-        map.setView(bounds[0], DEFAULT_ZOOM);
       }
     } else {
       map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
       setHint('Нет холодильников с координатами в выбранном регионе.');
     }
+
+    return markerLayers.length;
   }, []);
 
   const initMapAndRender = useCallback(() => {
@@ -271,9 +274,6 @@ function AdminFridgeMapInner({ cityId }: Props) {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 19,
-      updateWhenIdle: true,
-      updateWhenZooming: false,
-      keepBuffer: 2,
     }).addTo(map);
 
     const pointCluster = L.markerClusterGroup({
@@ -284,7 +284,6 @@ function AdminFridgeMapInner({ cityId }: Props) {
       disableClusteringAtZoom: 17,
       spiderfyOnMaxZoom: true,
       showCoverageOnHover: false,
-      removeOutsideVisibleBounds: true,
       zoomToBoundsOnClick: true,
     });
 
@@ -293,9 +292,13 @@ function AdminFridgeMapInner({ cityId }: Props) {
     pointClusterRef.current = pointCluster;
 
     map.whenReady(() => {
-      renderAllPoints(pointsRef.current);
+      refreshMapLayout(map);
+      const count = renderAllPoints(pointsRef.current);
+      setPointCount(count);
       setPhase('ready');
-      map.invalidateSize();
+
+      window.setTimeout(() => refreshMapLayout(map), 50);
+      window.setTimeout(() => refreshMapLayout(map), 250);
     });
   }, [renderAllPoints]);
 
@@ -340,7 +343,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
 
       if (controller.signal.aborted) return;
 
-      setPhase('rendering');
+      setPhase('mounting');
     } catch (e: unknown) {
       if (controller.signal.aborted) return;
       const err = e as { message?: string; response?: { data?: { error?: string } } };
@@ -350,7 +353,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
   }, [destroyMap]);
 
   useEffect(() => {
-    if (phase !== 'rendering') return undefined;
+    if (phase !== 'mounting') return undefined;
     const frame = requestAnimationFrame(() => {
       initMapAndRender();
     });
@@ -385,7 +388,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
     return (
       <div className="space-y-2">
         <MapLegend />
-        <LoadingPanel phase="loading" progress={progress} />
+        <LoadingPanel title="Загрузка холодильников…" progress={progress} />
       </div>
     );
   }
@@ -408,15 +411,12 @@ function AdminFridgeMapInner({ cityId }: Props) {
     <div className="space-y-2">
       <MapLegend pointCount={phase === 'ready' ? pointCount : undefined} hint={hint} />
       <div className="relative w-full rounded-lg overflow-hidden border border-slate-200" style={{ height: MAP_HEIGHT }}>
-        {phase === 'rendering' && (
+        {phase === 'mounting' && (
           <div className="absolute inset-0 z-10">
-            <LoadingPanel phase="rendering" progress={progress} />
+            <LoadingPanel title="Отрисовка карты…" progress={progress} />
           </div>
         )}
-        <div
-          ref={mapRef}
-          className={`w-full h-full ${phase !== 'ready' ? 'invisible' : ''}`}
-        />
+        <div ref={mapRef} className="w-full h-full" />
         <style>{`
           .custom-marker {
             background: transparent !important;
