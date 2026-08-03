@@ -183,6 +183,57 @@ async function fetchViewportPoints(filter, bbox, zoom) {
   };
 }
 
+function buildBulkFilter(user, query) {
+  const filter = {
+    active: true,
+    ...buildMapLocationFilter(),
+  };
+  const scopedCityId = resolveCityFilter(user, query.cityId);
+  if (scopedCityId) {
+    filter.cityId = scopedCityId;
+  }
+  return filter;
+}
+
+/**
+ * Все точки города (или всех городов для admin) — порциями для lazy load на клиенте.
+ */
+async function fetchMapFridgeBulk(user, query) {
+  const skip = Math.max(0, parseInt(query.skip, 10) || 0);
+  const limitRaw = parseInt(query.limit, 10);
+  const limit = Math.min(5000, Math.max(100, Number.isFinite(limitRaw) ? limitRaw : 3000));
+  const filter = buildBulkFilter(user, query);
+
+  const [total, fridges] = await Promise.all([
+    Fridge.countDocuments(filter),
+    Fridge.find(filter)
+      .select('_id code name address location warehouseStatus status type')
+      .sort({ _id: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+  ]);
+
+  const statsByFridgeId = await getCheckinStatsForFridges(
+    fridges,
+    JSON.stringify({ bulk: true, cityId: query.cityId || 'all', skip, limit }),
+    { useCache: true },
+  );
+
+  const now = Date.now();
+  const items = fridges.map((f) => mapFridgeToMarker(f, statsByFridgeId, now));
+
+  return {
+    mode: 'points',
+    items,
+    total,
+    skip,
+    limit,
+    loaded: skip + items.length,
+    hasMore: skip + items.length < total,
+  };
+}
+
 /**
  * @param {object} user — req.user
  * @param {object} query — req.query (west,south,east,north,zoom,cityId)
@@ -217,6 +268,7 @@ module.exports = {
   parseZoom,
   gridCellDegrees,
   fetchMapFridgeViewport,
+  fetchMapFridgeBulk,
   MAP_VIEWPORT_MAX_POINTS,
   MAP_CLUSTER_ZOOM_THRESHOLD,
 };

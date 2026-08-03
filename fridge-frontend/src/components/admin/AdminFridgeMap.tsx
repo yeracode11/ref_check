@@ -26,29 +26,22 @@ export type AdminFridgeForMap = {
   location?: { type: 'Point'; coordinates: [number, number] };
 };
 
-type MapClusterItem = {
-  type: 'cluster';
-  count: number;
-  status: string;
-  location: { type: 'Point'; coordinates: [number, number] };
-  bbox: { west: number; south: number; east: number; north: number };
-};
-
 type MapPointItem = AdminFridgeForMap & { type: 'point' };
 
-type ViewportResponse = {
-  mode: 'points' | 'clusters';
-  items: Array<MapClusterItem | MapPointItem>;
-  truncated?: boolean;
+type BulkResponse = {
+  items: MapPointItem[];
+  total: number;
+  loaded: number;
+  hasMore: boolean;
 };
 
 type Props = {
-  /** City _id or "all" (admin). Accountants get city from backend scope. */
   cityId?: string;
 };
 
 const DEFAULT_CENTER: L.LatLngTuple = [42.8996, 71.3696];
 const DEFAULT_ZOOM = 12;
+const BULK_CHUNK = 3000;
 
 function getVisitMarkerColor(status: string): string {
   if (status === 'broken') return getEquipmentMarkerColor('purple');
@@ -73,25 +66,6 @@ function createPointIcon(color: string): L.DivIcon {
     iconSize: [20, 20],
     iconAnchor: [10, 10],
   });
-}
-
-const clusterIconCache = new Map<string, L.DivIcon>();
-
-function createServerClusterIcon(color: string, count: number): L.DivIcon {
-  const label = count > 99 ? '99+' : String(count);
-  const cacheKey = `${color}:${label}`;
-  let icon = clusterIconCache.get(cacheKey);
-  if (!icon) {
-    const size = count > 99 ? 44 : count > 20 ? 40 : 36;
-    icon = L.divIcon({
-      className: 'custom-cluster',
-      html: `<div style="background-color: ${color}; width: ${size}px; height: ${size}px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 13px;">${label}</div>`,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
-    });
-    clusterIconCache.set(cacheKey, icon);
-  }
-  return icon;
 }
 
 function buildPopupHtml(f: AdminFridgeForMap): string {
@@ -120,64 +94,35 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const pointClusterRef = useRef<L.MarkerClusterGroup | null>(null);
-  const serverClusterLayerRef = useRef<L.LayerGroup | null>(null);
   const iconCacheRef = useRef(new Map<string, L.DivIcon>());
   const popupDataRef = useRef(new Map<number, AdminFridgeForMap>());
-  const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const cityIdRef = useRef(cityId);
-  const [loading, setLoading] = useState(false);
+  const pointsRef = useRef<MapPointItem[]>([]);
+  const [mapReady, setMapReady] = useState(false);
+
+  const [phase, setPhase] = useState<'loading' | 'rendering' | 'ready' | 'error'>('loading');
+  const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [hint, setHint] = useState<string | null>(null);
 
-  cityIdRef.current = cityId;
-
-  const clearLayers = useCallback(() => {
-    pointClusterRef.current?.clearLayers();
-    serverClusterLayerRef.current?.clearLayers();
-    popupDataRef.current.clear();
-  }, []);
-
-  const renderViewport = useCallback((data: ViewportResponse) => {
+  const renderAllPoints = useCallback((points: MapPointItem[]) => {
     const map = mapInstanceRef.current;
-    const pointCluster = pointClusterRef.current;
-    const serverLayer = serverClusterLayerRef.current;
-    if (!map || !pointCluster || !serverLayer) return;
+    const cluster = pointClusterRef.current;
+    if (!map || !cluster) return;
 
-    clearLayers();
-
-    if (data.mode === 'clusters') {
-      map.removeLayer(pointCluster);
-      if (!map.hasLayer(serverLayer)) map.addLayer(serverLayer);
-
-      for (const item of data.items) {
-        if (item.type !== 'cluster') continue;
-        const [lng, lat] = item.location.coordinates;
-        const color = getVisitMarkerColor(item.status);
-        const marker = L.marker([lat, lng], {
-          icon: createServerClusterIcon(color, item.count),
-        });
-        marker.bindPopup(`<strong>${item.count}</strong> холодильников`);
-        marker.on('click', () => {
-          const { south, west, north, east } = item.bbox;
-          map.fitBounds([[south, west], [north, east]], { padding: [24, 24], maxZoom: 16 });
-        });
-        serverLayer.addLayer(marker);
-      }
-      return;
-    }
-
-    map.removeLayer(serverLayer);
-    if (!map.hasLayer(pointCluster)) map.addLayer(pointCluster);
+    cluster.clearLayers();
+    popupDataRef.current.clear();
 
     const markerLayers: L.Marker[] = [];
+    const bounds: L.LatLngTuple[] = [];
     let popupId = 0;
 
-    for (const raw of data.items) {
-      if (raw.type !== 'point') continue;
-      const f = raw as MapPointItem;
+    for (const f of points) {
       if (!f.location?.coordinates) continue;
       const [lng, lat] = f.location.coordinates;
       if (lat === 0 && lng === 0) continue;
+
+      const position: L.LatLngTuple = [lat, lng];
+      bounds.push(position);
 
       const equipmentStatus = f.equipmentStatus || 'working';
       const visitForIcon = equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
@@ -193,7 +138,7 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
       const id = popupId++;
       popupDataRef.current.set(id, f);
 
-      const marker = L.marker([lat, lng], {
+      const marker = L.marker(position, {
         icon,
         status: f.status,
         equipmentStatus,
@@ -209,58 +154,75 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
     }
 
     if (markerLayers.length) {
-      pointCluster.addLayers(markerLayers);
+      cluster.addLayers(markerLayers);
     }
 
-    if (data.truncated) {
-      setHint('Показаны не все точки в области — увелите масштаб.');
+    if (bounds.length > 0) {
+      try {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+      } catch {
+        map.setView(bounds[0], DEFAULT_ZOOM);
+      }
     } else {
-      setHint(null);
+      map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
     }
-  }, [clearLayers]);
+  }, []);
 
-  const fetchViewport = useCallback(async () => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
+  const loadAllPoints = useCallback(async (targetCityId: string) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const bounds = map.getBounds();
-    const params = new URLSearchParams({
-      west: String(bounds.getWest()),
-      south: String(bounds.getSouth()),
-      east: String(bounds.getEast()),
-      north: String(bounds.getNorth()),
-      zoom: String(map.getZoom()),
-    });
-    const cid = cityIdRef.current;
-    if (cid && cid !== 'all') params.set('cityId', cid);
+    setPhase('loading');
+    setHint(null);
+    pointsRef.current = [];
 
-    setLoading(true);
+    const params = new URLSearchParams();
+    if (targetCityId && targetCityId !== 'all') {
+      params.set('cityId', targetCityId);
+    }
+
+    let skip = 0;
+    let total = 0;
+
     try {
-      const res = await api.get<ViewportResponse>(`/api/admin/map-fridges?${params.toString()}`, {
-        signal: controller.signal,
-        timeout: 120000,
-      });
+      while (true) {
+        params.set('skip', String(skip));
+        params.set('limit', String(BULK_CHUNK));
+
+        const res = await api.get<BulkResponse>(`/api/admin/map-fridges/bulk?${params.toString()}`, {
+          signal: controller.signal,
+          timeout: 300000,
+        });
+
+        if (controller.signal.aborted) return;
+
+        total = res.data.total;
+        pointsRef.current.push(...res.data.items);
+        skip = res.data.loaded;
+        setProgress({ loaded: skip, total });
+
+        if (!res.data.hasMore) break;
+      }
+
       if (controller.signal.aborted) return;
-      renderViewport(res.data);
+
+      setPhase('rendering');
+      requestAnimationFrame(() => {
+        if (controller.signal.aborted) return;
+        renderAllPoints(pointsRef.current);
+        setPhase('ready');
+        if (pointsRef.current.length === 0) {
+          setHint('Нет холодильников с координатами в выбранном регионе.');
+        }
+      });
     } catch (e: unknown) {
       if (controller.signal.aborted) return;
-      const err = e as { message?: string };
-      setHint(err?.message || 'Ошибка загрузки области карты');
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      const err = e as { message?: string; response?: { data?: { error?: string } } };
+      setPhase('error');
+      setHint(err?.response?.data?.error || err?.message || 'Ошибка загрузки карты');
     }
-  }, [renderViewport]);
-
-  const scheduleFetch = useCallback(() => {
-    if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
-    fetchTimerRef.current = setTimeout(() => {
-      fetchViewport();
-    }, 350);
-  }, [fetchViewport]);
+  }, [renderAllPoints]);
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -282,48 +244,41 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
 
     const pointCluster = L.markerClusterGroup({
       chunkedLoading: true,
-      chunkInterval: 120,
-      chunkDelay: 30,
-      maxClusterRadius: 50,
+      chunkInterval: 150,
+      chunkDelay: 40,
+      maxClusterRadius: 55,
       disableClusteringAtZoom: 17,
-      spiderfyOnMaxZoom: false,
+      spiderfyOnMaxZoom: true,
       showCoverageOnHover: false,
       removeOutsideVisibleBounds: true,
+      zoomToBoundsOnClick: true,
     });
-
-    const serverLayer = L.layerGroup();
 
     map.addLayer(pointCluster);
     mapInstanceRef.current = map;
     pointClusterRef.current = pointCluster;
-    serverClusterLayerRef.current = serverLayer;
-
-    map.on('moveend', scheduleFetch);
-    map.whenReady(() => {
-      scheduleFetch();
-    });
+    map.whenReady(() => setMapReady(true));
 
     return () => {
-      if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
       abortRef.current?.abort();
-      map.off('moveend', scheduleFetch);
+      setMapReady(false);
       pointCluster.clearLayers();
-      serverLayer.clearLayers();
       map.remove();
       mapInstanceRef.current = null;
       pointClusterRef.current = null;
-      serverClusterLayerRef.current = null;
     };
-  }, [scheduleFetch]);
+  }, []);
 
   useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    clearLayers();
-    setHint(null);
-    map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-    scheduleFetch();
-  }, [cityId, clearLayers, scheduleFetch]);
+    if (!mapReady) return undefined;
+    pointClusterRef.current?.clearLayers();
+    loadAllPoints(cityId);
+    return () => abortRef.current?.abort();
+  }, [cityId, mapReady, loadAllPoints]);
+
+  const progressPct = progress.total > 0
+    ? Math.min(100, Math.round((progress.loaded / progress.total) * 100))
+    : 0;
 
   return (
     <div className="space-y-2">
@@ -348,13 +303,35 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
           <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#2563eb' }} />
           Исправен / нет отметок
         </span>
-        {loading && <span className="text-slate-400 ml-auto">Загрузка…</span>}
-        {!loading && hint && <span className="text-amber-700 ml-auto">{hint}</span>}
+        {phase === 'ready' && progress.total > 0 && (
+          <span className="text-slate-500 ml-auto">{progress.total} точек на карте</span>
+        )}
+        {hint && <span className="text-amber-700 ml-auto">{hint}</span>}
       </div>
       <div className="w-full h-[480px] rounded-lg overflow-hidden border border-slate-200 relative">
         <div ref={mapRef} className="w-full h-full" />
+        {(phase === 'loading' || phase === 'rendering') && (
+          <div className="absolute inset-0 bg-white/85 flex flex-col items-center justify-center gap-3 z-[500]">
+            <p className="text-sm font-medium text-slate-800">
+              {phase === 'rendering' ? 'Отрисовка карты…' : 'Загрузка холодильников…'}
+            </p>
+            {progress.total > 0 && (
+              <>
+                <p className="text-xs text-slate-600">
+                  {progress.loaded.toLocaleString('ru-RU')} / {progress.total.toLocaleString('ru-RU')}
+                </p>
+                <div className="w-64 h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-300"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <style>{`
-          .custom-marker, .custom-cluster {
+          .custom-marker {
             background: transparent !important;
             border: none !important;
           }

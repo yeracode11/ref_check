@@ -31,7 +31,7 @@ const {
 const { getAssignedCityId, resolveCityFilter, userCanAccessFridge } = require('../lib/cityScope');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const { buildMapLocationFilter, isMapMarkersRequest } = require('../lib/mapFridgeQuery');
-const { fetchMapFridgeViewport } = require('../lib/mapFridgeViewport');
+const { fetchMapFridgeViewport, fetchMapFridgeBulk } = require('../lib/mapFridgeViewport');
 const { attachLongRunningTimeouts } = require('../lib/longRunningHttp');
 const XLSX = require('xlsx');
 
@@ -272,6 +272,27 @@ router.get('/map-fridges', authenticateToken, requireAdminOrAccountantOrSalesHea
     const status = err.status || 500;
     return res.status(status).json({
       error: status === 400 ? err.message : 'Failed to load map viewport',
+      details: err.message,
+    });
+  }
+});
+
+// GET /api/admin/map-fridges/bulk?cityId=&skip=&limit=
+// Все точки города порциями — клиент lazy load, потом одна отрисовка на карте.
+router.get('/map-fridges/bulk', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
+  try {
+    if (req.user.role === 'sales_head' && !getAssignedCityId(req.user)) {
+      return res.status(403).json({
+        error: 'Для НОП не назначен город. Обратитесь к администратору.',
+      });
+    }
+
+    const payload = await fetchMapFridgeBulk(req.user, req.query);
+    return res.json(payload);
+  } catch (err) {
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: status === 400 ? err.message : 'Failed to load map bulk',
       details: err.message,
     });
   }
