@@ -42,6 +42,7 @@ type Props = {
 const DEFAULT_CENTER: L.LatLngTuple = [42.8996, 71.3696];
 const DEFAULT_ZOOM = 12;
 const BULK_CHUNK = 3000;
+const MAP_HEIGHT = 480;
 
 function getVisitMarkerColor(status: string): string {
   if (status === 'broken') return getEquipmentMarkerColor('purple');
@@ -90,7 +91,78 @@ function buildPopupHtml(f: AdminFridgeForMap): string {
   `;
 }
 
-function AdminFridgeMapInner({ cityId = 'all' }: Props) {
+function MapLegend({ pointCount, hint }: { pointCount?: number; hint?: string | null }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+      <span className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#9333ea' }} />
+        Сломан
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#ea580c' }} />
+        На ремонте
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#28a745' }} />
+        Свежая отметка
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#dc3545' }} />
+        Давно без визита
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#2563eb' }} />
+        Исправен / нет отметок
+      </span>
+      {pointCount != null && pointCount > 0 && (
+        <span className="text-slate-500 ml-auto">{pointCount.toLocaleString('ru-RU')} точек на карте</span>
+      )}
+      {hint && <span className="text-amber-700 ml-auto">{hint}</span>}
+    </div>
+  );
+}
+
+function LoadingPanel({
+  phase,
+  progress,
+}: {
+  phase: 'loading' | 'rendering';
+  progress: { loaded: number; total: number };
+}) {
+  const progressPct = progress.total > 0
+    ? Math.min(100, Math.round((progress.loaded / progress.total) * 100))
+    : null;
+
+  return (
+    <div
+      className="w-full rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center gap-4 px-6"
+      style={{ height: MAP_HEIGHT }}
+    >
+      <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+      <p className="text-base font-medium text-slate-800">
+        {phase === 'rendering' ? 'Отрисовка карты…' : 'Загрузка холодильников…'}
+      </p>
+      {progress.total > 0 ? (
+        <>
+          <p className="text-sm text-slate-600">
+            {progress.loaded.toLocaleString('ru-RU')} / {progress.total.toLocaleString('ru-RU')}
+            {progressPct != null && ` (${progressPct}%)`}
+          </p>
+          <div className="w-full max-w-md h-3 bg-slate-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-600 transition-all duration-300 rounded-full"
+              style={{ width: `${progressPct ?? 0}%` }}
+            />
+          </div>
+        </>
+      ) : (
+        <p className="text-sm text-slate-500">Подключение к серверу…</p>
+      )}
+    </div>
+  );
+}
+
+function AdminFridgeMapInner({ cityId }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const pointClusterRef = useRef<L.MarkerClusterGroup | null>(null);
@@ -98,11 +170,26 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
   const popupDataRef = useRef(new Map<number, AdminFridgeForMap>());
   const abortRef = useRef<AbortController | null>(null);
   const pointsRef = useRef<MapPointItem[]>([]);
-  const [mapReady, setMapReady] = useState(false);
 
   const [phase, setPhase] = useState<'loading' | 'rendering' | 'ready' | 'error'>('loading');
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [hint, setHint] = useState<string | null>(null);
+  const [pointCount, setPointCount] = useState(0);
+
+  const destroyMap = useCallback(() => {
+    const map = mapInstanceRef.current;
+    const cluster = pointClusterRef.current;
+    if (cluster && map) {
+      cluster.clearLayers();
+      map.removeLayer(cluster);
+    }
+    if (map) {
+      map.remove();
+    }
+    mapInstanceRef.current = null;
+    pointClusterRef.current = null;
+    popupDataRef.current.clear();
+  }, []);
 
   const renderAllPoints = useCallback((points: MapPointItem[]) => {
     const map = mapInstanceRef.current;
@@ -157,6 +244,8 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
       cluster.addLayers(markerLayers);
     }
 
+    setPointCount(markerLayers.length);
+
     if (bounds.length > 0) {
       try {
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
@@ -165,66 +254,11 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
       }
     } else {
       map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+      setHint('Нет холодильников с координатами в выбранном регионе.');
     }
   }, []);
 
-  const loadAllPoints = useCallback(async (targetCityId: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setPhase('loading');
-    setHint(null);
-    pointsRef.current = [];
-
-    const params = new URLSearchParams();
-    if (targetCityId && targetCityId !== 'all') {
-      params.set('cityId', targetCityId);
-    }
-
-    let skip = 0;
-    let total = 0;
-
-    try {
-      while (true) {
-        params.set('skip', String(skip));
-        params.set('limit', String(BULK_CHUNK));
-
-        const res = await api.get<BulkResponse>(`/api/admin/map-fridges/bulk?${params.toString()}`, {
-          signal: controller.signal,
-          timeout: 300000,
-        });
-
-        if (controller.signal.aborted) return;
-
-        total = res.data.total;
-        pointsRef.current.push(...res.data.items);
-        skip = res.data.loaded;
-        setProgress({ loaded: skip, total });
-
-        if (!res.data.hasMore) break;
-      }
-
-      if (controller.signal.aborted) return;
-
-      setPhase('rendering');
-      requestAnimationFrame(() => {
-        if (controller.signal.aborted) return;
-        renderAllPoints(pointsRef.current);
-        setPhase('ready');
-        if (pointsRef.current.length === 0) {
-          setHint('Нет холодильников с координатами в выбранном регионе.');
-        }
-      });
-    } catch (e: unknown) {
-      if (controller.signal.aborted) return;
-      const err = e as { message?: string; response?: { data?: { error?: string } } };
-      setPhase('error');
-      setHint(err?.response?.data?.error || err?.message || 'Ошибка загрузки карты');
-    }
-  }, [renderAllPoints]);
-
-  useEffect(() => {
+  const initMapAndRender = useCallback(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
     const map = L.map(mapRef.current, {
@@ -257,79 +291,132 @@ function AdminFridgeMapInner({ cityId = 'all' }: Props) {
     map.addLayer(pointCluster);
     mapInstanceRef.current = map;
     pointClusterRef.current = pointCluster;
-    map.whenReady(() => setMapReady(true));
 
-    return () => {
-      abortRef.current?.abort();
-      setMapReady(false);
-      pointCluster.clearLayers();
-      map.remove();
-      mapInstanceRef.current = null;
-      pointClusterRef.current = null;
-    };
-  }, []);
+    map.whenReady(() => {
+      renderAllPoints(pointsRef.current);
+      setPhase('ready');
+      map.invalidateSize();
+    });
+  }, [renderAllPoints]);
+
+  const loadAllPoints = useCallback(async (targetCityId: string) => {
+    abortRef.current?.abort();
+    destroyMap();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setPhase('loading');
+    setHint(null);
+    setPointCount(0);
+    setProgress({ loaded: 0, total: 0 });
+    pointsRef.current = [];
+
+    const params = new URLSearchParams();
+    if (targetCityId && targetCityId !== 'all') {
+      params.set('cityId', targetCityId);
+    }
+
+    let skip = 0;
+
+    try {
+      while (true) {
+        params.set('skip', String(skip));
+        params.set('limit', String(BULK_CHUNK));
+
+        const res = await api.get<BulkResponse>(`/api/admin/map-fridges/bulk?${params.toString()}`, {
+          signal: controller.signal,
+          timeout: 300000,
+        });
+
+        if (controller.signal.aborted) return;
+
+        pointsRef.current.push(...res.data.items);
+        skip = res.data.loaded;
+        setProgress({ loaded: skip, total: res.data.total });
+
+        if (!res.data.hasMore) break;
+      }
+
+      if (controller.signal.aborted) return;
+
+      setPhase('rendering');
+    } catch (e: unknown) {
+      if (controller.signal.aborted) return;
+      const err = e as { message?: string; response?: { data?: { error?: string } } };
+      setPhase('error');
+      setHint(err?.response?.data?.error || err?.message || 'Ошибка загрузки карты');
+    }
+  }, [destroyMap]);
 
   useEffect(() => {
-    if (!mapReady) return undefined;
-    pointClusterRef.current?.clearLayers();
-    loadAllPoints(cityId);
-    return () => abortRef.current?.abort();
-  }, [cityId, mapReady, loadAllPoints]);
+    if (phase !== 'rendering') return undefined;
+    const frame = requestAnimationFrame(() => {
+      initMapAndRender();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [phase, initMapAndRender]);
 
-  const progressPct = progress.total > 0
-    ? Math.min(100, Math.round((progress.loaded / progress.total) * 100))
-    : 0;
+  useEffect(() => {
+    if (!cityId) return undefined;
+    loadAllPoints(cityId);
+    return () => {
+      abortRef.current?.abort();
+      destroyMap();
+    };
+  }, [cityId, loadAllPoints, destroyMap]);
+
+  if (!cityId) {
+    return (
+      <div className="space-y-2">
+        <MapLegend />
+        <div
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center gap-2 px-6"
+          style={{ height: MAP_HEIGHT }}
+        >
+          <p className="text-sm font-medium text-slate-700">Город не выбран</p>
+          <p className="text-xs text-slate-500">Выберите регион для загрузки карты</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'loading') {
+    return (
+      <div className="space-y-2">
+        <MapLegend />
+        <LoadingPanel phase="loading" progress={progress} />
+      </div>
+    );
+  }
+
+  if (phase === 'error') {
+    return (
+      <div className="space-y-2">
+        <MapLegend hint={hint} />
+        <div
+          className="w-full rounded-lg border border-red-200 bg-red-50 flex items-center justify-center px-6"
+          style={{ height: MAP_HEIGHT }}
+        >
+          <p className="text-sm text-red-800 text-center">{hint || 'Не удалось загрузить карту'}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#9333ea' }} />
-          Сломан
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#ea580c' }} />
-          На ремонте
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#28a745' }} />
-          Свежая отметка
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#dc3545' }} />
-          Давно без визита
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#2563eb' }} />
-          Исправен / нет отметок
-        </span>
-        {phase === 'ready' && progress.total > 0 && (
-          <span className="text-slate-500 ml-auto">{progress.total} точек на карте</span>
-        )}
-        {hint && <span className="text-amber-700 ml-auto">{hint}</span>}
-      </div>
-      <div className="w-full h-[480px] rounded-lg overflow-hidden border border-slate-200 relative">
-        <div ref={mapRef} className="w-full h-full" />
-        {(phase === 'loading' || phase === 'rendering') && (
-          <div className="absolute inset-0 bg-white/85 flex flex-col items-center justify-center gap-3 z-[500]">
-            <p className="text-sm font-medium text-slate-800">
-              {phase === 'rendering' ? 'Отрисовка карты…' : 'Загрузка холодильников…'}
-            </p>
-            {progress.total > 0 && (
-              <>
-                <p className="text-xs text-slate-600">
-                  {progress.loaded.toLocaleString('ru-RU')} / {progress.total.toLocaleString('ru-RU')}
-                </p>
-                <div className="w-64 h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-blue-600 transition-all duration-300"
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-              </>
-            )}
+      <MapLegend pointCount={phase === 'ready' ? pointCount : undefined} hint={hint} />
+      <div className="relative w-full rounded-lg overflow-hidden border border-slate-200" style={{ height: MAP_HEIGHT }}>
+        {phase === 'rendering' && (
+          <div className="absolute inset-0 z-10">
+            <LoadingPanel phase="rendering" progress={progress} />
           </div>
         )}
+        <div
+          ref={mapRef}
+          className={`w-full h-full ${phase !== 'ready' ? 'invisible' : ''}`}
+        />
         <style>{`
           .custom-marker {
             background: transparent !important;

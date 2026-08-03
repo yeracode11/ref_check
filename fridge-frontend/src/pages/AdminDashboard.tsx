@@ -81,9 +81,10 @@ const ADMIN_MAP_CITY_STORAGE_KEY = 'stellref_admin_map_city_id';
 function readStoredMapCityId(): string {
   try {
     const v = localStorage.getItem(ADMIN_MAP_CITY_STORAGE_KEY);
-    return v === 'all' || (v && v.length > 0) ? v : 'all';
+    if (v === 'all' || (v && v.length > 0)) return v;
+    return '';
   } catch {
-    return 'all';
+    return '';
   }
 }
 
@@ -170,8 +171,8 @@ export default function AdminDashboard() {
             if (prev && res.data.some((c: { _id: string }) => c._id === prev)) return prev;
             const stored = readStoredMapCityId();
             if (stored === 'all') return 'all';
-            if (res.data.some((c: { _id: string }) => c._id === stored)) return stored;
-            return 'all';
+            if (stored && res.data.some((c: { _id: string }) => c._id === stored)) return stored;
+            return res.data[0]._id;
           });
           if (!newFridge.cityId) {
             setNewFridge(prev => ({ ...prev, cityId: res.data[0]._id }));
@@ -216,9 +217,9 @@ export default function AdminDashboard() {
     };
   }, [user]);
 
-  // Карта — грузим, когда блок попадает в viewport (или через 2 с fallback)
+  // Карта — грузим, когда выбран город и блок попадает в viewport (или через 2 с fallback)
   useEffect(() => {
-    if (!user || user.role !== 'admin' || !selectedCityIdForMap) return;
+    if (!user || user.role !== 'admin' || !selectedCityIdForMap || selectedCityIdForMap === '') return;
 
     let cancelled = false;
     let observer: IntersectionObserver | null = null;
@@ -1331,24 +1332,26 @@ export default function AdminDashboard() {
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Фильтр по городу:</label>
                 <select
-                  value={selectedCityIdForMap || 'all'}
+                  value={selectedCityIdForMap || ''}
                   onChange={(e) => {
                     const next = e.target.value;
                     setSelectedCityIdForMap(next);
+                    if (next) setMapDataRequested(true);
                     try {
                       localStorage.setItem(ADMIN_MAP_CITY_STORAGE_KEY, next);
                     } catch {
                       /* ignore */
                     }
                   }}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px] shadow-sm"
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[180px] shadow-sm"
                 >
-                  <option value="all">Все города (медленнее)</option>
+                  <option value="" disabled>Выберите город…</option>
                   {cities.map((city) => (
                     <option key={city._id} value={city._id}>
                       {city.name}
                     </option>
                   ))}
+                  <option value="all">Все города (долго, ~30 сек)</option>
                 </select>
               </div>
               {selectedCityIdForMap !== 'all' && (
@@ -1393,13 +1396,18 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
-        {mapDataRequested ? (
+        {!selectedCityIdForMap ? (
+          <div className="h-[480px] flex flex-col items-center justify-center gap-2 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-sm font-medium text-slate-700">Выберите город в фильтре выше</p>
+            <p className="text-xs text-slate-500">Карта загрузится после выбора региона</p>
+          </div>
+        ) : mapDataRequested ? (
           <AdminFridgeMap
             key={`${selectedCityIdForMap}-${mapRefreshKey}`}
             cityId={selectedCityIdForMap}
           />
         ) : (
-          <div className="h-[500px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200">
+          <div className="h-[480px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200">
             <p className="text-sm text-slate-500">Прокрутите к карте для загрузки…</p>
           </div>
         )}
