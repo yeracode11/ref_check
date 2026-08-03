@@ -73,6 +73,61 @@ function createPointIcon(color: string): L.DivIcon {
   });
 }
 
+/** Приоритет кластера: сломан > на ремонте > давно > свежие > синий */
+function getClusterColor(
+  visitStatuses: string[],
+  equipmentStatuses: (EquipmentStatus | undefined)[],
+): string {
+  if (equipmentStatuses.some((s) => s === 'broken')) {
+    return getEquipmentMarkerColor('purple');
+  }
+  if (equipmentStatuses.some((s) => s === 'under_repair')) {
+    return getEquipmentMarkerColor('orange');
+  }
+
+  const normalizedStatuses = visitStatuses.map((s) => (s === 'location_changed' ? 'old' : s));
+  if (normalizedStatuses.some((s) => s === 'old')) return '#dc3545';
+  if (normalizedStatuses.some((s) => s === 'today' || s === 'week')) return '#28a745';
+  return '#2563eb';
+}
+
+function createClusterIcon(cluster: { getAllChildMarkers: () => L.Marker[]; getChildCount: () => number }): L.DivIcon {
+  const childMarkers = cluster.getAllChildMarkers();
+  const statuses = childMarkers.map((m) => {
+    const opts = m.options as L.MarkerOptions & { status?: string };
+    return opts.status || 'never';
+  });
+  const equipmentStatuses = childMarkers.map((m) => {
+    const opts = m.options as L.MarkerOptions & { equipmentStatus?: EquipmentStatus };
+    return opts.equipmentStatus;
+  });
+  const color = getClusterColor(statuses, equipmentStatuses);
+  const count = cluster.getChildCount();
+  const size = count < 10 ? 36 : count < 100 ? 40 : 44;
+  const fontSize = count < 100 ? 14 : 12;
+
+  return L.divIcon({
+    className: 'custom-cluster',
+    html: `<div style="background-color: ${color}; width: ${size}px; height: ${size}px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: ${fontSize}px;">${count}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function createMarkerClusterGroup(): L.MarkerClusterGroup {
+  return L.markerClusterGroup({
+    chunkedLoading: true,
+    chunkInterval: 150,
+    chunkDelay: 40,
+    maxClusterRadius: 50,
+    disableClusteringAtZoom: 17,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    iconCreateFunction: createClusterIcon,
+  });
+}
+
 function buildPopupHtml(f: AdminFridgeForMap): string {
   const equipmentStatus = f.equipmentStatus || 'working';
   const warehouseLabel = f.warehouseStatus === 'warehouse' ? 'На складе'
@@ -328,16 +383,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
       subdomains: ['a', 'b', 'c'],
     }).addTo(map);
 
-    const pointCluster = L.markerClusterGroup({
-      chunkedLoading: true,
-      chunkInterval: 150,
-      chunkDelay: 40,
-      maxClusterRadius: 55,
-      disableClusteringAtZoom: 17,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      zoomToBoundsOnClick: true,
-    });
+    const pointCluster = createMarkerClusterGroup();
 
     map.addLayer(pointCluster);
     mapInstanceRef.current = map;
@@ -404,6 +450,16 @@ function AdminFridgeMapInner({ cityId }: Props) {
           .custom-marker {
             background: transparent !important;
             border: none !important;
+          }
+          .custom-cluster {
+            background: transparent !important;
+            border: none !important;
+          }
+          .marker-cluster,
+          .marker-cluster-small,
+          .marker-cluster-medium,
+          .marker-cluster-large {
+            background: transparent !important;
           }
           .leaflet-popup-content-wrapper { border-radius: 8px; }
         `}</style>
