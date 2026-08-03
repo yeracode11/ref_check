@@ -32,7 +32,7 @@ if [[ -z "$UBUNTU_CODENAME" ]]; then
   exit 1
 fi
 
-# Версия MongoDB по Ubuntu (официальные репозитории)
+# Версия MongoDB по Ubuntu (официальные реpositories)
 case "$UBUNTU_CODENAME" in
   focal)  MONGO_VERSION="${MONGO_VERSION:-6.0}" ;;
   jammy|noble) MONGO_VERSION="${MONGO_VERSION:-7.0}" ;;
@@ -43,7 +43,14 @@ case "$UBUNTU_CODENAME" in
     ;;
 esac
 
-echo "[install-mongo] Ubuntu ${VERSION_ID} (${UBUNTU_CODENAME}), MongoDB ${MONGO_VERSION}, cache ${CACHE_GB} GB"
+# MongoDB apt пока без noble — используем репозиторий jammy (22.04), пакеты совместимы
+APT_CODENAME="$UBUNTU_CODENAME"
+if [[ "$UBUNTU_CODENAME" == "noble" ]]; then
+  APT_CODENAME="jammy"
+  echo "[install-mongo] noble → APT repo jammy (официально для Ubuntu 22.04)"
+fi
+
+echo "[install-mongo] Ubuntu ${VERSION_ID} (${UBUNTU_CODENAME}), MongoDB ${MONGO_VERSION}, cache ${CACHE_GB} GB, apt=${APT_CODENAME}"
 
 if command -v mongosh >/dev/null 2>&1; then
   if mongosh --quiet "mongodb://127.0.0.1:27017/admin" --eval 'db.runCommand({ping:1}).ok' 2>/dev/null | grep -q '^1$'; then
@@ -52,23 +59,23 @@ if command -v mongosh >/dev/null 2>&1; then
   fi
 fi
 
-apt-get update -qq
-apt-get install -y gnupg curl ca-certificates
-
-# Удалить старые/чужие list (focal на jammy → libssl1.1)
+# Сначала убрать сломанный noble repo — иначе apt-get update падает
 rm -f /etc/apt/sources.list.d/mongodb-org-*.list
 for f in /etc/apt/trusted.gpg.d/mongodb*.gpg; do
   [[ -f "$f" ]] && rm -f "$f"
 done
+
+apt-get update -qq
+apt-get install -y gnupg curl ca-certificates
 
 KEYRING="/usr/share/keyrings/mongodb-server-${MONGO_VERSION}.gpg"
 rm -f "$KEYRING"
 curl -fsSL "https://www.mongodb.org/static/pgp/server-${MONGO_VERSION}.asc" | gpg --dearmor --yes -o "$KEYRING"
 
 LIST="/etc/apt/sources.list.d/mongodb-org-${MONGO_VERSION}.list"
-echo "deb [ arch=amd64,arm64 signed-by=${KEYRING} ] https://repo.mongodb.org/apt/ubuntu ${UBUNTU_CODENAME}/mongodb-org/${MONGO_VERSION} multiverse" >"$LIST"
+echo "deb [ arch=amd64,arm64 signed-by=${KEYRING} ] https://repo.mongodb.org/apt/ubuntu ${APT_CODENAME}/mongodb-org/${MONGO_VERSION} multiverse" >"$LIST"
 
-echo "[install-mongo] APT source: ${UBUNTU_CODENAME}/mongodb-org/${MONGO_VERSION}"
+echo "[install-mongo] APT source: ${APT_CODENAME}/mongodb-org/${MONGO_VERSION}"
 apt-get update -qq
 
 if ! apt-get install -y mongodb-org mongodb-mongosh mongodb-database-tools; then

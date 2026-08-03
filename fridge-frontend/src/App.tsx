@@ -55,31 +55,31 @@ export default function App() {
   // Мемоизируем navItems для оптимизации
   const navItems = useMemo(() => {
     const baseNavItems = [
-      { path: '/', label: 'Отметки', icon: '📋' },
-      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
-      { path: '/new', label: 'Новая отметка', icon: '➕' },
+      { path: '/', label: 'Отметки' },
+      { path: '/fridges', label: 'Холодильники' },
+      { path: '/new', label: 'Новая отметка' },
     ];
 
     const adminNavItems = [
-      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
-      { path: '/sales', label: 'Сервис НОП', icon: '📈' },
-      { path: '/admin', label: 'Админ', icon: '🛠️' },
-      { path: '/users', label: 'Пользователи', icon: '👥' },
-      { path: '/cities', label: 'Города', icon: '🏙️' },
+      { path: '/fridges', label: 'Холодильники' },
+      { path: '/sales', label: 'Сервис НОП' },
+      { path: '/admin', label: 'Админ' },
+      { path: '/users', label: 'Пользователи' },
+      { path: '/cities', label: 'Города' },
     ];
 
     const accountantNavItems = [
-      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
-      { path: '/accountant', label: 'Управление', icon: '📊' },
+      { path: '/fridges', label: 'Холодильники' },
+      { path: '/accountant', label: 'Управление' },
     ];
 
     const serviceManagerNavItems = [
-      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
+      { path: '/fridges', label: 'Холодильники' },
     ];
 
     const salesHeadNavItems = [
-      { path: '/fridges', label: 'Холодильники', icon: '🧊' },
-      { path: '/sales', label: 'Управление', icon: '📊' },
+      { path: '/fridges', label: 'Холодильники' },
+      { path: '/sales', label: 'Управление' },
     ];
     
     if (user?.role === 'admin') return adminNavItems;
@@ -94,42 +94,24 @@ export default function App() {
       <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-[800]" style={{ zIndex: 800 }}>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <Link 
-              to={
-                user?.role === 'admin' || user?.role === 'accountant' || user?.role === 'service_manager' || user?.role === 'sales_head'
-                  ? '/fridges'
-                  : '/'
-              } 
-              className="flex items-center gap-2" 
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              <span className="text-2xl">🧊</span>
-              <span className="font-bold text-xl text-slate-900 hidden sm:inline">Fridge Manager</span>
-              <span className="font-bold text-lg text-slate-900 sm:hidden">FM</span>
-            </Link>
-            
-            {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center gap-1">
               {navItems.map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                     location.pathname === item.path
                       ? 'bg-slate-900 text-white shadow-sm'
                       : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >
-                  <span>{item.icon}</span>
-                  <span>{item.label}</span>
+                  {item.label}
                 </Link>
               ))}
             </nav>
 
-            {/* User Menu */}
             {user && (
-              <div className="flex items-center gap-3 md:gap-4">
+              <div className="flex items-center gap-3 md:gap-4 ml-auto">
                 <div className="hidden sm:flex flex-col items-end">
                   <span className="text-sm font-medium text-slate-900">{user.username}</span>
                   <span className="text-xs text-slate-500 capitalize">{user.role}</span>

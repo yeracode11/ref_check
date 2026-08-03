@@ -22,6 +22,7 @@ fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[mongo-docker] Installing docker.io..."
+  rm -f /etc/apt/sources.list.d/mongodb-org-*.list
   apt-get update -qq
   apt-get install -y docker.io
   systemctl enable --now docker

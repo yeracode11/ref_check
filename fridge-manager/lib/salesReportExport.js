@@ -403,12 +403,18 @@ const VISIT_SHEET_COLS = [
   { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 18 },
 ];
 
+function isAccountantExport(user, opts = {}) {
+  if (opts.accountantExport != null) return opts.accountantExport;
+  return user?.role === 'accountant';
+}
+
 function appendFundAndRepairSheets(workbook, sheets) {
   const {
     fundRows,
     repairRows,
     neverRows,
     oldRows,
+    freshRows,
   } = sheets;
 
   const fundSheet = XLSX.utils.json_to_sheet(fundRows);
@@ -417,6 +423,10 @@ function appendFundAndRepairSheets(workbook, sheets) {
     { wch: 14 }, { wch: 18 }, { wch: 22 },
   ];
   XLSX.utils.book_append_sheet(workbook, fundSheet, 'Состояние фонда');
+
+  if (freshRows) {
+    appendVisitStatusSheet(workbook, 'Сегодня и неделя', freshRows, VISIT_SHEET_COLS);
+  }
 
   appendVisitStatusSheet(workbook, 'Нет отметок', neverRows, VISIT_SHEET_COLS);
   appendVisitStatusSheet(workbook, 'Давно', oldRows, VISIT_SHEET_COLS);
@@ -446,18 +456,26 @@ function buildSalesReportWorkbook(reportSheets, fridgeRows = null) {
 async function buildExportReportSheets(user, query, exportContext, exportOpts) {
   const visitCategories = fetchVisitCategorySheets(exportContext);
   const fridgeIdsForRepairs = exportContext.fridges.map((f) => f._id);
+  const excludeFreshVisits = exportOpts.excludeFreshVisits
+    ?? !isAccountantExport(user, exportOpts);
 
   const [fundRows, repairRows] = await Promise.all([
-    fetchFundSheetRows(user, query, { ...exportOpts, excludeFreshVisits: true }, exportContext),
+    fetchFundSheetRows(user, query, { ...exportOpts, excludeFreshVisits }, exportContext),
     fetchRepairSheetRows(user, query, exportOpts, { fridgeIds: fridgeIdsForRepairs }),
   ]);
 
-  return {
+  const reportSheets = {
     fundRows,
     repairRows,
     neverRows: visitCategories.neverRows,
     oldRows: visitCategories.oldRows,
   };
+
+  if (exportOpts.includeFreshVisitSheets ?? isAccountantExport(user, exportOpts)) {
+    reportSheets.freshRows = visitCategories.freshRows;
+  }
+
+  return reportSheets;
 }
 
 /**
@@ -478,10 +496,17 @@ async function appendSalesReportSheets(workbook, user, query = {}, opts = {}) {
 }
 
 async function generateFullExportBuffer(user, query = {}, opts = {}) {
-  const exportOpts = { activeOnly: false, geocode: opts.geocode !== false, ...opts };
+  const accountantExport = isAccountantExport(user, opts);
+  const exportOpts = {
+    activeOnly: false,
+    geocode: opts.geocode !== false,
+    ...opts,
+    includeFreshVisitSheets: opts.includeFreshVisitSheets ?? accountantExport,
+    excludeFreshVisits: opts.excludeFreshVisits ?? !accountantExport,
+  };
   const exportContext = await loadFullExportContext(user, query, exportOpts);
   const [fridgeRows, reportSheets] = await Promise.all([
-    fetchFridgeListSheetRows(user, query, { ...exportOpts, excludeFreshVisits: true }, exportContext),
+    fetchFridgeListSheetRows(user, query, exportOpts, exportContext),
     buildExportReportSheets(user, query, exportContext, exportOpts),
   ]);
   return buildSalesReportWorkbook(reportSheets, fridgeRows);
@@ -507,4 +532,5 @@ module.exports = {
   appendSalesReportSheets,
   buildExportFileName,
   buildFridgesExportFileName,
+  isAccountantExport,
 };

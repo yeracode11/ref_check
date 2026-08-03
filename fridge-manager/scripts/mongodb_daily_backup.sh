@@ -22,6 +22,9 @@ RETENTION_COUNT="${RETENTION_COUNT:-30}"
 LOG_FILE="${LOG_FILE:-$BACKUP_DIR/backup.log}"
 ARCHIVE_PREFIX="fridge_manager_"
 
+mkdir -p "$BACKUP_DIR"
+touch "$LOG_FILE" 2>/dev/null || true
+
 log() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" | tee -a "$LOG_FILE"
 }

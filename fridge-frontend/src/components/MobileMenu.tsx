@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 type MobileMenuProps = {
   isOpen: boolean;
   onClose: () => void;
-  navItems: Array<{ path: string; label: string; icon: string }>;
+  navItems: Array<{ path: string; label: string }>;
 };
 
 export function MobileMenu({ isOpen, onClose, navItems }: MobileMenuProps) {
@@ -40,10 +40,7 @@ export function MobileMenu({ isOpen, onClose, navItems }: MobileMenuProps) {
         <div className="flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">🧊</span>
-              <span className="font-bold text-lg">Fridge Manager</span>
-            </div>
+            <span className="font-semibold text-slate-900">Меню</span>
             <button
               onClick={onClose}
               className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
@@ -63,14 +60,13 @@ export function MobileMenu({ isOpen, onClose, navItems }: MobileMenuProps) {
                   key={item.path}
                   to={item.path}
                   onClick={onClose}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${
+                  className={`block px-4 py-3 rounded-lg font-medium transition-colors ${
                     location.pathname === item.path
                       ? 'bg-slate-900 text-white'
                       : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >
-                  <span className="text-xl">{item.icon}</span>
-                  <span>{item.label}</span>
+                  {item.label}
                 </Link>
               ))}
             </div>
