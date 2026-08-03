@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, memo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, memo, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
@@ -39,12 +39,14 @@ type Props = {
   cityId?: string;
 };
 
-type Phase = 'loading' | 'mounting' | 'ready' | 'error';
+type DataPhase = 'loading' | 'ready' | 'error';
 
 const DEFAULT_CENTER: L.LatLngTuple = [42.8996, 71.3696];
 const DEFAULT_ZOOM = 12;
 const BULK_CHUNK = 3000;
 const MAP_HEIGHT = 480;
+
+const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 function getVisitMarkerColor(status: string): string {
   if (status === 'broken') return getEquipmentMarkerColor('purple');
@@ -93,15 +95,6 @@ function buildPopupHtml(f: AdminFridgeForMap): string {
   `;
 }
 
-function refreshMapLayout(map: L.Map) {
-  map.invalidateSize({ animate: false });
-  map.eachLayer((layer) => {
-    if (layer instanceof L.TileLayer) {
-      layer.redraw();
-    }
-  });
-}
-
 function MapLegend({ pointCount, hint }: { pointCount?: number; hint?: string | null }) {
   return (
     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
@@ -133,7 +126,7 @@ function MapLegend({ pointCount, hint }: { pointCount?: number; hint?: string | 
   );
 }
 
-function LoadingPanel({
+function LoadingOverlay({
   title,
   progress,
 }: {
@@ -145,10 +138,7 @@ function LoadingPanel({
     : null;
 
   return (
-    <div
-      className="w-full rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center gap-4 px-6"
-      style={{ height: MAP_HEIGHT }}
-    >
+    <div className="absolute inset-0 z-[1000] bg-white/90 flex flex-col items-center justify-center gap-4 px-6 pointer-events-none">
       <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
       <p className="text-base font-medium text-slate-800">{title}</p>
       {progress.total > 0 ? (
@@ -180,12 +170,14 @@ function AdminFridgeMapInner({ cityId }: Props) {
   const abortRef = useRef<AbortController | null>(null);
   const pointsRef = useRef<MapPointItem[]>([]);
 
-  const [phase, setPhase] = useState<Phase>('loading');
+  const [mapInitialized, setMapInitialized] = useState(false);
+  const [dataPhase, setDataPhase] = useState<DataPhase>('loading');
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [hint, setHint] = useState<string | null>(null);
   const [pointCount, setPointCount] = useState(0);
 
   const destroyMap = useCallback(() => {
+    abortRef.current?.abort();
     const map = mapInstanceRef.current;
     const cluster = pointClusterRef.current;
     if (cluster && map) {
@@ -198,6 +190,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
     mapInstanceRef.current = null;
     pointClusterRef.current = null;
     popupDataRef.current.clear();
+    setMapInitialized(false);
   }, []);
 
   const renderAllPoints = useCallback((points: MapPointItem[]) => {
@@ -249,6 +242,11 @@ function AdminFridgeMapInner({ cityId }: Props) {
 
     if (markerLayers.length) {
       cluster.addLayers(markerLayers);
+    }
+
+    map.invalidateSize({ animate: false });
+
+    if (markerLayers.length) {
       const bounds = cluster.getBounds();
       if (bounds.isValid()) {
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
@@ -258,62 +256,22 @@ function AdminFridgeMapInner({ cityId }: Props) {
       setHint('Нет холодильников с координатами в выбранном регионе.');
     }
 
+    window.setTimeout(() => map.invalidateSize({ animate: false }), 100);
+
     return markerLayers.length;
   }, []);
 
-  const initMapAndRender = useCallback(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
-
-    const map = L.map(mapRef.current, {
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
-      zoomControl: true,
-      preferCanvas: true,
-    });
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 19,
-    }).addTo(map);
-
-    const pointCluster = L.markerClusterGroup({
-      chunkedLoading: true,
-      chunkInterval: 150,
-      chunkDelay: 40,
-      maxClusterRadius: 55,
-      disableClusteringAtZoom: 17,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      zoomToBoundsOnClick: true,
-    });
-
-    map.addLayer(pointCluster);
-    mapInstanceRef.current = map;
-    pointClusterRef.current = pointCluster;
-
-    map.whenReady(() => {
-      refreshMapLayout(map);
-      const count = renderAllPoints(pointsRef.current);
-      setPointCount(count);
-      setPhase('ready');
-
-      window.setTimeout(() => refreshMapLayout(map), 50);
-      window.setTimeout(() => refreshMapLayout(map), 250);
-    });
-  }, [renderAllPoints]);
-
   const loadAllPoints = useCallback(async (targetCityId: string) => {
     abortRef.current?.abort();
-    destroyMap();
-
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setPhase('loading');
+    setDataPhase('loading');
     setHint(null);
     setPointCount(0);
     setProgress({ loaded: 0, total: 0 });
     pointsRef.current = [];
+    pointClusterRef.current?.clearLayers();
 
     const params = new URLSearchParams();
     if (targetCityId && targetCityId !== 'all') {
@@ -343,31 +301,64 @@ function AdminFridgeMapInner({ cityId }: Props) {
 
       if (controller.signal.aborted) return;
 
-      setPhase('mounting');
+      const count = renderAllPoints(pointsRef.current);
+      setPointCount(count);
+      setDataPhase('ready');
     } catch (e: unknown) {
       if (controller.signal.aborted) return;
       const err = e as { message?: string; response?: { data?: { error?: string } } };
-      setPhase('error');
+      setDataPhase('error');
       setHint(err?.response?.data?.error || err?.message || 'Ошибка загрузки карты');
     }
-  }, [destroyMap]);
+  }, [renderAllPoints]);
 
-  useEffect(() => {
-    if (phase !== 'mounting') return undefined;
-    const frame = requestAnimationFrame(() => {
-      initMapAndRender();
+  useLayoutEffect(() => {
+    if (!cityId || !mapRef.current) return undefined;
+
+    const container = mapRef.current;
+    const map = L.map(container, {
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      zoomControl: true,
     });
-    return () => cancelAnimationFrame(frame);
-  }, [phase, initMapAndRender]);
 
-  useEffect(() => {
-    if (!cityId) return undefined;
-    loadAllPoints(cityId);
+    L.tileLayer(TILE_URL, {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+      subdomains: ['a', 'b', 'c'],
+    }).addTo(map);
+
+    const pointCluster = L.markerClusterGroup({
+      chunkedLoading: true,
+      chunkInterval: 150,
+      chunkDelay: 40,
+      maxClusterRadius: 55,
+      disableClusteringAtZoom: 17,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+    });
+
+    map.addLayer(pointCluster);
+    mapInstanceRef.current = map;
+    pointClusterRef.current = pointCluster;
+
+    map.whenReady(() => {
+      map.invalidateSize({ animate: false });
+      setMapInitialized(true);
+      window.setTimeout(() => map.invalidateSize({ animate: false }), 50);
+    });
+
     return () => {
-      abortRef.current?.abort();
       destroyMap();
     };
-  }, [cityId, loadAllPoints, destroyMap]);
+  }, [cityId, destroyMap]);
+
+  useEffect(() => {
+    if (!cityId || !mapInitialized) return undefined;
+    loadAllPoints(cityId);
+    return () => abortRef.current?.abort();
+  }, [cityId, mapInitialized, loadAllPoints]);
 
   if (!cityId) {
     return (
@@ -384,16 +375,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
     );
   }
 
-  if (phase === 'loading') {
-    return (
-      <div className="space-y-2">
-        <MapLegend />
-        <LoadingPanel title="Загрузка холодильников…" progress={progress} />
-      </div>
-    );
-  }
-
-  if (phase === 'error') {
+  if (dataPhase === 'error') {
     return (
       <div className="space-y-2">
         <MapLegend hint={hint} />
@@ -409,14 +391,15 @@ function AdminFridgeMapInner({ cityId }: Props) {
 
   return (
     <div className="space-y-2">
-      <MapLegend pointCount={phase === 'ready' ? pointCount : undefined} hint={hint} />
-      <div className="relative w-full rounded-lg overflow-hidden border border-slate-200" style={{ height: MAP_HEIGHT }}>
-        {phase === 'mounting' && (
-          <div className="absolute inset-0 z-10">
-            <LoadingPanel title="Отрисовка карты…" progress={progress} />
-          </div>
+      <MapLegend pointCount={dataPhase === 'ready' ? pointCount : undefined} hint={hint} />
+      <div
+        className="relative w-full rounded-lg border border-slate-200 overflow-hidden"
+        style={{ height: MAP_HEIGHT }}
+      >
+        <div ref={mapRef} className="absolute inset-0 z-0" style={{ minHeight: MAP_HEIGHT }} />
+        {dataPhase === 'loading' && (
+          <LoadingOverlay title="Загрузка холодильников…" progress={progress} />
         )}
-        <div ref={mapRef} className="w-full h-full" />
         <style>{`
           .custom-marker {
             background: transparent !important;
