@@ -6,7 +6,8 @@
 #   MONGODB_URI     — строка подключения (если не задана, читается из ENV_FILE)
 #   ENV_FILE        — путь к .env с MONGODB_URI (по умолчанию: ../.env относительно скрипта)
 #   BACKUP_DIR      — каталог бэкапов (по умолчанию: /backups)
-#   RETENTION_COUNT — сколько последних архивов хранить (по умолчанию: 30)
+#   RETENTION_DAYS  — удалять архивы старше N дней (по умолчанию: 30)
+#   RETENTION_COUNT — доп. лимит: хранить не больше N последних (0 = только по дням)
 #   LOG_FILE        — лог (по умолчанию: BACKUP_DIR/backup.log)
 #
 # Требования: mongodump в PATH (пакет mongodb-database-tools).
@@ -18,7 +19,8 @@ DEFAULT_ENV="${SCRIPT_DIR}/../.env"
 
 ENV_FILE="${ENV_FILE:-$DEFAULT_ENV}"
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
-RETENTION_COUNT="${RETENTION_COUNT:-30}"
+RETENTION_DAYS="${RETENTION_DAYS:-30}"
+RETENTION_COUNT="${RETENTION_COUNT:-0}"
 LOG_FILE="${LOG_FILE:-$BACKUP_DIR/backup.log}"
 ARCHIVE_PREFIX="fridge_manager_"
 
@@ -34,22 +36,36 @@ log_error() {
 }
 
 cleanup_old_backups() {
-  # ls -1t: сначала новые; оставляем RETENTION_COUNT последних, остальное удаляем
-  local i=0
   local deleted=0
-  while IFS= read -r f; do
-    [[ -z "$f" || ! -f "$f" ]] && continue
-    ((i++)) || true
-    if (( i > RETENTION_COUNT )); then
-      log "  удалить: $f"
+  local remaining=0
+
+  if [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] && (( RETENTION_DAYS > 0 )); then
+    while IFS= read -r f; do
+      [[ -z "$f" || ! -f "$f" ]] && continue
+      log "  удалить (старше ${RETENTION_DAYS} дн.): $f"
       rm -f "$f"
       ((deleted++)) || true
-    fi
-  done < <(ls -1t "$BACKUP_DIR"/${ARCHIVE_PREFIX}*.gz 2>/dev/null || true)
+    done < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${ARCHIVE_PREFIX}*.gz" -mtime +"$RETENTION_DAYS" -print 2>/dev/null || true)
+  fi
+
+  if [[ "$RETENTION_COUNT" =~ ^[0-9]+$ ]] && (( RETENTION_COUNT > 0 )); then
+    local i=0
+    while IFS= read -r f; do
+      [[ -z "$f" || ! -f "$f" ]] && continue
+      ((i++)) || true
+      if (( i > RETENTION_COUNT )); then
+        log "  удалить (лимит $RETENTION_COUNT): $f"
+        rm -f "$f"
+        ((deleted++)) || true
+      fi
+    done < <(ls -1t "$BACKUP_DIR"/${ARCHIVE_PREFIX}*.gz 2>/dev/null || true)
+  fi
+
+  remaining="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${ARCHIVE_PREFIX}*.gz" 2>/dev/null | wc -l | tr -d ' ')"
   if (( deleted > 0 )); then
-    log "Удалено старых архивов: $deleted (храним последние $RETENTION_COUNT)"
-  elif (( i > 0 )); then
-    log "Архивов: $i (лимит $RETENTION_COUNT) — удаление не требуется"
+    log "Удалено старых архивов: $deleted (осталось: $remaining, храним ≤ ${RETENTION_DAYS} дн.)"
+  elif (( remaining > 0 )); then
+    log "Архивов: $remaining — удаление не требуется (лимит ${RETENTION_DAYS} дн.)"
   else
     log "Архивов пока нет (кроме только что созданного)"
   fi
