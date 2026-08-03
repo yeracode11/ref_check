@@ -1405,6 +1405,8 @@ export default function AdminDashboard() {
           <AdminFridgeMap
             key={`${selectedCityIdForMap}-${mapRefreshKey}`}
             cityId={selectedCityIdForMap}
+            cityName={cities.find((c) => c._id === selectedCityIdForMap)?.name}
+            cityCode={cities.find((c) => c._id === selectedCityIdForMap)?.code}
           />
         ) : (
           <div className="h-[480px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200">

@@ -373,6 +373,8 @@ export default function SalesHeadDashboard() {
         <AdminFridgeMap
           key={`${selectedCityId || user?.cityId}-${mapRefreshKey}`}
           cityId={isAdmin ? selectedCityId : user?.cityId}
+          cityName={cityName}
+          cityCode={cities.find((c) => c._id === (selectedCityId || user?.cityId))?.code}
         />
       </Card>
 

@@ -13,6 +13,13 @@ import {
   getEquipmentStatusLabel,
   EquipmentStatus,
 } from '../../utils/fridgeUtils';
+import {
+  CityMapCenter,
+  KAZAKHSTAN_CENTER,
+  isNearCityCenter,
+  resolveCityMapCenter,
+  toLatLngTuple,
+} from '../../utils/cityMapCenters';
 
 export type AdminFridgeForMap = {
   id: string;
@@ -37,11 +44,12 @@ type BulkResponse = {
 
 type Props = {
   cityId?: string;
+  cityName?: string;
+  cityCode?: string;
 };
 
 type DataPhase = 'loading' | 'ready' | 'error';
 
-const DEFAULT_CENTER: L.LatLngTuple = [42.8996, 71.3696];
 const DEFAULT_ZOOM = 12;
 const BULK_CHUNK = 3000;
 const MAP_HEIGHT = 480;
@@ -216,7 +224,7 @@ function LoadingOverlay({
   );
 }
 
-function AdminFridgeMapInner({ cityId }: Props) {
+function AdminFridgeMapInner({ cityId, cityName, cityCode }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const pointClusterRef = useRef<L.MarkerClusterGroup | null>(null);
@@ -248,7 +256,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
     setMapInitialized(false);
   }, []);
 
-  const renderAllPoints = useCallback((points: MapPointItem[]) => {
+  const renderAllPoints = useCallback((points: MapPointItem[], viewCenter: CityMapCenter, singleCity: boolean) => {
     const map = mapInstanceRef.current;
     const cluster = pointClusterRef.current;
     if (!map || !cluster) return 0;
@@ -258,12 +266,18 @@ function AdminFridgeMapInner({ cityId }: Props) {
 
     const markerLayers: L.Marker[] = [];
     let popupId = 0;
+    let skippedFar = 0;
 
     for (const f of points) {
       if (!f.location?.coordinates) continue;
       const [lng, lat] = f.location.coordinates;
       if (lat === 0 && lng === 0) continue;
       if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+
+      if (singleCity && !isNearCityCenter(lat, lng, viewCenter)) {
+        skippedFar++;
+        continue;
+      }
 
       const position: L.LatLngTuple = [lat, lng];
       const equipmentStatus = f.equipmentStatus || 'working';
@@ -307,14 +321,22 @@ function AdminFridgeMapInner({ cityId }: Props) {
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
       }
     } else {
-      map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-      setHint('Нет холодильников с координатами в выбранном регионе.');
+      map.setView(toLatLngTuple(viewCenter), viewCenter.zoom ?? DEFAULT_ZOOM);
+      if (singleCity && skippedFar > 0) {
+        setHint(`${skippedFar} холодильников с координатами вне региона «${cityName || 'города'}» — запустите геокодирование.`);
+      } else {
+        setHint('Нет холодильников с координатами в выбранном регионе.');
+      }
+    }
+
+    if (skippedFar > 0 && markerLayers.length > 0) {
+      setHint(`${skippedFar} точек скрыто — координаты вне «${cityName || 'города'}» (ошибка адреса или cityId).`);
     }
 
     window.setTimeout(() => map.invalidateSize({ animate: false }), 100);
 
     return markerLayers.length;
-  }, []);
+  }, [cityName]);
 
   const loadAllPoints = useCallback(async (targetCityId: string) => {
     abortRef.current?.abort();
@@ -356,7 +378,12 @@ function AdminFridgeMapInner({ cityId }: Props) {
 
       if (controller.signal.aborted) return;
 
-      const count = renderAllPoints(pointsRef.current);
+      const singleCity = Boolean(targetCityId && targetCityId !== 'all');
+      const viewCenter = singleCity
+        ? (resolveCityMapCenter(cityName, cityCode) ?? KAZAKHSTAN_CENTER)
+        : KAZAKHSTAN_CENTER;
+
+      const count = renderAllPoints(pointsRef.current, viewCenter, singleCity);
       setPointCount(count);
       setDataPhase('ready');
     } catch (e: unknown) {
@@ -365,15 +392,20 @@ function AdminFridgeMapInner({ cityId }: Props) {
       setDataPhase('error');
       setHint(err?.response?.data?.error || err?.message || 'Ошибка загрузки карты');
     }
-  }, [renderAllPoints]);
+  }, [renderAllPoints, cityName, cityCode]);
 
   useLayoutEffect(() => {
     if (!cityId || !mapRef.current) return undefined;
 
     const container = mapRef.current;
+    const singleCity = cityId !== 'all';
+    const viewCenter = singleCity
+      ? (resolveCityMapCenter(cityName, cityCode) ?? KAZAKHSTAN_CENTER)
+      : KAZAKHSTAN_CENTER;
+
     const map = L.map(container, {
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
+      center: toLatLngTuple(viewCenter),
+      zoom: viewCenter.zoom ?? DEFAULT_ZOOM,
       zoomControl: true,
     });
 
@@ -398,7 +430,7 @@ function AdminFridgeMapInner({ cityId }: Props) {
     return () => {
       destroyMap();
     };
-  }, [cityId, destroyMap]);
+  }, [cityId, cityName, cityCode, destroyMap]);
 
   useEffect(() => {
     if (!cityId || !mapInitialized) return undefined;
