@@ -115,8 +115,7 @@ export default function SalesHeadDashboard() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [equipmentFilter, setEquipmentFilter] = useState('all');
 
-  const [mapFridges, setMapFridges] = useState<any[]>([]);
-  const [mapLoading, setMapLoading] = useState(false);
+  const [mapRefreshKey, setMapRefreshKey] = useState(0);
 
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [loadingActivity, setLoadingActivity] = useState(true);
@@ -151,32 +150,6 @@ export default function SalesHeadDashboard() {
         .catch(console.error);
     }
   }, [user, isSalesHead, isAdmin]);
-
-  const loadMapData = useCallback(async () => {
-    if (!user) return;
-    try {
-      setMapLoading(true);
-      const params = new URLSearchParams({ all: 'true' });
-      if (isAdmin && selectedCityId) params.append('cityId', selectedCityId);
-      const res = await api.get(`/api/admin/fridge-status?${params.toString()}`);
-      const withLocation = (Array.isArray(res.data) ? res.data : res.data?.data || []).filter(
-        (f: any) =>
-          f.location?.coordinates &&
-          f.location.coordinates[0] !== 0 &&
-          f.location.coordinates[1] !== 0,
-      );
-      setMapFridges(withLocation);
-    } catch (e) {
-      console.error('Ошибка загрузки карты:', e);
-      setMapFridges([]);
-    } finally {
-      setMapLoading(false);
-    }
-  }, [user, isAdmin, selectedCityId]);
-
-  useEffect(() => {
-    loadMapData();
-  }, [loadMapData]);
 
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
     if (!user) return;
@@ -397,15 +370,10 @@ export default function SalesHeadDashboard() {
           Карта холодильников
           {cityName && <span className="text-blue-600 ml-2 font-normal">— {cityName}</span>}
         </h2>
-        {mapLoading ? (
-          <div className="h-[480px] flex items-center justify-center"><LoadingSpinner /></div>
-        ) : mapFridges.length === 0 ? (
-          <div className="h-[480px] flex items-center justify-center text-slate-500 text-sm">
-            Нет холодильников с координатами для отображения на карте
-          </div>
-        ) : (
-          <AdminFridgeMap fridges={mapFridges} />
-        )}
+        <AdminFridgeMap
+          key={`${selectedCityId || user?.cityId}-${mapRefreshKey}`}
+          cityId={isAdmin ? selectedCityId : user?.cityId}
+        />
       </Card>
 
       <Card>

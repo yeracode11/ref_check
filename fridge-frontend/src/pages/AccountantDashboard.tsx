@@ -55,8 +55,7 @@ export default function AccountantDashboard() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   
   // Данные для карты
-  const [mapFridges, setMapFridges] = useState<any[]>([]);
-  const [mapLoading, setMapLoading] = useState(false);
+  const [mapRefreshKey, setMapRefreshKey] = useState(0);
   
   // Проверка доступа при смене пользователя
   useEffect(() => {
@@ -182,34 +181,6 @@ export default function AccountantDashboard() {
         .catch(console.error);
     }
   }, [user]);
-
-  // Функция для загрузки данных карты
-  const loadMapData = useCallback(async () => {
-    if (!user) return;
-    
-    try {
-      setMapLoading(true);
-      // Загружаем все холодильники для карты (all=true)
-      const res = await api.get('/api/admin/fridge-status?all=true');
-      // Фильтруем только те, у которых есть координаты и они не нулевые
-      const fridgesWithLocation = res.data.filter((f: any) => 
-        f.location && 
-        f.location.coordinates && 
-        f.location.coordinates[0] !== 0 && 
-        f.location.coordinates[1] !== 0
-      );
-      setMapFridges(fridgesWithLocation);
-    } catch (error) {
-      console.error('Ошибка загрузки данных для карты:', error);
-    } finally {
-      setMapLoading(false);
-    }
-  }, [user]);
-
-  // Загрузка данных для карты при монтировании
-  useEffect(() => {
-    loadMapData();
-  }, [loadMapData]);
 
   // Загрузка холодильников
   const loadFridges = useCallback(async (skip = 0, reset = false) => {
@@ -353,7 +324,7 @@ export default function AccountantDashboard() {
       // Обновляем данные в фоне для синхронизации
       loadFridges(0, true);
       // Обновляем карту
-      loadMapData();
+      setMapRefreshKey((k) => k + 1);
     } catch (e: any) {
       showToast(`Ошибка: ${e?.response?.data?.error || e.message}`, 'error', 5000);
     } finally {
@@ -518,7 +489,7 @@ export default function AccountantDashboard() {
       setShowStatusModal(false);
       loadFridges(0, true);
       // Обновляем карту
-      loadMapData();
+      setMapRefreshKey((k) => k + 1);
       alert('Статус изменен');
     } catch (e: any) {
       alert('Ошибка: ' + (e?.response?.data?.error || e.message));
@@ -652,17 +623,7 @@ export default function AccountantDashboard() {
         <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Карта холодильников {user?.role === 'accountant' && user?.cityId && cities.length > 0 && `- ${cities[0]?.name}`}
         </h2>
-        {mapLoading ? (
-          <div className="h-[480px] flex items-center justify-center">
-            <LoadingSpinner />
-          </div>
-        ) : mapFridges.length === 0 ? (
-          <div className="h-[480px] flex items-center justify-center text-slate-500">
-            <p>Нет холодильников с координатами для отображения на карте</p>
-          </div>
-        ) : (
-          <AdminFridgeMap fridges={mapFridges} />
-        )}
+        <AdminFridgeMap key={mapRefreshKey} cityId={user?.cityId} />
       </Card>
 
       {/* Фильтры */}

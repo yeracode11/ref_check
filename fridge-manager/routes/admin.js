@@ -31,6 +31,7 @@ const {
 const { getAssignedCityId, resolveCityFilter, userCanAccessFridge } = require('../lib/cityScope');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const { buildMapLocationFilter, isMapMarkersRequest } = require('../lib/mapFridgeQuery');
+const { fetchMapFridgeViewport } = require('../lib/mapFridgeViewport');
 const { attachLongRunningTimeouts } = require('../lib/longRunningHttp');
 const XLSX = require('xlsx');
 
@@ -252,6 +253,27 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
     return res
       .status(500)
       .json({ error: 'Failed to fetch admin fridge status', details: err.message });
+  }
+});
+
+// GET /api/admin/map-fridges?west=&south=&east=&north=&zoom=&cityId=
+// Точки или серверные кластеры только для видимой области (как 2GIS / карты с viewport).
+router.get('/map-fridges', authenticateToken, requireAdminOrAccountantOrSalesHead, async (req, res) => {
+  try {
+    if (req.user.role === 'sales_head' && !getAssignedCityId(req.user)) {
+      return res.status(403).json({
+        error: 'Для НОП не назначен город. Обратитесь к администратору.',
+      });
+    }
+
+    const payload = await fetchMapFridgeViewport(req.user, req.query);
+    return res.json(payload);
+  } catch (err) {
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: status === 400 ? err.message : 'Failed to load map viewport',
+      details: err.message,
+    });
   }
 });
 

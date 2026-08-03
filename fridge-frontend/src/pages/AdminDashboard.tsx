@@ -90,7 +90,6 @@ function readStoredMapCityId(): string {
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [fridges, setFridges] = useState<AdminFridge[]>([]); // Для списка (пагинация)
-  const [allFridges, setAllFridges] = useState<AdminFridge[]>([]); // Для карты (все)
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   /** Реальное число отметок в БД (GET /api/checkins?meta=1), не длина загруженной выборки */
   const [checkinsTotal, setCheckinsTotal] = useState<number | null>(null);
@@ -140,7 +139,7 @@ export default function AdminDashboard() {
   const [creatingFridge, setCreatingFridge] = useState(false);
   const [cities, setCities] = useState<Array<{ _id: string; name: string; code: string }>>([]);
   const [selectedCityIdForMap, setSelectedCityIdForMap] = useState<string>(() => readStoredMapCityId());
-  const [mapLoading, setMapLoading] = useState(false);
+  const [mapRefreshKey, setMapRefreshKey] = useState(0);
   const [mapError, setMapError] = useState<string | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<{
     totalFridges: number;
@@ -186,63 +185,9 @@ export default function AdminDashboard() {
     return () => { alive = false; };
   }, [user]);
 
-  const loadAllFridgesForMap = useCallback(async (cityId: string, cityList: typeof cities) => {
-    if (!user || user.role !== 'admin') return;
-    if (!cityId) return;
-
-    const mapParams = (cid?: string) => {
-      const params = new URLSearchParams({ all: 'true', map: '1' });
-      if (cid && cid !== 'all') params.set('cityId', cid);
-      return params;
-    };
-
-    setMapLoading(true);
-    setMapError(null);
-    try {
-      const parseRows = (data: unknown): AdminFridge[] =>
-        Array.isArray(data) ? data : ((data as { data?: AdminFridge[] })?.data || []);
-
-      if (cityId === 'all' && cityList.length > 0) {
-        const merged: AdminFridge[] = [];
-        const chunkSize = 3;
-        for (let i = 0; i < cityList.length; i += chunkSize) {
-          const chunk = cityList.slice(i, i + chunkSize);
-          const responses = await Promise.all(
-            chunk.map((c) =>
-              api.get(`/api/admin/fridge-status?${mapParams(c._id).toString()}`, {
-                timeout: 300000,
-              }),
-            ),
-          );
-          for (const res of responses) {
-            merged.push(...parseRows(res.data));
-          }
-          setAllFridges([...merged]);
-        }
-      } else {
-        const timeoutMs = cityId === 'all' ? 600000 : 180000;
-        const fridgeStatusRes = await api.get(
-          `/api/admin/fridge-status?${mapParams(cityId === 'all' ? undefined : cityId).toString()}`,
-          { timeout: timeoutMs },
-        );
-        setAllFridges(parseRows(fridgeStatusRes.data));
-      }
-    } catch (e: any) {
-      console.error('[AdminDashboard] Map data load failed:', e);
-      const msg =
-        e?.response?.status === 502
-          ? 'Сервер не успел ответить (502). Выберите один город на карте или повторите позже.'
-          : e?.message || 'Ошибка загрузки карты';
-      setMapError(msg);
-    } finally {
-      setMapLoading(false);
-    }
-  }, [user]);
-
-  const reloadMapFridges = useCallback(async () => {
-    const cityId = selectedCityIdForMap || 'all';
-    await loadAllFridgesForMap(cityId, cities);
-  }, [selectedCityIdForMap, cities, loadAllFridgesForMap]);
+  const bumpMapRefresh = useCallback(() => {
+    setMapRefreshKey((k) => k + 1);
+  }, []);
 
   // Быстрые счётчики + последние отметки (не ждём карту)
   useEffect(() => {
@@ -305,27 +250,6 @@ export default function AdminDashboard() {
       observer?.disconnect();
     };
   }, [user, selectedCityIdForMap]);
-
-  useEffect(() => {
-    if (!user || user.role !== 'admin' || !selectedCityIdForMap || !mapDataRequested) return;
-
-    let alive = true;
-    loadAllFridgesForMap(selectedCityIdForMap, cities).catch((e) => {
-      if (alive) console.error('[AdminDashboard] Map load:', e);
-    });
-
-    const onFocus = () => {
-      if (selectedCityIdForMap && mapDataRequested) {
-        loadAllFridgesForMap(selectedCityIdForMap, cities).catch(() => {});
-      }
-    };
-    window.addEventListener('focus', onFocus);
-
-    return () => {
-      alive = false;
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [user, loadAllFridgesForMap, selectedCityIdForMap, mapDataRequested, cities]);
 
   // Таблица «по городам» — только когда секция видна
   useEffect(() => {
@@ -617,7 +541,7 @@ export default function AdminDashboard() {
 
       // Перезагружаем данные
       if (user && user.role === 'admin') {
-        await reloadMapFridges();
+        await bumpMapRefresh();
         loadFridges(0, true);
       }
 
@@ -785,7 +709,7 @@ export default function AdminDashboard() {
       // Перезагружаем данные в фоне для синхронизации (не блокируя UI)
       (async () => {
         try {
-          await reloadMapFridges();
+          await bumpMapRefresh();
           loadFridges(0, true);
         } catch (e) {
           console.error('Ошибка обновления данных после создания:', e);
@@ -837,28 +761,7 @@ export default function AdminDashboard() {
   }
 
   // Показываем все холодильники с координатами на карте
-  const fridgesWithCheckins = allFridges;
-
-  // Фильтрация по городу для карты
-  let fridgesByCity = fridgesWithCheckins;
-  if (selectedCityIdForMap !== 'all') {
-    fridgesByCity = fridgesWithCheckins.filter((f) => {
-      return f.city?._id === selectedCityIdForMap || f.city?.code === selectedCityIdForMap;
-    });
-  }
-
-  const fridgesWithLocation = fridgesByCity.filter((f) => {
-    if (!f.location || !f.location.coordinates) return false;
-    if (!Array.isArray(f.location.coordinates) || f.location.coordinates.length !== 2) return false;
-    const [lng, lat] = f.location.coordinates;
-    if (typeof lng !== 'number' || typeof lat !== 'number') return false;
-    if (isNaN(lng) || isNaN(lat)) return false;
-    if (lng === 0 && lat === 0) return false;
-    return true;
-  });
-
-  const fridgesForMap: AdminFridge[] = fridgesWithLocation;
-  const filteredAllFridges = allFridges;
+  const filteredAllFridges = fridges;
 
   const filteredFridges = fridges;
 
@@ -962,7 +865,7 @@ export default function AdminDashboard() {
           {/* Экспорт */}
           <button
             onClick={handleExportExcel}
-            disabled={exporting || allFridges.length === 0}
+            disabled={exporting || totalFridges === 0}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
           >
             {exporting ? (
@@ -1180,7 +1083,7 @@ export default function AdminDashboard() {
               {recentCheckins.map((c) => {
                 const dt = formatDate(c.visitedAt);
                 // Находим холодильник по коду для получения его id
-                const fridge = allFridges.find(f => f.code === c.fridgeId);
+                const fridge = fridges.find((f) => f.code === c.fridgeId || f.number === c.fridgeId);
                 return (
                   <div
                     key={c.id}
@@ -1440,7 +1343,7 @@ export default function AdminDashboard() {
                   }}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px] shadow-sm"
                 >
-                  <option value="all">🌍 Все города</option>
+                  <option value="all">Все города (медленнее)</option>
                   {cities.map((city) => (
                     <option key={city._id} value={city._id}>
                       {city.name}
@@ -1483,9 +1386,6 @@ export default function AdminDashboard() {
                 </button>
               )}
             </div>
-            {mapLoading && (
-              <p className="text-sm text-slate-500">Загрузка карты…</p>
-            )}
             {mapError && (
               <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 max-w-2xl">
                 {mapError}
@@ -1493,15 +1393,15 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
-        {fridgesForMap.length === 0 ? (
-          <div className="h-[500px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200">
-            <div className="text-center">
-              <p className="text-slate-500 mb-2 text-lg">Нет холодильников для отображения</p>
-              <p className="text-sm text-slate-400">Метки отключены.</p>
-            </div>
-          </div>
+        {mapDataRequested ? (
+          <AdminFridgeMap
+            key={`${selectedCityIdForMap}-${mapRefreshKey}`}
+            cityId={selectedCityIdForMap}
+          />
         ) : (
-          <AdminFridgeMap fridges={fridgesForMap} />
+          <div className="h-[500px] flex items-center justify-center bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-sm text-slate-500">Прокрутите к карте для загрузки…</p>
+          </div>
         )}
       </Card>
       </div>
@@ -1727,7 +1627,7 @@ export default function AdminDashboard() {
                     setCheckinsTotal(parsed.total);
                     setCheckinsDistinctManagers(parsed.distinctManagers);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
-                    await reloadMapFridges();
+                    await bumpMapRefresh();
                     setDeleteCheckinId(null);
                     alert('Отметка удалена. Карта обновлена.');
                   } catch (e: any) {
@@ -1777,7 +1677,7 @@ export default function AdminDashboard() {
                     setCheckinsDistinctManagers(0);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     // После удаления всех отметок все холодильники должны получить status = 'never'
-                    await reloadMapFridges();
+                    await bumpMapRefresh();
                     setShowDeleteAllCheckins(false);
                     // Принудительно обновляем страницу, чтобы карта точно обновилась и старые метки исчезли
                     setTimeout(() => {
@@ -1967,13 +1867,13 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-slate-900 mb-2">🗑️ Удалить все холодильники?</h3>
             <p className="text-slate-600 mb-4">
-              Вы уверены, что хотите удалить <strong>все {allFridges.length} холодильников</strong>?
+              Вы уверены, что хотите удалить <strong>все {totalFridges} холодильников</strong>?
               <br /><br />
               <span className="text-red-600 text-sm font-medium">⚠️ ВНИМАНИЕ: Это действие нельзя отменить!</span>
               <br />
               <span className="text-slate-500 text-sm">
                 Будет удалено:
-                <br />• Все холодильники ({allFridges.length})
+                <br />• Все холодильники ({totalFridges})
                 <br />• Все связанные отметки посещений
                 <br />• Все данные будут потеряны безвозвратно
               </span>
@@ -1992,7 +1892,6 @@ export default function AdminDashboard() {
                     
                     // Обновляем состояние
                     setFridges([]);
-                    setAllFridges([]);
                     setTotalFridges(0);
                     setCheckins([]);
                     setCheckinsTotal(0);
