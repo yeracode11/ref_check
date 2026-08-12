@@ -10,6 +10,7 @@ import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
 import { showToast } from '../components/ui/Toast';
+import { resolveUserCityId, resolveUserCityName } from '../utils/userCityId';
 
 type ClientInfo = {
   name?: string;
@@ -45,6 +46,7 @@ const ITEMS_PER_PAGE = 30;
 export default function AccountantDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const assignedCityId = resolveUserCityId(user?.cityId);
   const [fridges, setFridges] = useState<Fridge[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,8 +163,8 @@ export default function AccountantDashboard() {
     if (!user) return;
     
     // Для бухгалтера загружаем только его город
-    if (user.role === 'accountant' && user.cityId) {
-      api.get(`/api/cities/${user.cityId}`)
+    if (user.role === 'accountant' && assignedCityId) {
+      api.get(`/api/cities/${assignedCityId}`)
         .then(res => {
           setCities([res.data]);
           // Автоматически устанавливаем город бухгалтера
@@ -257,8 +259,8 @@ export default function AccountantDashboard() {
     }
 
     // Определяем город для проверки
-    const cityIdToCheck = user?.role === 'accountant' && user?.cityId 
-      ? user.cityId 
+    const cityIdToCheck = user?.role === 'accountant' && assignedCityId
+      ? assignedCityId
       : newFridge.cityId;
     
     // При ручном создании ИНН клиента обязателен для всех городов
@@ -276,8 +278,8 @@ export default function AccountantDashboard() {
       setShowAddModal(false);
       
       // Для бухгалтера всегда используем его город
-      const cityIdToSend = user?.role === 'accountant' && user?.cityId 
-        ? user.cityId 
+      const cityIdToSend = user?.role === 'accountant' && assignedCityId
+        ? assignedCityId
         : newFridge.cityId || undefined;
       
       // При ручном создании для всех городов отправляем ИНН клиента
@@ -623,7 +625,7 @@ export default function AccountantDashboard() {
         <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Карта холодильников {user?.role === 'accountant' && user?.cityId && cities.length > 0 && `- ${cities[0]?.name}`}
         </h2>
-        <AdminFridgeMap key={mapRefreshKey} cityId={user?.cityId} />
+        <AdminFridgeMap key={mapRefreshKey} cityId={assignedCityId} />
       </Card>
 
       {/* Фильтры */}
@@ -769,11 +771,11 @@ export default function AccountantDashboard() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Город</label>
-                {user?.role === 'accountant' && user?.cityId ? (
+                {user?.role === 'accountant' && assignedCityId ? (
                   // Для бухгалтера показываем только его город (только для чтения)
                   <input
                     type="text"
-                    value={cities.find(c => c._id === user.cityId)?.name || 'Город не назначен'}
+                    value={resolveUserCityName(user.cityId, cities) || 'Город не назначен'}
                     disabled
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-600 cursor-not-allowed"
                   />
@@ -1223,7 +1225,7 @@ export default function AccountantDashboard() {
               </div>
 
               <p className="text-xs text-slate-500">
-                💡 Холодильники будут автоматически привязаны к вашему городу: <strong>{user?.cityId ? cities.find(c => c._id === user.cityId)?.name || 'Ваш город' : 'Ваш город'}</strong>
+                💡 Холодильники будут автоматически привязаны к вашему городу: <strong>{assignedCityId ? resolveUserCityName(user?.cityId, cities) || 'Ваш город' : 'Ваш город'}</strong>
               </p>
             </div>
           </div>

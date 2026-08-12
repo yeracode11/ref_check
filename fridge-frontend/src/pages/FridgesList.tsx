@@ -13,6 +13,7 @@ import {
   getEquipmentIndicatorClasses,
   EquipmentStatus,
 } from '../utils/fridgeUtils';
+import { resolveUserCityId } from '../utils/userCityId';
 
 type City = {
   _id: string;
@@ -68,6 +69,7 @@ export default function FridgesList() {
   const isServiceManager = user?.role === 'service_manager';
   const isSalesHead = user?.role === 'sales_head';
   const isCityBound = isAccountant || isManager || isServiceManager || isSalesHead;
+  const assignedCityId = resolveUserCityId(user?.cityId);
   
   const [items, setItems] = useState<Fridge[]>([]);
   const [cities, setCities] = useState<City[]>([]);
@@ -99,8 +101,8 @@ export default function FridgesList() {
         setCities(res.data);
         
         // Для бухгалтера и менеджера - выбираем их город
-        if (isCityBound && user?.cityId) {
-          const city = res.data.find((c: City) => c._id === user.cityId);
+        if (isCityBound && assignedCityId) {
+          const city = res.data.find((c: City) => c._id === assignedCityId);
           if (city) {
             setAccountantCityName(city.name);
             setSelectedCityId(city._id);

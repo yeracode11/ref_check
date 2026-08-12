@@ -16,6 +16,7 @@ import {
   getEquipmentIndicatorClasses,
   EquipmentStatus,
 } from '../utils/fridgeUtils';
+import { resolveUserCityId } from '../utils/userCityId';
 
 type City = { _id: string; name: string; code: string };
 
@@ -101,10 +102,12 @@ export default function SalesHeadDashboard() {
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
   const isSalesHead = user?.role === 'sales_head';
+  const assignedCityId = resolveUserCityId(user?.cityId);
 
   const [cities, setCities] = useState<City[]>([]);
   const [cityName, setCityName] = useState('');
   const [selectedCityId, setSelectedCityId] = useState('');
+  const mapCityId = isAdmin ? selectedCityId : assignedCityId;
 
   const [fridges, setFridges] = useState<Fridge[]>([]);
   const [loading, setLoading] = useState(true);
@@ -136,8 +139,8 @@ export default function SalesHeadDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    if (isSalesHead && user.cityId) {
-      api.get(`/api/cities/${user.cityId}`)
+    if (isSalesHead && assignedCityId) {
+      api.get(`/api/cities/${assignedCityId}`)
         .then((res) => {
           setCities([res.data]);
           setCityName(res.data.name);
@@ -371,10 +374,10 @@ export default function SalesHeadDashboard() {
           {cityName && <span className="text-blue-600 ml-2 font-normal">— {cityName}</span>}
         </h2>
         <AdminFridgeMap
-          key={`${selectedCityId || user?.cityId}-${mapRefreshKey}`}
-          cityId={isAdmin ? selectedCityId : user?.cityId}
+          key={`${mapCityId}-${mapRefreshKey}`}
+          cityId={mapCityId}
           cityName={cityName}
-          cityCode={cities.find((c) => c._id === (selectedCityId || user?.cityId))?.code}
+          cityCode={cities.find((c) => c._id === mapCityId)?.code}
         />
       </Card>
 

@@ -7,7 +7,8 @@ type User = {
   email: string;
   role: 'manager' | 'admin' | 'accountant' | 'service_manager' | 'sales_head';
   fullName?: string;
-  cityId?: string;
+  /** Строка в JWT; объект после populate в /api/auth/me */
+  cityId?: string | { _id: string; name?: string; code?: string };
 };
 
 type AuthContextType = {

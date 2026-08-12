@@ -102,6 +102,11 @@ router.get('/', authenticateToken, async (req, res) => {
       filter.visitedAt = {};
       if (from) filter.visitedAt.$gte = from;
       if (to) filter.visitedAt.$lte = to;
+    } else if (req.user.role === 'manager' && !fridgeId) {
+      // Утренний пик: без фильтра Mongo сканирует десятки тысяч отметок на менеджера
+      const monthAgo = new Date();
+      monthAgo.setDate(monthAgo.getDate() - 30);
+      filter.visitedAt = { $gte: monthAgo };
     }
 
     if (typeof nearLat === 'number' && typeof nearLng === 'number') {

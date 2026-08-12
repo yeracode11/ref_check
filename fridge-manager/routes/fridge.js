@@ -212,7 +212,7 @@ router.get('/', authenticateToken, async (req, res) => {
       const list = await Fridge.find(filter)
         .populate('cityId', 'name code')
         .select(
-          'code number name cityId location address description active warehouseStatus status isSeasonalClosure type brokenSince createdAt updatedAt',
+          'code number name cityId location address description active warehouseStatus status isSeasonalClosure type brokenSince createdAt updatedAt clientInfo',
         )
         .sort({ createdAt: -1 })
         .skip(skipNum)
@@ -225,6 +225,35 @@ router.get('/', authenticateToken, async (req, res) => {
           limit: limitNum,
           skip: skipNum,
           hasMore: skipNum + list.length < total,
+        },
+      });
+    }
+
+    /**
+     * QR/checkin: точный поиск по code/number — без aggregate и lastCheckin (десятки ms вместо 90k+ scan).
+     */
+    const codeLookup =
+      code &&
+      typeof code === 'string' &&
+      code.trim() &&
+      !(search && String(search).trim());
+    if (codeLookup && limitNum <= 50) {
+      const list = await Fridge.find(filter)
+        .populate('cityId', 'name code')
+        .select(
+          'code number name cityId location address description active warehouseStatus status isSeasonalClosure type brokenSince createdAt updatedAt clientInfo',
+        )
+        .sort({ createdAt: -1 })
+        .skip(skipNum)
+        .limit(limitNum)
+        .lean();
+      return res.json({
+        data: list,
+        pagination: {
+          total: list.length,
+          limit: limitNum,
+          skip: skipNum,
+          hasMore: false,
         },
       });
     }

@@ -84,6 +84,8 @@ const FridgeSchema = new mongoose.Schema(
 
 FridgeSchema.index({ cityId: 1, active: 1, warehouseStatus: 1 });
 FridgeSchema.index({ active: 1, cityId: 1, createdAt: -1 });
+FridgeSchema.index({ cityId: 1, code: 1 });
+FridgeSchema.index({ cityId: 1, number: 1 });
 
 module.exports = mongoose.model('Fridge', FridgeSchema);
 

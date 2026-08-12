@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
 const { buildMapLocationFilter } = require('./mapFridgeQuery');
 const { resolveCityFilter } = require('./cityScope');
@@ -188,6 +189,14 @@ function buildBulkFilter(user, query) {
     active: true,
     ...buildMapLocationFilter(),
   };
+  if (user.role === 'admin' && query.cityId) {
+    const raw = String(query.cityId).trim();
+    if (!mongoose.Types.ObjectId.isValid(raw)) {
+      const err = new Error(`Invalid cityId: ${raw}`);
+      err.status = 400;
+      throw err;
+    }
+  }
   const scopedCityId = resolveCityFilter(user, query.cityId);
   if (scopedCityId) {
     filter.cityId = scopedCityId;

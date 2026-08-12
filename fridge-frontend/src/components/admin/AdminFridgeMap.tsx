@@ -19,6 +19,7 @@ import {
   isNearCityCenter,
   toLatLngTuple,
 } from '../../utils/cityMapCenters';
+import { resolveUserCityId } from '../../utils/userCityId';
 
 export type AdminFridgeForMap = {
   id: string;
@@ -223,7 +224,8 @@ function LoadingOverlay({
   );
 }
 
-function AdminFridgeMapInner({ cityId, cityName, cityCode }: Props) {
+function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) {
+  const cityId = resolveUserCityId(cityIdProp);
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const pointClusterRef = useRef<L.MarkerClusterGroup | null>(null);
