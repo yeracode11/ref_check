@@ -346,7 +346,7 @@ export default function SalesHeadDashboard() {
 
       <AnalyticsPanel
         endpoint="/api/admin/analytics/accountant"
-        fixedCityId={isSalesHead ? user?.cityId : (selectedCityId || undefined)}
+        fixedCityId={isSalesHead ? assignedCityId : (selectedCityId || undefined)}
         hideManagerStats
         lazy
       />
