@@ -2,7 +2,12 @@ export type CityMapCenter = {
   lat: number;
   lng: number;
   zoom?: number;
+  /** Радиус фильтра «выбросов» на карте (км). По умолчанию 180. */
+  maxFilterKm?: number;
 };
+
+/** Радиус по умолчанию для городов без maxFilterKm */
+export const DEFAULT_CITY_FILTER_KM = 180;
 
 type MapPointLike = {
   location?: { coordinates?: [number, number] };
@@ -35,8 +40,8 @@ const BY_NAME: Record<string, CityMapCenter> = {
   pavlodar: { lat: 52.287, lng: 76.966, zoom: 11 },
   семей: { lat: 50.411, lng: 80.227, zoom: 11 },
   semey: { lat: 50.411, lng: 80.227, zoom: 11 },
-  талдыкорган: { lat: 45.0156, lng: 78.3739, zoom: 12 },
-  taldykorgan: { lat: 45.0156, lng: 78.3739, zoom: 12 },
+  талдыкорган: { lat: 45.0156, lng: 78.3739, zoom: 12, maxFilterKm: 340 },
+  taldykorgan: { lat: 45.0156, lng: 78.3739, zoom: 12, maxFilterKm: 340 },
   кызылорда: { lat: 44.848831, lng: 65.509167, zoom: 11 },
   kyzylorda: { lat: 44.848831, lng: 65.509167, zoom: 11 },
   караганда: { lat: 49.804683, lng: 73.109406, zoom: 11 },
@@ -63,7 +68,7 @@ const BY_CODE: Record<string, CityMapCenter> = {
   '16': { lat: 49.948, lng: 82.627, zoom: 11 },
   '17': { lat: 42.341737, lng: 69.590101, zoom: 12 },
   '18': { lat: 50.411, lng: 80.227, zoom: 11 },
-  '19': { lat: 45.0156, lng: 78.3739, zoom: 12 },
+  '19': { lat: 45.0156, lng: 78.3739, zoom: 12, maxFilterKm: 340 },
   ALA: { lat: 43.238949, lng: 76.889709, zoom: 12 },
   AST: { lat: 51.169392, lng: 71.449074, zoom: 11 },
   TRZ: { lat: 42.8996, lng: 71.3696, zoom: 12 },
@@ -99,13 +104,19 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
   return 2 * r * Math.asin(Math.sqrt(a));
 }
 
+export function getCityFilterRadiusKm(center: CityMapCenter, overrideKm?: number): number {
+  if (overrideKm != null) return overrideKm;
+  return center.maxFilterKm ?? DEFAULT_CITY_FILTER_KM;
+}
+
 export function isNearCityCenter(
   lat: number,
   lng: number,
   center: CityMapCenter,
-  maxKm = 180,
+  maxKm?: number,
 ): boolean {
-  return haversineKm(lat, lng, center.lat, center.lng) <= maxKm;
+  const radius = getCityFilterRadiusKm(center, maxKm);
+  return haversineKm(lat, lng, center.lat, center.lng) <= radius;
 }
 
 export function toLatLngTuple(center: CityMapCenter): [number, number] {
