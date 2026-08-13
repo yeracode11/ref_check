@@ -40,6 +40,78 @@ const CHECKIN_SUMMARY_MAX_ROWS = parseInt(process.env.EXPORT_CHECKIN_MAX_ROWS ||
 const CHECKIN_SUMMARY_SELECT =
   'visitedAt fridgeId fridgeRef managerId fridgeCondition isSeasonalClosure notes address';
 
+/** Подпись ТП в отчётах: username (01-Кат 1), затем ФИО, затем raw managerId */
+function formatManagerLabel(user, fallbackId) {
+  if (user?.username) return String(user.username).trim();
+  if (user?.fullName) return String(user.fullName).trim();
+  return fallbackId != null ? String(fallbackId).trim() : '';
+}
+
+async function fetchLastCheckinManagerMap(fridgeObjectIds) {
+  const result = new Map();
+  if (!fridgeObjectIds?.length) return result;
+
+  const chunkSize = 8000;
+  for (let i = 0; i < fridgeObjectIds.length; i += chunkSize) {
+    const chunk = fridgeObjectIds.slice(i, i + chunkSize);
+    const rows = await Checkin.aggregate([
+      { $match: { fridgeRef: { $in: chunk } } },
+      { $sort: { visitedAt: -1 } },
+      { $group: { _id: '$fridgeRef', managerId: { $first: '$managerId' } } },
+    ]).allowDiskUse(true);
+    for (const row of rows) {
+      if (row._id != null && row.managerId) {
+        result.set(String(row._id), row.managerId);
+      }
+    }
+  }
+  return result;
+}
+
+async function resolveManagerDisplayMap(managerIds) {
+  const unique = [...new Set(managerIds.filter(Boolean))];
+  if (!unique.length) return new Map();
+
+  const User = require('../models/User');
+  const objectIds = unique.filter((id) => /^[a-fA-F0-9]{24}$/.test(String(id)));
+  const users = await User.find({
+    $or: [
+      { username: { $in: unique } },
+      ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+    ],
+  }).select('username fullName').lean();
+
+  const userMap = new Map();
+  users.forEach((u) => {
+    if (u.username) userMap.set(u.username, u);
+    userMap.set(String(u._id), u);
+  });
+
+  const displayMap = new Map();
+  for (const id of unique) {
+    const user = userMap.get(id) || userMap.get(String(id));
+    displayMap.set(id, formatManagerLabel(user, id));
+    displayMap.set(String(id), formatManagerLabel(user, id));
+  }
+  return displayMap;
+}
+
+async function buildLastManagerDisplayByFridgeId(fridges) {
+  const fridgeObjectIds = fridges.map((f) => f._id).filter(Boolean);
+  const lastManagerIdByFridge = await fetchLastCheckinManagerMap(fridgeObjectIds);
+  const managerDisplayMap = await resolveManagerDisplayMap([...lastManagerIdByFridge.values()]);
+  const lastManagerDisplayByFridgeId = new Map();
+  for (const [fridgeId, managerId] of lastManagerIdByFridge) {
+    lastManagerDisplayByFridgeId.set(
+      String(fridgeId),
+      managerDisplayMap.get(managerId)
+        || managerDisplayMap.get(String(managerId))
+        || String(managerId),
+    );
+  }
+  return lastManagerDisplayByFridgeId;
+}
+
 function getFridgeDisplayId(fridge) {
   return fridge.number || fridge.code || String(fridge._id);
 }
@@ -167,16 +239,23 @@ async function loadFullExportContext(user, query, opts = {}) {
     type: f.type,
   }));
 
-  const [statsByFridgeId, brokenByFridgeId] = await Promise.all([
+  const [statsByFridgeId, brokenByFridgeId, lastManagerDisplayByFridgeId] = await Promise.all([
     getCheckinStatsForFridges(
       statsPayload,
       JSON.stringify({ export: 'full', ...fridgeFilter }),
       { useCache: true },
     ),
     countBrokenCheckinsByFridge(fridges, checkinIdList),
+    buildLastManagerDisplayByFridgeId(fridges),
   ]);
 
-  return { fridges, statsByFridgeId, brokenByFridgeId, fridgeFilter };
+  return {
+    fridges,
+    statsByFridgeId,
+    brokenByFridgeId,
+    fridgeFilter,
+    lastManagerDisplayByFridgeId,
+  };
 }
 
 /**
@@ -291,6 +370,7 @@ function fetchVisitCategorySheets(exportContext, nowMs = Date.now()) {
     exportContext.fridges,
     exportContext.statsByFridgeId,
     nowMs,
+    exportContext.lastManagerDisplayByFridgeId,
   );
 }
 
@@ -349,7 +429,7 @@ async function fetchCheckinSummarySheetRows(fridges, limit = CHECKIN_SUMMARY_MAX
       'Город': fridge?.cityId?.name || '',
       'Название точки': fridge?.name || '',
       'Адрес точки': fridge?.address || c.address || '',
-      'Сотрудник ТП': manager?.fullName || manager?.username || c.managerId || '',
+      'Сотрудник ТП': formatManagerLabel(manager, c.managerId),
       'Состояние': c.fridgeCondition === 'broken' ? 'Сломан' : 'Рабочий',
       'Закрыт на каникулы': c.isSeasonalClosure ? 'Да' : 'Нет',
       'Комментарий': c.notes || '',
@@ -393,6 +473,7 @@ function appendVisitStatusSheet(workbook, sheetName, rows, columnWidths) {
       'Дней без визита': '',
       'Всего отметок': '',
       'Статус ХО': '',
+      'ТП последней отметки': '',
     }],
   );
   sheet['!cols'] = columnWidths;
@@ -401,8 +482,31 @@ function appendVisitStatusSheet(workbook, sheetName, rows, columnWidths) {
 
 const VISIT_SHEET_COLS = [
   { wch: 18 }, { wch: 14 }, { wch: 28 }, { wch: 40 }, { wch: 14 },
-  { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 18 },
+  { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 16 },
 ];
+
+const CHECKIN_SUMMARY_SHEET_COLS = [
+  { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 40 },
+  { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 30 },
+];
+
+function appendCheckinSummarySheet(workbook, rows) {
+  const sheet = XLSX.utils.json_to_sheet(
+    rows.length ? rows : [{
+      'Дата отметки': '',
+      'ID Холодильника': '',
+      'Город': '',
+      'Название точки': '',
+      'Адрес точки': '',
+      'Сотрудник ТП': '',
+      'Состояние': '',
+      'Закрыт на каникулы': '',
+      'Комментарий': '',
+    }],
+  );
+  sheet['!cols'] = CHECKIN_SUMMARY_SHEET_COLS;
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Отметки ТП');
+}
 
 function isAccountantExport(user, opts = {}) {
   if (opts.accountantExport != null) return opts.accountantExport;
@@ -445,12 +549,15 @@ function appendFundAndRepairSheets(workbook, sheets) {
   XLSX.utils.book_append_sheet(workbook, repairSheet, 'История ремонтов');
 }
 
-function buildSalesReportWorkbook(reportSheets, fridgeRows = null) {
+function buildSalesReportWorkbook(reportSheets, fridgeRows = null, checkinRows = null) {
   const workbook = XLSX.utils.book_new();
   if (fridgeRows) {
     appendFridgeListSheet(workbook, fridgeRows);
   }
   appendFundAndRepairSheets(workbook, reportSheets);
+  if (checkinRows) {
+    appendCheckinSummarySheet(workbook, checkinRows);
+  }
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 }
 
@@ -506,11 +613,12 @@ async function generateFullExportBuffer(user, query = {}, opts = {}) {
     excludeFreshVisits: opts.excludeFreshVisits ?? !accountantExport,
   };
   const exportContext = await loadFullExportContext(user, query, exportOpts);
-  const [fridgeRows, reportSheets] = await Promise.all([
+  const [fridgeRows, reportSheets, checkinRows] = await Promise.all([
     fetchFridgeListSheetRows(user, query, exportOpts, exportContext),
     buildExportReportSheets(user, query, exportContext, exportOpts),
+    fetchCheckinSummarySheetRows(exportContext.fridges),
   ]);
-  return buildSalesReportWorkbook(reportSheets, fridgeRows);
+  return buildSalesReportWorkbook(reportSheets, fridgeRows, checkinRows);
 }
 
 async function generateSalesReportBuffer(user, query, opts = {}) {
@@ -534,4 +642,6 @@ module.exports = {
   buildExportFileName,
   buildFridgesExportFileName,
   isAccountantExport,
+  formatManagerLabel,
+  appendCheckinSummarySheet,
 };

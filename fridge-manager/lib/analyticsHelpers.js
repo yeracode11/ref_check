@@ -96,13 +96,14 @@ function buildTopUnvisitedFromFridges(fridges, statsByFridgeId, limit = 20) {
     .slice(0, limit);
 }
 
-function buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt) {
+function buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt, lastManagerDisplayByFridgeId) {
   const { lastVisit, totalCheckins } = getLastVisitFromStatsMap(statsByFridgeId, f);
   const visitMs = parseVisitTimeMs(lastVisit);
   const daysSinceVisit = visitMs != null
     ? calendarDaysFromVisitToNow(nowMs, visitMs, DEFAULT_VISIT_TIMEZONE)
     : null;
   const statusKey = f.status || 'working';
+  const tpLabel = lastManagerDisplayByFridgeId?.get(String(f._id)) || '';
 
   return {
     'ID Холодильника': f.number || f.code || String(f._id),
@@ -112,6 +113,7 @@ function buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt) {
     'Тип объекта': FRIDGE_TYPE_LABELS[f.type] || FRIDGE_TYPE_LABELS.regular,
     'Статус визита': visitStatusLabel(mapSt),
     'Последний визит': lastVisit ? formatExportDateTime(lastVisit) : '',
+    'ТП последней отметки': tpLabel,
     'Дней без визита': daysSinceVisit != null ? daysSinceVisit : '',
     'Всего отметок': totalCheckins || 0,
     'Статус ХО': EQUIPMENT_LABELS[statusKey] || statusKey,
@@ -142,7 +144,7 @@ function sortFreshVisitRows(rows) {
 /**
  * Листы визитов для Excel: нет отметок / давно / сегодня+неделя + id всего охвата (кроме склада).
  */
-function buildVisitCategoryExportRows(fridges, statsByFridgeId, nowMs = Date.now()) {
+function buildVisitCategoryExportRows(fridges, statsByFridgeId, nowMs = Date.now(), lastManagerDisplayByFridgeId) {
   const neverRows = [];
   const oldRows = [];
   const freshRows = [];
@@ -165,18 +167,24 @@ function buildVisitCategoryExportRows(fridges, statsByFridgeId, nowMs = Date.now
       : null;
 
     if (mapSt === 'never') {
-      neverRows.push(buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt));
+      neverRows.push(buildVisitStatusExportRow(
+        f, statsByFridgeId, nowMs, mapSt, lastManagerDisplayByFridgeId,
+      ));
       continue;
     }
 
     if (mapSt === 'old') {
       if (!shouldIncludeInUnvisitedReport(f, { lastVisit, daysSinceVisit })) continue;
-      oldRows.push(buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt));
+      oldRows.push(buildVisitStatusExportRow(
+        f, statsByFridgeId, nowMs, mapSt, lastManagerDisplayByFridgeId,
+      ));
       continue;
     }
 
     if (mapSt === 'today' || mapSt === 'week') {
-      freshRows.push(buildVisitStatusExportRow(f, statsByFridgeId, nowMs, mapSt));
+      freshRows.push(buildVisitStatusExportRow(
+        f, statsByFridgeId, nowMs, mapSt, lastManagerDisplayByFridgeId,
+      ));
     }
   }
 

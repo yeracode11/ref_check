@@ -194,6 +194,7 @@ async function fetchFridgeListSheetRows(user, query = {}, opts = {}, exportConte
       'Возврат': isReturned ? 'Да' : 'Нет',
       'Статус визита': status,
       'Последний визит': formatLastVisitLocal(lastVisit),
+      'ТП последней отметки': exportContext?.lastManagerDisplayByFridgeId?.get(String(f._id)) || '',
       'Активен': f.active ? 'Да' : 'Нет',
     });
 
@@ -208,7 +209,7 @@ async function fetchFridgeListSheetRows(user, query = {}, opts = {}, exportConte
 const FRIDGE_LIST_COLUMN_WIDTHS = [
   { wch: 10 }, { wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 40 },
   { wch: 50 }, { wch: 30 }, { wch: 14 }, { wch: 28 }, { wch: 18 },
-  { wch: 10 }, { wch: 12 }, { wch: 20 }, { wch: 10 },
+  { wch: 10 }, { wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 10 },
 ];
 
 function appendFridgeListSheet(workbook, fridgeRows) {
