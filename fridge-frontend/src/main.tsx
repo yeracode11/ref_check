@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import './index.css';
@@ -7,20 +7,21 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminRouteGuard from './components/AdminRouteGuard';
 import AccountantRouteGuard from './components/AccountantRouteGuard';
 import SalesHeadRouteGuard from './components/SalesHeadRouteGuard';
+import RouteErrorFallback from './components/RouteErrorFallback';
 import App from './App';
 import { LoadingSpinner } from './components/ui/Loading';
+import { clearChunkReloadFlag, lazyWithRetry } from './utils/lazyWithRetry';
 
-// Lazy load pages for code splitting
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const CheckinsList = lazy(() => import('./pages/CheckinsList'));
-const NewCheckin = lazy(() => import('./pages/NewCheckin'));
-const FridgesList = lazy(() => import('./pages/FridgesList'));
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const CheckinPage = lazy(() => import('./pages/CheckinPage'));
-const AccountantDashboard = lazy(() => import('./pages/AccountantDashboard'));
-const UsersManagement = lazy(() => import('./pages/UsersManagement'));
-const CitiesManagement = lazy(() => import('./pages/CitiesManagement'));
-const SalesHeadDashboard = lazy(() => import('./pages/SalesHeadDashboard'));
+const LoginPage = lazyWithRetry(() => import('./pages/LoginPage'));
+const CheckinsList = lazyWithRetry(() => import('./pages/CheckinsList'));
+const NewCheckin = lazyWithRetry(() => import('./pages/NewCheckin'));
+const FridgesList = lazyWithRetry(() => import('./pages/FridgesList'));
+const AdminDashboard = lazyWithRetry(() => import('./pages/AdminDashboard'));
+const CheckinPage = lazyWithRetry(() => import('./pages/CheckinPage'));
+const AccountantDashboard = lazyWithRetry(() => import('./pages/AccountantDashboard'));
+const UsersManagement = lazyWithRetry(() => import('./pages/UsersManagement'));
+const CitiesManagement = lazyWithRetry(() => import('./pages/CitiesManagement'));
+const SalesHeadDashboard = lazyWithRetry(() => import('./pages/SalesHeadDashboard'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -32,6 +33,7 @@ const PageLoader = () => (
 const router = createBrowserRouter([
   {
     path: '/login',
+    errorElement: <RouteErrorFallback />,
     element: (
       <Suspense fallback={<PageLoader />}>
         <LoginPage />
@@ -40,6 +42,7 @@ const router = createBrowserRouter([
   },
   {
     element: <ProtectedRoute />,
+    errorElement: <RouteErrorFallback />,
     children: [
       {
         path: '/',
@@ -132,6 +135,10 @@ const router = createBrowserRouter([
 ]);
 
 function Root() {
+  useEffect(() => {
+    clearChunkReloadFlag();
+  }, []);
+
   return (
     <AuthProvider>
       <RouterProvider router={router} />

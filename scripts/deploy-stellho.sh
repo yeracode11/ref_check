@@ -32,4 +32,8 @@ rsync -a --delete dist/ "$FRONTEND_WWW/"
 echo "DEPLOY_OK"
 EOF
 
+echo "==> Updating nginx cache headers"
+scp "${SSH_OPTS[@]}" "$(dirname "$0")/nginx-stellref.conf" "$HOST:/etc/nginx/sites-enabled/stellref"
+ssh "${SSH_OPTS[@]}" "$HOST" "nginx -t && systemctl reload nginx"
+
 echo "==> Done."
