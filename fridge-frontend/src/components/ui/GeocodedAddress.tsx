@@ -5,19 +5,22 @@ type GeocodedAddressProps = {
   lng: number;
   className?: string;
   fallback?: string;
+  /** Подпись перед адресом (например «Место отметки (GPS)») */
+  label?: string;
 };
 
 /**
  * Компонент для отображения адреса вместо координат
  * Автоматически конвертирует координаты в читабельный адрес
  */
-export function GeocodedAddress({ lat, lng, className = '', fallback }: GeocodedAddressProps) {
+export function GeocodedAddress({ lat, lng, className = '', fallback, label }: GeocodedAddressProps) {
   const { address, loading } = useReverseGeocode(lat, lng);
+  const prefix = label ? `${label}: ` : '';
 
   if (loading) {
     return (
       <span className={`text-xs text-slate-400 ${className}`}>
-        Загрузка адреса...
+        {prefix}Загрузка адреса...
       </span>
     );
   }
@@ -25,7 +28,7 @@ export function GeocodedAddress({ lat, lng, className = '', fallback }: Geocoded
   if (address) {
     return (
       <span className={`text-xs text-slate-600 ${className}`}>
-        📍 {address}
+        📍 {prefix}{address}
       </span>
     );
   }
@@ -34,14 +37,14 @@ export function GeocodedAddress({ lat, lng, className = '', fallback }: Geocoded
   if (fallback) {
     return (
       <span className={`text-xs text-slate-400 font-mono ${className}`}>
-        {fallback}
+        {prefix}{fallback}
       </span>
     );
   }
 
   return (
     <span className={`text-xs text-slate-400 font-mono ${className}`}>
-      {lat.toFixed(6)}, {lng.toFixed(6)}
+      {prefix}{lat.toFixed(6)}, {lng.toFixed(6)}
     </span>
   );
 }

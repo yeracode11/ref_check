@@ -15,6 +15,7 @@ const {
   createCheckinRecord,
   locationFromLatLngFields,
   normalizeLocationInput,
+  enrichCheckinsWithFridgeData,
 } = require('../lib/checkinService');
 const { invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
 
@@ -196,6 +197,8 @@ router.get('/', authenticateToken, async (req, res) => {
         };
       });
     }
+
+    items = await enrichCheckinsWithFridgeData(items, toPlain);
 
     if (wantMeta) {
       const hasMore =

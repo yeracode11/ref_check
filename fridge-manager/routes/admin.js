@@ -29,6 +29,7 @@ const {
   buildFridgesExportFileName,
 } = require('../lib/salesReportExport');
 const { getAssignedCityId, resolveCityFilter, userCanAccessFridge } = require('../lib/cityScope');
+const { applyReturnToHomeCity, WAREHOUSE_STATUSES } = require('../lib/fridgeReturnHelpers');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const { buildMapLocationFilter, isMapMarkersRequest } = require('../lib/mapFridgeQuery');
 const { fetchMapFridgeViewport, fetchMapFridgeBulk } = require('../lib/mapFridgeViewport');
@@ -1934,6 +1935,18 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
         changedBy: req.user._id,
         notes: notes || `Изменен статус с "${oldStatus}" на "${warehouseStatus}"`,
       });
+
+      // Возврат на склад: координаты остаются у клиента → холодильник «не в своём городе» на карте
+      if (WAREHOUSE_STATUSES.has(warehouseStatus)) {
+        let cityDoc = fridge.cityId;
+        if (cityDoc && typeof cityDoc === 'object' && !cityDoc.name) {
+          cityDoc = null;
+        }
+        if (!cityDoc?.name && fridge.cityId) {
+          cityDoc = await City.findById(fridge.cityId).select('name code').lean();
+        }
+        applyReturnToHomeCity(fridge, cityDoc);
+      }
     }
 
     await fridge.save();

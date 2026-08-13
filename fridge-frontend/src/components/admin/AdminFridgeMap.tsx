@@ -279,7 +279,8 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
       if (lat === 0 && lng === 0) continue;
       if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
 
-      if (filterOutliers && !isNearCityCenter(lat, lng, viewCenter)) {
+      if (filterOutliers && f.warehouseStatus !== 'returned' && f.warehouseStatus !== 'warehouse'
+        && !isNearCityCenter(lat, lng, viewCenter)) {
         skippedFar++;
         continue;
       }

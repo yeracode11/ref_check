@@ -15,6 +15,9 @@ type Checkin = {
   location?: { type: 'Point'; coordinates: [number, number] };
   notes?: string;
   photos?: string[];
+  fridgeName?: string;
+  fridgeCode?: string;
+  fridgeCity?: string;
 };
 
 export default function CheckinsList() {
@@ -173,8 +176,19 @@ export default function CheckinsList() {
                       </div>
                       <div>
                         <span className="text-slate-500">Холодильник:</span>{' '}
-                        <span className="font-medium text-slate-700">{c.fridgeId}</span>
+                        <span className="font-medium text-slate-700">
+                          {c.fridgeName || c.fridgeId}
+                          {c.fridgeCode && c.fridgeCode !== c.fridgeId ? (
+                            <span className="text-slate-500 font-normal"> ({c.fridgeCode})</span>
+                          ) : null}
+                        </span>
                       </div>
+                      {c.fridgeCity && (
+                        <div>
+                          <span className="text-slate-500">Город холодильника:</span>{' '}
+                          <span className="font-medium text-slate-700">{c.fridgeCity}</span>
+                        </div>
+                      )}
                     </div>
                     {c.address && (
                       <div className="text-sm">
@@ -187,6 +201,7 @@ export default function CheckinsList() {
                         <GeocodedAddress
                           lat={c.location.coordinates[1]}
                           lng={c.location.coordinates[0]}
+                          label="Место отметки (GPS)"
                           fallback={`Координаты: ${c.location.coordinates[1].toFixed(6)}, ${c.location.coordinates[0].toFixed(6)}`}
                         />
                       </div>

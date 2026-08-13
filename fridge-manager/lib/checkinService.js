@@ -1,6 +1,7 @@
 const Checkin = require('../models/Checkin');
 const Fridge = require('../models/Fridge');
 const User = require('../models/User');
+const City = require('../models/City');
 const { getNextSequence } = require('../models/Counter');
 const { findRecentDuplicateCheckin } = require('../utils/checkinGeodesic');
 const { invalidateCheckinStatsCache } = require('./checkinStatsCache');
@@ -159,6 +160,15 @@ function locationFromLatLngFields(body) {
 }
 
 async function resolveFridgeForCheckin(user, normalizedFridgeId) {
+  const fridge = await findFridgeByIdentifier(normalizedFridgeId);
+  if (!fridge) {
+    const err = new Error(
+      'Холодильник не найден. Проверьте код QR или обратитесь к администратору.',
+    );
+    err.status = 404;
+    throw err;
+  }
+
   if (user.role === 'manager') {
     let cityId = getAssignedCityId(user);
     if (!cityId && user.id) {
@@ -170,29 +180,19 @@ async function resolveFridgeForCheckin(user, normalizedFridgeId) {
       err.status = 403;
       throw err;
     }
-
-    const fridge = await findFridgeByIdentifier(normalizedFridgeId, { cityId });
-    if (!fridge) {
-      const err = new Error('Холодильник не найден в вашем городе');
-      err.status = 404;
-      throw err;
-    }
     if (!userCanAccessCity(user, fridge.cityId)) {
-      const err = new Error('Холодильник из другого города');
+      const [managerCity, fridgeCity] = await Promise.all([
+        City.findById(cityId).select('name').lean(),
+        City.findById(fridge.cityId).select('name').lean(),
+      ]);
+      const err = new Error(
+        `Холодильник относится к городу «${fridgeCity?.name || '?'}», а вы — менеджер города «${managerCity?.name || '?'}». Обратитесь к администратору.`,
+      );
       err.status = 403;
       throw err;
     }
-    return fridge;
   }
 
-  const fridge = await findFridgeByIdentifier(normalizedFridgeId);
-  if (!fridge) {
-    const err = new Error(
-      'Холодильник не найден. Если номер совпадает в нескольких городах — уточните у администратора.',
-    );
-    err.status = 404;
-    throw err;
-  }
   return fridge;
 }
 
@@ -355,6 +355,71 @@ async function createCheckinRecord(params) {
   };
 }
 
+/** Добавляет fridgeName, fridgeCode, fridgeCity для отображения в списках отметок */
+async function enrichCheckinsWithFridgeData(items, toPlain) {
+  if (!items.length) return items;
+
+  const fridgeRefIds = [
+    ...new Set(
+      items
+        .map((item) => {
+          const plain = toPlain(item);
+          return plain.fridgeRef ? String(plain.fridgeRef) : null;
+        })
+        .filter(Boolean),
+    ),
+  ];
+
+  const legacyKeys = [
+    ...new Set(
+      items
+        .map((item) => String(toPlain(item).fridgeId || '').trim().replace(/^#/, ''))
+        .filter(Boolean),
+    ),
+  ];
+
+  const byRef = new Map();
+  if (fridgeRefIds.length) {
+    const fridges = await Fridge.find({ _id: { $in: fridgeRefIds } })
+      .populate('cityId', 'name code')
+      .select('code number name cityId')
+      .lean();
+    fridges.forEach((f) => byRef.set(String(f._id), f));
+  }
+
+  const byCode = new Map();
+  if (legacyKeys.length) {
+    const fridges = await Fridge.find({
+      $or: [{ code: { $in: legacyKeys } }, { number: { $in: legacyKeys } }],
+    })
+      .populate('cityId', 'name code')
+      .select('code number name cityId')
+      .lean();
+    fridges.forEach((f) => {
+      byCode.set(f.code, f);
+      if (f.number) byCode.set(f.number, f);
+    });
+  }
+
+  return items.map((item) => {
+    const plain = toPlain(item);
+    let fridge = plain.fridgeRef ? byRef.get(String(plain.fridgeRef)) : null;
+    if (!fridge && plain.fridgeId) {
+      const key = String(plain.fridgeId).trim().replace(/^#/, '');
+      fridge = byCode.get(key) || null;
+    }
+    const cityRef = fridge?.cityId;
+    const fridgeCity =
+      cityRef && typeof cityRef === 'object' && cityRef.name ? cityRef.name : undefined;
+    return {
+      ...plain,
+      fridgeName: fridge?.name || undefined,
+      fridgeCode: fridge?.code || undefined,
+      fridgeCity,
+    };
+  });
+}
+
 module.exports = {
   CHECKIN_IDEMPOTENCY_WINDOW_MS,
   CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M,
@@ -363,4 +428,5 @@ module.exports = {
   locationFromLatLngFields,
   createCheckinRecord,
   resolveFridgeForCheckin,
+  enrichCheckinsWithFridgeData,
 };

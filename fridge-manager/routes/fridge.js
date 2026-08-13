@@ -136,9 +136,16 @@ router.get('/', authenticateToken, async (req, res) => {
     } = req.query;
     const filter = {};
     if (active !== undefined) filter.active = active === 'true';
-    
-    // Для ролей, привязанных к городу — только их город
-    if (isCityScopedRole(req.user.role)) {
+
+    const isExactCodeLookup =
+      code &&
+      typeof code === 'string' &&
+      code.trim() &&
+      !(search && String(search).trim());
+
+    // QR/отметка: code глобально уникален — ищем без фильтра города менеджера,
+    // чтобы показать реальный cityId холодильника (POST /checkins проверит доступ).
+    if (isCityScopedRole(req.user.role) && !isExactCodeLookup) {
       filter.cityId = getAssignedCityId(req.user);
     } else if (cityId) {
       filter.cityId = cityId;
@@ -232,11 +239,7 @@ router.get('/', authenticateToken, async (req, res) => {
     /**
      * QR/checkin: точный поиск по code/number — без aggregate и lastCheckin (десятки ms вместо 90k+ scan).
      */
-    const codeLookup =
-      code &&
-      typeof code === 'string' &&
-      code.trim() &&
-      !(search && String(search).trim());
+    const codeLookup = isExactCodeLookup;
     if (codeLookup && limitNum <= 50) {
       const list = await Fridge.find(filter)
         .populate('cityId', 'name code')

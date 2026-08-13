@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { getDisplayIdentifier, showSeasonalClosureCheckbox } from '../utils/fridgeUtils';
+import { resolveUserCityId } from '../utils/userCityId';
 import { Card, Button, Badge } from '../components/ui/Card';
 import ServiceFridgeScanPage from './ServiceFridgeScanPage';
 
@@ -245,6 +246,18 @@ export default function CheckinPage() {
     return <ServiceFridgeScanPage fridge={fridge} />;
   }
 
+  const managerCityId = resolveUserCityId(user.cityId);
+  const managerCityName =
+    typeof user.cityId === 'object' && user.cityId?.name ? user.cityId.name : undefined;
+  const fridgeCityId = fridge?.cityId?._id
+    ? String(fridge.cityId._id)
+    : typeof fridge?.cityId === 'string'
+      ? fridge.cityId
+      : undefined;
+  const cityMismatch =
+    user.role === 'manager' &&
+    Boolean(managerCityId && fridgeCityId && managerCityId !== fridgeCityId);
+
   return (
     <div className="space-y-6 max-w-2xl mx-auto px-4 py-6">
       <div>
@@ -282,6 +295,19 @@ export default function CheckinPage() {
               <div className="text-sm text-slate-600">
                 <span className="font-semibold">Холодильник:</span> {fridge.name}
               </div>
+              {fridge.cityId?.name && (
+                <div className="text-sm text-slate-700">
+                  <span className="font-semibold">Город в системе:</span>{' '}
+                  <Badge variant="info">{fridge.cityId.name}</Badge>
+                </div>
+              )}
+              {cityMismatch && (
+                <div className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  Этот холодильник закреплён за городом «{fridge.cityId?.name}», а вы — менеджер
+                  {managerCityName ? ` города «${managerCityName}»` : ' другого города'}. Отметку
+                  сохранить не получится — обратитесь к администратору.
+                </div>
+              )}
               <div className="text-xs text-slate-500">
                 {(fridge.cityId?.name === 'Шымкент' || fridge.cityId?.name === 'Кызылорда' || fridge.cityId?.name === 'Талдыкорган') && fridge.number ? (
                   <>Номер: <span className="font-mono">{fridge.number}</span></>
@@ -390,7 +416,7 @@ export default function CheckinPage() {
           )}
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={submitting} className="flex-1">
+            <Button type="submit" disabled={submitting || cityMismatch} className="flex-1">
               {submitting ? 'Сохраняем...' : 'Отметиться'}
             </Button>
             <Button type="button" variant="secondary" onClick={() => navigate(-1)}>
