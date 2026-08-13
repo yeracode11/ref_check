@@ -62,13 +62,20 @@ async function forwardGeocodeQuery(query) {
 
 /** Нормализует типовой казахстанский адрес для Nominatim. */
 function buildGeocodeQuery(address, cityName) {
-  const cleaned = String(address || '')
-    .replace(/\b(республика|область|район)\b/gi, ' ')
-    .replace(/\b(г\.|город|ул\.|улица|пр\.|проспект|д\.|дом|мкр\.|микрорайон|ш\.|шоссе)\b/gi, ' ')
-    .replace(/[,.;]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
   const city = String(cityName || '').trim();
+  const parts = String(address || '').split(/[,;]+/).map((p) => p.trim()).filter(Boolean);
+  const tokens = [];
+
+  for (const part of parts) {
+    const stripped = part
+      .replace(/^(?:г\.?|город|ул\.?|улица|пр\.?|проспект|д\.?|дом|мкр\.?|микрорайон|ш\.?|шоссе|б\.?\/?\s*н\.?)\.?\s*/i, '')
+      .trim();
+    if (!stripped) continue;
+    if (city && stripped.toLowerCase() === city.toLowerCase()) continue;
+    tokens.push(stripped);
+  }
+
+  const cleaned = tokens.join(' ').replace(/\s+/g, ' ').trim();
   if (!cleaned) return city ? `${city}, Kazakhstan` : '';
   return city ? `${cleaned}, ${city}, Kazakhstan` : `${cleaned}, Kazakhstan`;
 }
