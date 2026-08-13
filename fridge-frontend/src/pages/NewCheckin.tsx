@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Button } from '../components/ui/Card';
 import { showSeasonalClosureCheckbox } from '../utils/fridgeUtils';
+import { useDeviceGeolocation } from '../hooks/useDeviceGeolocation';
 
 type Fridge = {
   _id: string;
@@ -38,18 +39,18 @@ export default function NewCheckin() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [locationStatus, setLocationStatus] = useState<'idle' | 'getting' | 'success' | 'error'>('idle');
-  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const locationRef = useRef<{ lat: number; lng: number } | null>(null);
-  const [geoRefreshWarning, setGeoRefreshWarning] = useState<string | null>(null);
+  const {
+    locationStatus,
+    currentLocation,
+    geoRefreshWarning,
+    lastGeoError,
+    refreshGeolocation,
+    ensureGeolocation,
+  } = useDeviceGeolocation({ prefetch: true });
   const [fridgeCondition, setFridgeCondition] = useState<'working' | 'broken'>('working');
   const [isSeasonalClosure, setIsSeasonalClosure] = useState(false);
 
   const fridgeId = selectedFridge?.code || manualCode.trim();
-
-  useEffect(() => {
-    locationRef.current = currentLocation;
-  }, [currentLocation]);
 
   useEffect(() => {
     const q = fridgeSearch.trim();
@@ -83,38 +84,6 @@ export default function NewCheckin() {
     };
   }, [fridgeSearch]);
 
-  const getGeolocation = useCallback(async (): Promise<{ lat: number; lng: number } | null> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve(null);
-        return;
-      }
-      setLocationStatus('getting');
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setCurrentLocation(loc);
-          setLocationStatus('success');
-          setGeoRefreshWarning(null);
-          resolve(loc);
-        },
-        () => {
-          if (locationRef.current) {
-            setLocationStatus('success');
-            setGeoRefreshWarning(
-              'Обновить координаты не удалось; при отправке будет использована ранее определённая точка.',
-            );
-          } else {
-            setLocationStatus('error');
-            setGeoRefreshWarning(null);
-          }
-          resolve(null);
-        },
-        { enableHighAccuracy: true, timeout: 7000 },
-      );
-    });
-  }, []);
-
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!fridgeId) {
@@ -125,16 +94,9 @@ export default function NewCheckin() {
     setSubmitting(true);
     setError(null);
     setSuccess(null);
-    setGeoRefreshWarning(null);
 
     try {
-      let geo = currentLocation;
-      if (!geo) {
-        geo = await getGeolocation();
-        if (!geo) {
-          throw new Error('Не удалось получить геолокацию. Разрешите доступ к геолокации в настройках браузера.');
-        }
-      }
+      const geo = await ensureGeolocation();
 
       const res = await api.post('/api/checkins', {
         managerId: user?.username || user?._id || '',
@@ -327,13 +289,18 @@ export default function NewCheckin() {
               </div>
             ) : (
               <div className="text-sm text-slate-500">
-                {locationStatus === 'getting' ? 'Получение геолокации...' : 'Геолокация будет получена при отправке формы'}
+                {locationStatus === 'getting'
+                  ? 'Получение геолокации… подождите до 20 сек'
+                  : 'Разрешите доступ к геолокации для stellref.kz'}
               </div>
+            )}
+            {lastGeoError && !currentLocation && (
+              <p className="mt-2 text-xs text-red-700">{lastGeoError}</p>
             )}
             {locationStatus !== 'getting' && (
               <button
                 type="button"
-                onClick={getGeolocation}
+                onClick={() => { void refreshGeolocation(); }}
                 className="mt-2 text-sm text-slate-600 hover:text-slate-900 underline"
               >
                 Обновить геолокацию

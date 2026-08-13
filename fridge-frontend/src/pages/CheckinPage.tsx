@@ -1,10 +1,11 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { getDisplayIdentifier, showSeasonalClosureCheckbox } from '../utils/fridgeUtils';
 import { resolveUserCityId } from '../utils/userCityId';
 import { Card, Button, Badge } from '../components/ui/Card';
+import { useDeviceGeolocation } from '../hooks/useDeviceGeolocation';
 
 type Fridge = {
   _id: string;
@@ -41,17 +42,17 @@ export default function CheckinPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
-  const [locationStatus, setLocationStatus] = useState<'idle' | 'getting' | 'success' | 'error'>('idle');
-  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const locationRef = useRef<{ lat: number; lng: number } | null>(null);
-  const [geoRefreshWarning, setGeoRefreshWarning] = useState<string | null>(null);
+  const {
+    locationStatus,
+    currentLocation,
+    geoRefreshWarning,
+    lastGeoError,
+    refreshGeolocation,
+    ensureGeolocation,
+  } = useDeviceGeolocation({ prefetch: true });
   const [address, setAddress] = useState('');
   const [fridgeCondition, setFridgeCondition] = useState<'working' | 'broken'>('working');
   const [isSeasonalClosure, setIsSeasonalClosure] = useState(false);
-
-  useEffect(() => {
-    locationRef.current = currentLocation;
-  }, [currentLocation]);
 
   useEffect(() => {
     if (!code) {
@@ -109,39 +110,6 @@ export default function CheckinPage() {
     };
   }, [code]);
 
-  async function getGeolocation(): Promise<{ lat: number; lng: number } | null> {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve(null);
-        return;
-      }
-      setLocationStatus('getting');
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setCurrentLocation(loc);
-          setLocationStatus('success');
-          setGeoRefreshWarning(null);
-          resolve(loc);
-        },
-        () => {
-          // Повторный запрос геолокации не должен показывать «ошибку», если уже есть валидная точка
-          if (locationRef.current) {
-            setLocationStatus('success');
-            setGeoRefreshWarning(
-              'Обновить координаты не удалось; при отправке будет использована ранее определённая точка.'
-            );
-          } else {
-            setLocationStatus('error');
-            setGeoRefreshWarning(null);
-          }
-          resolve(null);
-        },
-        { enableHighAccuracy: true, timeout: 7000 }
-      );
-    });
-  }
-
   async function handleCheckin(e: React.FormEvent) {
     e.preventDefault();
     if (!code) {
@@ -156,16 +124,9 @@ export default function CheckinPage() {
     setSubmitting(true);
     setError(null);
     setSuccess(null);
-    setGeoRefreshWarning(null);
 
     try {
-      let geo = currentLocation;
-      if (!geo) {
-        geo = await getGeolocation();
-        if (!geo) {
-          throw new Error('Не удалось получить геолокацию. Разрешите доступ к геолокации в настройках устройства.');
-        }
-      }
+      const geo = await ensureGeolocation();
 
       const res = await api.post('/api/checkins', {
         // Сохраняем managerId = username (код менеджера), а при его отсутствии используем _id
@@ -396,16 +357,42 @@ export default function CheckinPage() {
           </div>
 
           {/* Статус геолокации */}
-          <div className="bg-slate-50 p-3 rounded-lg text-sm text-slate-600">
-            <div className="flex items-center justify-between">
-              <span>Геолокация</span>
-              <span className="text-xs text-slate-500">
-                {locationStatus === 'getting' && 'Определяем местоположение...'}
-                {locationStatus === 'success' && 'Готово ✅'}
-                {locationStatus === 'error' && 'Не удалось определить местоположение'}
-                {locationStatus === 'idle' && 'Ещё не определена'}
-              </span>
+          <div className="bg-slate-50 p-4 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-slate-700">Геолокация</span>
+              {locationStatus === 'success' && currentLocation && (
+                <span className="text-xs text-green-600">✓ Получена</span>
+              )}
+              {locationStatus === 'error' && !currentLocation && (
+                <span className="text-xs text-red-600">✗ Ошибка</span>
+              )}
+              {locationStatus === 'getting' && (
+                <span className="text-xs text-slate-500">Определяем… до 20 сек</span>
+              )}
             </div>
+            {currentLocation ? (
+              <div className="text-xs text-slate-600 font-mono">
+                {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
+              </div>
+            ) : (
+              <div className="text-sm text-slate-500">
+                {locationStatus === 'getting'
+                  ? 'Получение геолокации… подождите, не закрывайте страницу'
+                  : 'Разрешите доступ к геолокации для stellref.kz'}
+              </div>
+            )}
+            {lastGeoError && !currentLocation && (
+              <p className="mt-2 text-xs text-red-700">{lastGeoError}</p>
+            )}
+            {locationStatus !== 'getting' && (
+              <button
+                type="button"
+                onClick={() => { void refreshGeolocation(); }}
+                className="mt-2 text-sm text-slate-600 hover:text-slate-900 underline"
+              >
+                Обновить геолокацию
+              </button>
+            )}
           </div>
 
           {geoRefreshWarning && (
@@ -426,7 +413,7 @@ export default function CheckinPage() {
           )}
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={submitting || cityMismatch} className="flex-1">
+            <Button type="submit" disabled={submitting || cityMismatch || locationStatus === 'getting'} className="flex-1">
               {submitting ? 'Сохраняем...' : 'Отметиться'}
             </Button>
             <Button type="button" variant="secondary" onClick={() => navigate(-1)}>
