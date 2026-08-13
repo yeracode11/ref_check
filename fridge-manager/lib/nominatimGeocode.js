@@ -36,7 +36,7 @@ async function forwardGeocodeQuery(query) {
   await throttle();
 
   try {
-    const url = `${NOMINATIM_SEARCH}?format=json&q=${encodeURIComponent(q)}&limit=1`;
+    const url = `${NOMINATIM_SEARCH}?format=json&q=${encodeURIComponent(q)}&limit=1&countrycodes=kz`;
     const res = await axios.get(url, {
       headers: { 'User-Agent': USER_AGENT },
       timeout: 20000,
@@ -60,7 +60,21 @@ async function forwardGeocodeQuery(query) {
   }
 }
 
+/** Нормализует типовой казахстанский адрес для Nominatim. */
+function buildGeocodeQuery(address, cityName) {
+  const cleaned = String(address || '')
+    .replace(/\b(республика|область|район)\b/gi, ' ')
+    .replace(/\b(г\.|город|ул\.|улица|пр\.|проспект|д\.|дом|мкр\.|микрорайон|ш\.|шоссе)\b/gi, ' ')
+    .replace(/[,.;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const city = String(cityName || '').trim();
+  if (!cleaned) return city ? `${city}, Kazakhstan` : '';
+  return city ? `${cleaned}, ${city}, Kazakhstan` : `${cleaned}, Kazakhstan`;
+}
+
 module.exports = {
   forwardGeocodeQuery,
+  buildGeocodeQuery,
   MIN_INTERVAL_MS,
 };

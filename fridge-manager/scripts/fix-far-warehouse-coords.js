@@ -1,5 +1,5 @@
 /**
- * Склад/возврат: если GPS далеко от cityId — геокод по адресу (или снова depot).
+ * Склад/возврат: гeокод по адресу, если GPS далеко от cityId или точка-заглушка в центре.
  *
  *   node scripts/fix-far-warehouse-coords.js --city=02 --dry-run
  *   node scripts/fix-far-warehouse-coords.js --city=02 --apply
@@ -8,9 +8,9 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
 const City = require('../models/City');
-const { forwardGeocodeQuery } = require('../lib/nominatimGeocode');
+const { forwardGeocodeQuery, buildGeocodeQuery } = require('../lib/nominatimGeocode');
 const { isLocationNearCity, getCityFilterRadiusKm } = require('../lib/cityLocationValidation');
-const { applyReturnToHomeCity } = require('../lib/fridgeReturnHelpers');
+const { isAtCityDepotCenter } = require('../lib/fridgeReturnHelpers');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -29,9 +29,9 @@ async function main() {
   }
 
   let scanned = 0;
-  let far = 0;
+  let needsFix = 0;
   let geocoded = 0;
-  let depot = 0;
+  let noAddress = 0;
   let failed = 0;
 
   for (const city of cities) {
@@ -40,47 +40,47 @@ async function main() {
       cityId: city._id,
       active: true,
       warehouseStatus: { $in: ['warehouse', 'returned'] },
-      locationAtDepot: false,
-    }).select('_id code address location warehouseStatus').lean();
+    }).select('_id code address location warehouseStatus locationAtDepot').lean();
 
     for (const f of fridges) {
       scanned++;
-      if (isLocationNearCity(f.location, city)) continue;
-      far++;
-
       const addr = f.address && String(f.address).trim();
+      const far = !isLocationNearCity(f.location, city);
+      const atDepotStub = isAtCityDepotCenter(f, city)
+        && (f.locationAtDepot !== false || far);
+
+      if (!far && !atDepotStub) continue;
+      needsFix++;
+
       console.log(
-        `${apply ? '' : '[dry-run] '}${f.code} — далеко от ${city.name} (>${radius} км)`,
+        `${apply ? '' : '[dry-run] '}${f.code} — `
+        + (far ? `GPS >${radius} км` : 'заглушка в центре'),
       );
 
       if (!apply) continue;
 
-      if (addr) {
-        const query = `${addr}, ${city.name}, Казахстан`;
-        const coords = await forwardGeocodeQuery(query);
-        await sleep(1100);
-        if (coords && isLocationNearCity({ type: 'Point', coordinates: coords }, city)) {
-          await Fridge.updateOne(
-            { _id: f._id },
-            { $set: { location: { type: 'Point', coordinates: coords }, locationAtDepot: false } },
-          );
-          geocoded++;
-          continue;
-        }
+      if (!addr) {
+        noAddress++;
+        continue;
       }
 
-      const doc = await Fridge.findById(f._id);
-      if (doc) {
-        applyReturnToHomeCity(doc, city);
-        await doc.save();
-        depot++;
+      const query = buildGeocodeQuery(addr, city.name);
+      const coords = await forwardGeocodeQuery(query);
+      await sleep(1100);
+
+      if (coords && isLocationNearCity({ type: 'Point', coordinates: coords }, city)) {
+        await Fridge.updateOne(
+          { _id: f._id },
+          { $set: { location: { type: 'Point', coordinates: coords }, locationAtDepot: false } },
+        );
+        geocoded++;
       } else {
         failed++;
       }
     }
   }
 
-  console.log(JSON.stringify({ apply, scanned, far, geocoded, depot, failed }, null, 2));
+  console.log(JSON.stringify({ apply, scanned, needsFix, geocoded, noAddress, failed }, null, 2));
   await mongoose.disconnect();
 }
 
