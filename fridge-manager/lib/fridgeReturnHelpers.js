@@ -19,6 +19,7 @@ function applyReturnToHomeCity(fridge, cityDoc) {
   }
 
   fridge.location = cityCenterToGeoPoint(center);
+  fridge.locationAtDepot = true;
 
   if (fridge.warehouseStatus === 'returned') {
     fridge.clientInfo = null;

@@ -7,18 +7,39 @@ function buildMapLocationFilter() {
   };
 }
 
-/** На карте визитов — только точки у клиентов; склад/возврат в центре города дают «кашу». */
+/**
+ * На карте:
+ * - installed / moved — всегда;
+ * - warehouse / returned — только с реальной точкой (отметка менеджера на складе), не заглушка в центре города.
+ */
+function buildMapVisibleFilter() {
+  return {
+    $or: [
+      { warehouseStatus: { $in: ['installed', 'moved'] } },
+      {
+        warehouseStatus: { $in: ['warehouse', 'returned'] },
+        locationAtDepot: false,
+      },
+    ],
+  };
+}
+
+function applyMapVisibleFilters(filter) {
+  return {
+    ...filter,
+    ...buildMapVisibleFilter(),
+  };
+}
+
+/** @deprecated use buildMapVisibleFilter */
 const FIELD_MAP_WAREHOUSE_STATUSES = ['installed', 'moved'];
 
 function buildFieldMapStatusFilter() {
-  return { warehouseStatus: { $in: FIELD_MAP_WAREHOUSE_STATUSES } };
+  return buildMapVisibleFilter();
 }
 
 function applyFieldMapFilters(filter) {
-  return {
-    ...filter,
-    ...buildFieldMapStatusFilter(),
-  };
+  return applyMapVisibleFilters(filter);
 }
 
 function isMapMarkersRequest(query) {
@@ -27,6 +48,8 @@ function isMapMarkersRequest(query) {
 
 module.exports = {
   buildMapLocationFilter,
+  buildMapVisibleFilter,
+  applyMapVisibleFilters,
   buildFieldMapStatusFilter,
   applyFieldMapFilters,
   FIELD_MAP_WAREHOUSE_STATUSES,

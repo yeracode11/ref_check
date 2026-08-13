@@ -63,9 +63,37 @@ async function syncFridgeFromCheckin({
     return;
   }
 
+  const fridgeStatusUpdate = {};
+  if (fridgeCondition === 'broken') {
+    fridgeStatusUpdate.status = 'broken';
+    if (!target.brokenSince) {
+      fridgeStatusUpdate.brokenSince = new Date();
+    }
+  } else if (target.status !== 'under_repair') {
+    fridgeStatusUpdate.status = 'working';
+    fridgeStatusUpdate.brokenSince = null;
+  }
+
+  const seasonalTypes = ['school', 'restricted'];
+  if (seasonalTypes.includes(target.type)) {
+    fridgeStatusUpdate.isSeasonalClosure = isSeasonalClosure;
+  }
+
   const currentWarehouseStatus = target.warehouseStatus || 'warehouse';
-  // На складе / возврат — координаты и статус меняет бухгалтер (PATCH status), не отметка
+  // На складе / возврат: статус не меняем, но GPS отметки — реальная точка на складе для карты
   if (currentWarehouseStatus === 'returned' || currentWarehouseStatus === 'warehouse') {
+    await Fridge.findByIdAndUpdate(
+      target._id,
+      {
+        $set: {
+          location,
+          locationAtDepot: false,
+          ...(address ? { address } : {}),
+          ...fridgeStatusUpdate,
+        },
+      },
+      { new: true },
+    );
     return;
   }
 
@@ -100,27 +128,12 @@ async function syncFridgeFromCheckin({
     }
   }
 
-  const fridgeStatusUpdate = {};
-  if (fridgeCondition === 'broken') {
-    fridgeStatusUpdate.status = 'broken';
-    if (!target.brokenSince) {
-      fridgeStatusUpdate.brokenSince = new Date();
-    }
-  } else if (target.status !== 'under_repair') {
-    fridgeStatusUpdate.status = 'working';
-    fridgeStatusUpdate.brokenSince = null;
-  }
-
-  const seasonalTypes = ['school', 'restricted'];
-  if (seasonalTypes.includes(target.type)) {
-    fridgeStatusUpdate.isSeasonalClosure = isSeasonalClosure;
-  }
-
   await Fridge.findByIdAndUpdate(
     target._id,
     {
       $set: {
         location,
+        locationAtDepot: false,
         warehouseStatus: newWarehouseStatus,
         ...(address ? { address } : {}),
         ...fridgeStatusUpdate,

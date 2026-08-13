@@ -1938,6 +1938,8 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
           cityDoc = await City.findById(fridge.cityId).select('name code').lean();
         }
         applyReturnToHomeCity(fridge, cityDoc);
+      } else if (warehouseStatus === 'installed' || warehouseStatus === 'moved') {
+        fridge.locationAtDepot = false;
       }
     }
 

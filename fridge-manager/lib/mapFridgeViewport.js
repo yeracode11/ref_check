@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
-const { buildMapLocationFilter, applyFieldMapFilters } = require('./mapFridgeQuery');
+const { buildMapLocationFilter, applyMapVisibleFilters } = require('./mapFridgeQuery');
 const { resolveCityFilter } = require('./cityScope');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
 const {
@@ -44,7 +44,7 @@ function gridCellDegrees(zoom) {
 }
 
 function buildViewportQuery(user, query, bbox) {
-  const filter = applyFieldMapFilters({
+  const filter = applyMapVisibleFilters({
     active: true,
     ...buildMapLocationFilter(),
     location: {
@@ -185,7 +185,7 @@ async function fetchViewportPoints(filter, bbox, zoom) {
 }
 
 function buildBulkFilter(user, query) {
-  const filter = applyFieldMapFilters({
+  const filter = applyMapVisibleFilters({
     active: true,
     ...buildMapLocationFilter(),
   });
@@ -216,6 +216,10 @@ async function fetchMapFridgeBulk(user, query) {
     active: true,
     ...buildMapLocationFilter(),
     warehouseStatus: { $in: ['warehouse', 'returned'] },
+    $or: [
+      { locationAtDepot: { $ne: false } },
+      { locationAtDepot: { $exists: false } },
+    ],
   };
   if (filter.cityId) {
     warehouseHiddenFilter.cityId = filter.cityId;

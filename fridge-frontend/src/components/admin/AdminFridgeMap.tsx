@@ -66,9 +66,16 @@ function getVisitMarkerColor(status: string): string {
   return '#2563eb';
 }
 
-function getMarkerColor(visitStatus: string, equipmentStatus?: EquipmentStatus): string {
+function getMarkerColor(
+  visitStatus: string,
+  equipmentStatus?: EquipmentStatus,
+  warehouseStatus?: string,
+): string {
   if (equipmentStatus === 'broken' || equipmentStatus === 'under_repair') {
     return getEquipmentMarkerColor(getEquipmentIndicator(equipmentStatus));
+  }
+  if (warehouseStatus === 'warehouse' || warehouseStatus === 'returned') {
+    return '#1d4ed8';
   }
   return getVisitMarkerColor(visitStatus);
 }
@@ -187,6 +194,10 @@ function MapLegend({
         Давно без визита
       </span>
       <span className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#1d4ed8' }} />
+        На складе (по отметке)
+      </span>
+      <span className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#2563eb' }} />
         Исправен / нет отметок
       </span>
@@ -195,7 +206,7 @@ function MapLegend({
       )}
       {warehouseHidden != null && warehouseHidden > 0 && (
         <span className="text-slate-500">
-          · на складе/возврате: {warehouseHidden.toLocaleString('ru-RU')} (не на карте)
+          · на складе без GPS-отметки: {warehouseHidden.toLocaleString('ru-RU')} (скрыты)
         </span>
       )}
       {hint && <span className="text-amber-700 ml-auto">{hint}</span>}
@@ -290,7 +301,6 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
 
     for (const f of points) {
       if (!f.location?.coordinates) continue;
-      if (f.warehouseStatus === 'warehouse' || f.warehouseStatus === 'returned') continue;
       const [lng, lat] = f.location.coordinates;
       if (lat === 0 && lng === 0) continue;
       if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
@@ -305,10 +315,10 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
       const visitForIcon = equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
         ? 'never'
         : f.status;
-      const iconKey = `${visitForIcon}:${equipmentStatus}`;
+      const iconKey = `${visitForIcon}:${equipmentStatus}:${f.warehouseStatus || ''}`;
       let icon = iconCacheRef.current.get(iconKey);
       if (!icon) {
-        icon = createPointIcon(getMarkerColor(visitForIcon, equipmentStatus));
+        icon = createPointIcon(getMarkerColor(visitForIcon, equipmentStatus, f.warehouseStatus));
         iconCacheRef.current.set(iconKey, icon);
       }
 

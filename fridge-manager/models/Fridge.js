@@ -76,8 +76,8 @@ const FridgeSchema = new mongoose.Schema(
       default: 'regular',
       index: true,
     },
-    // Дата выявления поломки (для индикации «сложный ремонт»)
-    brokenSince: { type: Date },
+    // true = точка-заглушка в центре города (скрыта на карте); false = реальные координаты (отметка/адрес)
+    locationAtDepot: { type: Boolean, default: true, index: true },
   },
   { timestamps: true }
 );

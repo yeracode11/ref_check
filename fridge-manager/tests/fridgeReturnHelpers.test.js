@@ -21,6 +21,7 @@ describe('fridgeReturnHelpers', () => {
     const result = applyReturnToHomeCity(fridge, { name: 'Алматы', code: '02' });
     assert.equal(result.applied, true);
     assert.equal(fridge.clientInfo, null);
+    assert.equal(fridge.locationAtDepot, true);
     assert.deepEqual(fridge.location, cityCenterToGeoPoint(resolveCityMapCenter('Алматы')));
   });
 
