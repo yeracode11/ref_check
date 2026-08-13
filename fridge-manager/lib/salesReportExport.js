@@ -20,6 +20,7 @@ const {
 const { legacyNumericFridgeIdVariant, bareFridgeId } = require('./fridgeIdFormat');
 const { labelsFromCompletedWorks } = require('./mxoRepairWorks');
 const { isComplexRepairRecord } = require('./repairHelpers');
+const { parseExportPeriod } = require('./exportPeriod');
 
 const FRIDGE_TYPE_LABELS = {
   regular: 'Обычный',
@@ -47,15 +48,17 @@ function formatManagerLabel(user, fallbackId) {
   return fallbackId != null ? String(fallbackId).trim() : '';
 }
 
-async function fetchLastCheckinManagerMap(fridgeObjectIds) {
+async function fetchLastCheckinManagerMap(fridgeObjectIds, since = null) {
   const result = new Map();
   if (!fridgeObjectIds?.length) return result;
 
   const chunkSize = 8000;
   for (let i = 0; i < fridgeObjectIds.length; i += chunkSize) {
     const chunk = fridgeObjectIds.slice(i, i + chunkSize);
+    const match = { fridgeRef: { $in: chunk } };
+    if (since) match.visitedAt = { $gte: since };
     const rows = await Checkin.aggregate([
-      { $match: { fridgeRef: { $in: chunk } } },
+      { $match: match },
       { $sort: { visitedAt: -1 } },
       { $group: { _id: '$fridgeRef', managerId: { $first: '$managerId' } } },
     ]).allowDiskUse(true);
@@ -96,9 +99,9 @@ async function resolveManagerDisplayMap(managerIds) {
   return displayMap;
 }
 
-async function buildLastManagerDisplayByFridgeId(fridges) {
+async function buildLastManagerDisplayByFridgeId(fridges, since = null) {
   const fridgeObjectIds = fridges.map((f) => f._id).filter(Boolean);
-  const lastManagerIdByFridge = await fetchLastCheckinManagerMap(fridgeObjectIds);
+  const lastManagerIdByFridge = await fetchLastCheckinManagerMap(fridgeObjectIds, since);
   const managerDisplayMap = await resolveManagerDisplayMap([...lastManagerIdByFridge.values()]);
   const lastManagerDisplayByFridgeId = new Map();
   for (const [fridgeId, managerId] of lastManagerIdByFridge) {
@@ -222,6 +225,7 @@ async function countBrokenCheckinsByFridge(fridges, checkinIdList) {
 }
 
 async function loadFullExportContext(user, query, opts = {}) {
+  const exportPeriod = opts.exportPeriod || parseExportPeriod(query.period);
   const fridgeFilter = buildFridgeQuery(user, query, opts);
   const fridges = await Fridge.find(fridgeFilter).populate('cityId', 'name code').lean();
 
@@ -246,7 +250,7 @@ async function loadFullExportContext(user, query, opts = {}) {
       { useCache: true },
     ),
     countBrokenCheckinsByFridge(fridges, checkinIdList),
-    buildLastManagerDisplayByFridgeId(fridges),
+    buildLastManagerDisplayByFridgeId(fridges, exportPeriod.since),
   ]);
 
   return {
@@ -255,6 +259,7 @@ async function loadFullExportContext(user, query, opts = {}) {
     brokenByFridgeId,
     fridgeFilter,
     lastManagerDisplayByFridgeId,
+    exportPeriod,
   };
 }
 
@@ -308,6 +313,7 @@ async function fetchFundSheetRows(user, query, opts = {}, exportContext = null) 
 async function fetchRepairSheetRows(user, query, opts = {}, repairScope = {}) {
   let fridgeIds = repairScope.fridgeIds;
   const maxRows = repairScope.maxRows ?? REPAIR_EXPORT_MAX_ROWS;
+  const since = repairScope.since ?? opts.exportPeriod?.since ?? null;
 
   if (!fridgeIds?.length) {
     const fridgeFilter = buildFridgeQuery(user, query, opts);
@@ -316,7 +322,10 @@ async function fetchRepairSheetRows(user, query, opts = {}, repairScope = {}) {
 
   if (!fridgeIds.length) return [];
 
-  const repairDocs = await Repair.find({ fridgeId: { $in: fridgeIds } })
+  const repairQuery = { fridgeId: { $in: fridgeIds } };
+  if (since) repairQuery.repairDate = { $gte: since };
+
+  const repairDocs = await Repair.find(repairQuery)
     .sort({ repairDate: -1 })
     .limit(Math.max(1, maxRows))
     .populate('fridgeId', 'code number address')
@@ -374,7 +383,7 @@ function fetchVisitCategorySheets(exportContext, nowMs = Date.now()) {
   );
 }
 
-async function fetchCheckinSummarySheetRows(fridges, limit = CHECKIN_SUMMARY_MAX_ROWS) {
+async function fetchCheckinSummarySheetRows(fridges, limit = CHECKIN_SUMMARY_MAX_ROWS, since = null) {
   if (!fridges?.length) return [];
 
   const fridgeObjectIds = fridges.map((f) => f._id).filter(Boolean);
@@ -389,7 +398,10 @@ async function fetchCheckinSummarySheetRows(fridges, limit = CHECKIN_SUMMARY_MAX
     }
   });
 
-  const checkins = await Checkin.find({ fridgeRef: { $in: fridgeObjectIds } })
+  const checkinQuery = { fridgeRef: { $in: fridgeObjectIds } };
+  if (since) checkinQuery.visitedAt = { $gte: since };
+
+  const checkins = await Checkin.find(checkinQuery)
     .sort({ visitedAt: -1 })
     .limit(Math.max(1, limit))
     .select(CHECKIN_SUMMARY_SELECT)
@@ -569,7 +581,10 @@ async function buildExportReportSheets(user, query, exportContext, exportOpts) {
 
   const [fundRows, repairRows] = await Promise.all([
     fetchFundSheetRows(user, query, { ...exportOpts, excludeFreshVisits }, exportContext),
-    fetchRepairSheetRows(user, query, exportOpts, { fridgeIds: fridgeIdsForRepairs }),
+    fetchRepairSheetRows(user, query, exportOpts, {
+      fridgeIds: fridgeIdsForRepairs,
+      since: exportContext.exportPeriod?.since,
+    }),
   ]);
 
   const reportSheets = {
@@ -605,10 +620,12 @@ async function appendSalesReportSheets(workbook, user, query = {}, opts = {}) {
 
 async function generateFullExportBuffer(user, query = {}, opts = {}) {
   const accountantExport = isAccountantExport(user, opts);
+  const exportPeriod = parseExportPeriod(query.period);
   const exportOpts = {
     activeOnly: false,
     geocode: opts.geocode !== false,
     ...opts,
+    exportPeriod,
     includeFreshVisitSheets: opts.includeFreshVisitSheets ?? accountantExport,
     excludeFreshVisits: opts.excludeFreshVisits ?? !accountantExport,
   };
@@ -616,7 +633,7 @@ async function generateFullExportBuffer(user, query = {}, opts = {}) {
   const [fridgeRows, reportSheets, checkinRows] = await Promise.all([
     fetchFridgeListSheetRows(user, query, exportOpts, exportContext),
     buildExportReportSheets(user, query, exportContext, exportOpts),
-    fetchCheckinSummarySheetRows(exportContext.fridges),
+    fetchCheckinSummarySheetRows(exportContext.fridges, CHECKIN_SUMMARY_MAX_ROWS, exportPeriod.since),
   ]);
   return buildSalesReportWorkbook(reportSheets, fridgeRows, checkinRows);
 }
@@ -625,8 +642,8 @@ async function generateSalesReportBuffer(user, query, opts = {}) {
   return generateFullExportBuffer(user, query, { geocode: false, ...opts });
 }
 
-function buildExportFileName(cityName) {
-  return buildFridgesExportFileName(cityName);
+function buildExportFileName(cityName, periodSuffix) {
+  return buildFridgesExportFileName(cityName, periodSuffix);
 }
 
 module.exports = {
@@ -644,4 +661,5 @@ module.exports = {
   isAccountantExport,
   formatManagerLabel,
   appendCheckinSummarySheet,
+  parseExportPeriod,
 };

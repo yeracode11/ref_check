@@ -27,6 +27,7 @@ const {
   generateFullExportBuffer,
   buildExportFileName,
   buildFridgesExportFileName,
+  parseExportPeriod,
 } = require('../lib/salesReportExport');
 const { getAssignedCityId, resolveCityFilter, userCanAccessFridge, buildCheckinFilterForFridge, normalizeCityId } = require('../lib/cityScope');
 const { applyReturnToHomeCity, WAREHOUSE_STATUSES } = require('../lib/fridgeReturnHelpers');
@@ -309,7 +310,7 @@ router.get('/export-sales-report', authenticateToken, requireSalesHead, async (r
       });
     }
 
-    const { cityId, equipmentStatus, search } = req.query;
+    const { cityId, equipmentStatus, search, period } = req.query;
     let cityName = '';
     const scopedCityId = resolveCityFilter(req.user, cityId);
     if (scopedCityId) {
@@ -317,13 +318,15 @@ router.get('/export-sales-report', authenticateToken, requireSalesHead, async (r
       cityName = city?.name || '';
     }
 
+    const exportPeriod = parseExportPeriod(period);
+
     const excelBuffer = await generateFullExportBuffer(
       req.user,
-      { cityId, equipmentStatus, search },
+      { cityId, equipmentStatus, search, period: exportPeriod.key },
       { geocode: false, activeOnly: false },
     );
 
-    const fileName = buildFridgesExportFileName(cityName);
+    const fileName = buildFridgesExportFileName(cityName, exportPeriod.fileSuffix);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
     return res.send(excelBuffer);
@@ -352,7 +355,7 @@ router.get(
     }
 
     const enableGeocoding = req.query.geocode !== 'false';
-    let { cityId, equipmentStatus, search } = req.query;
+    let { cityId, equipmentStatus, search, period } = req.query;
     if (req.user.role === 'admin') {
       cityId = undefined;
     }
@@ -364,18 +367,22 @@ router.get(
       cityName = city?.name || '';
     }
 
-    console.log(`[Export] Generating full report for ${req.user.role}${cityName ? ` (${cityName})` : ''}...`);
+    const exportPeriod = parseExportPeriod(period);
+
+    console.log(
+      `[Export] Generating full report for ${req.user.role}${cityName ? ` (${cityName})` : ''}, period=${exportPeriod.key}...`,
+    );
     const started = Date.now();
     const excelBuffer = await generateFullExportBuffer(
       req.user,
-      { cityId, equipmentStatus, search },
+      { cityId, equipmentStatus, search, period: exportPeriod.key },
       { geocode: enableGeocoding, activeOnly: false },
     );
     console.log(
       `[Export] Done in ${((Date.now() - started) / 1000).toFixed(1)}s, ${excelBuffer.length} bytes`,
     );
 
-    const fileName = buildFridgesExportFileName(cityName);
+    const fileName = buildFridgesExportFileName(cityName, exportPeriod.fileSuffix);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
     return res.send(excelBuffer);

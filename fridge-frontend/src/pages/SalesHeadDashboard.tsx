@@ -18,6 +18,8 @@ import {
 } from '../utils/fridgeUtils';
 import { WarehouseStatusBadge } from '../components/WarehouseStatusBadge';
 import { resolveUserCityId } from '../utils/userCityId';
+import ExportExcelModal from '../components/ExportExcelModal';
+import { buildExportQueryParams, downloadExcelExport, type ExportPeriod } from '../utils/exportPeriod';
 
 type City = { _id: string; name: string; code: string };
 
@@ -112,6 +114,7 @@ export default function SalesHeadDashboard() {
   const [repairSummary, setRepairSummary] = useState<RepairSummary | null>(null);
 
   const [exporting, setExporting] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [selectedFridgeDetailId, setSelectedFridgeDetailId] = useState<string | null>(null);
   const [selectedQRFridge, setSelectedQRFridge] = useState<Fridge | null>(null);
 
@@ -236,37 +239,20 @@ export default function SalesHeadDashboard() {
     return () => { alive = false; };
   }, [isAdmin, selectedCityId]);
 
-  const handleExportReport = async () => {
+  const runExportReport = async (period: ExportPeriod) => {
     try {
       setExporting(true);
-      const params = new URLSearchParams({ geocode: 'false' });
-      if (isAdmin && selectedCityId) params.append('cityId', selectedCityId);
-      if (equipmentFilter !== 'all') params.append('equipmentStatus', equipmentFilter);
-      if (search.trim()) params.append('search', search.trim());
-
-      const response = await api.get(`/api/admin/export-fridges?${params.toString()}`, {
-        responseType: 'blob',
-        timeout: 300000,
+      const params = buildExportQueryParams(period, {
+        cityId: isAdmin && selectedCityId ? selectedCityId : undefined,
+        equipmentStatus: equipmentFilter !== 'all' ? equipmentFilter : undefined,
+        search: search.trim() || undefined,
       });
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      const contentDisposition = response.headers['content-disposition'];
-      let fileName = 'холодильники.xlsx';
-      if (contentDisposition) {
-        const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (fileNameMatch?.[1]) {
-          fileName = decodeURIComponent(fileNameMatch[1].replace(/['"]/g, ''));
-        }
-      }
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Ошибка при экспорте');
+      await downloadExcelExport(api, `/api/admin/export-fridges?${params.toString()}`);
+      setShowExportModal(false);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } }; message?: string };
+      alert(err?.response?.data?.error || err?.message || 'Ошибка при экспорте');
     } finally {
       setExporting(false);
     }
@@ -300,7 +286,7 @@ export default function SalesHeadDashboard() {
         </div>
         <button
           type="button"
-          onClick={handleExportReport}
+          onClick={() => setShowExportModal(true)}
           disabled={exporting || (isAdmin && !selectedCityId)}
           className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors font-medium shadow-sm"
         >
@@ -580,6 +566,13 @@ export default function SalesHeadDashboard() {
           </div>
         </div>
       )}
+
+      <ExportExcelModal
+        open={showExportModal}
+        onClose={() => !exporting && setShowExportModal(false)}
+        onExport={runExportReport}
+        exporting={exporting}
+      />
     </div>
   );
 }

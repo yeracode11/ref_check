@@ -12,6 +12,8 @@ import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 import { AdminFridgeMap } from '../components/admin/AdminFridgeMap';
 import { showToast } from '../components/ui/Toast';
 import { resolveUserCityId, resolveUserCityName } from '../utils/userCityId';
+import ExportExcelModal from '../components/ExportExcelModal';
+import { buildExportQueryParams, downloadExcelExport, type ExportPeriod } from '../utils/exportPeriod';
 
 type ClientInfo = {
   name?: string;
@@ -82,6 +84,7 @@ export default function AccountantDashboard() {
   const [selectedFridgeDetailId, setSelectedFridgeDetailId] = useState<string | null>(null); // Для детального просмотра
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   
   // Импорт Excel
   const [importing, setImporting] = useState(false);
@@ -125,39 +128,16 @@ export default function AccountantDashboard() {
   const observerTarget = useRef<HTMLDivElement | null>(null);
   const isCreatingRef = useRef(false); // Защита от двойного вызова
 
-  // Экспорт холодильников в Excel (для бухгалтера — только его город, для админа — все)
-  const handleExportExcel = async () => {
+  const runExportExcel = async (period: ExportPeriod) => {
     try {
       setExporting(true);
-      // Для больших объемов отключаем геокодирование (быстрее)
-      // Можно добавить опцию для пользователя, но пока отключаем для скорости
-      const response = await api.get('/api/admin/export-fridges?geocode=false', {
-        responseType: 'blob',
-        timeout: 900000,
-      });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-
-      // Имя файла из заголовка, если есть
-      const contentDisposition = response.headers['content-disposition'];
-      let fileName = 'холодильники.xlsx';
-      if (contentDisposition) {
-        const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (fileNameMatch && fileNameMatch[1]) {
-          fileName = decodeURIComponent(fileNameMatch[1].replace(/['"]/g, ''));
-        }
-      }
-
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
+      const params = buildExportQueryParams(period);
+      await downloadExcelExport(api, `/api/admin/export-fridges?${params.toString()}`);
+      setShowExportModal(false);
+    } catch (e: unknown) {
       console.error('Ошибка экспорта:', e);
-      alert('Ошибка при экспорте файла: ' + (e?.message || 'Неизвестная ошибка'));
+      const message = e instanceof Error ? e.message : 'Неизвестная ошибка';
+      alert('Ошибка при экспорте файла: ' + message);
     } finally {
       setExporting(false);
     }
@@ -584,7 +564,7 @@ export default function AccountantDashboard() {
             <span>Добавить холодильник</span>
           </button>
           <button
-            onClick={handleExportExcel}
+            onClick={() => setShowExportModal(true)}
             disabled={exporting || fridges.length === 0}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
           >
@@ -1228,6 +1208,13 @@ export default function AccountantDashboard() {
           </div>
         </div>
       )}
+
+      <ExportExcelModal
+        open={showExportModal}
+        onClose={() => !exporting && setShowExportModal(false)}
+        onExport={runExportExcel}
+        exporting={exporting}
+      />
     </div>
   );
 }

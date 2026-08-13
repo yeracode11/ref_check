@@ -218,10 +218,11 @@ function appendFridgeListSheet(workbook, fridgeRows) {
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Холодильники');
 }
 
-function buildFridgesExportFileName(cityName) {
+function buildFridgesExportFileName(cityName, periodSuffix) {
   const date = new Date().toISOString().split('T')[0];
   const cityPart = cityName ? `_${cityName.replace(/\s+/g, '_')}` : '';
-  return `холодильники${cityPart}_${date}.xlsx`;
+  const periodPart = periodSuffix ? `_${periodSuffix}` : '';
+  return `холодильники${cityPart}${periodPart}_${date}.xlsx`;
 }
 
 module.exports = {

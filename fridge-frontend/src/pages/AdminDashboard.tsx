@@ -9,6 +9,8 @@ import { QRCode } from '../components/ui/QRCode';
 import { FridgeDetailModal } from '../components/FridgeDetailModal';
 import { AnalyticsPanel } from '../components/admin/AnalyticsPanel';
 import { showToast } from '../components/ui/Toast';
+import ExportExcelModal from '../components/ExportExcelModal';
+import { buildExportQueryParams, downloadExcelExport, type ExportPeriod } from '../utils/exportPeriod';
 
 type ClientInfo = {
   name?: string;
@@ -114,6 +116,7 @@ export default function AdminDashboard() {
   const [showDeleteAllFridges, setShowDeleteAllFridges] = useState(false); // Для подтверждения удаления всех холодильников
   const [deletingAllFridges, setDeletingAllFridges] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -393,45 +396,23 @@ export default function AdminDashboard() {
     };
   }, [hasMore, loadingMore, loading, fridges.length, loadFridges]);
 
-  // Экспорт: админ — всегда все города (фильтр карты не влияет)
-  const handleExportExcel = async () => {
+  const runExportExcel = async (period: ExportPeriod) => {
     try {
       setExporting(true);
-      const response = await api.get('/api/admin/export-fridges?geocode=false', {
-        responseType: 'blob',
-        timeout: 900000,
-      });
-      
-      // Создаем ссылку для скачивания
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      
-      // Получаем имя файла из заголовка Content-Disposition
-      const contentDisposition = response.headers['content-disposition'];
-      let fileName = 'холодильники.xlsx';
-      if (contentDisposition) {
-        const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (fileNameMatch && fileNameMatch[1]) {
-          fileName = decodeURIComponent(fileNameMatch[1].replace(/['"]/g, ''));
-        }
-      }
-      
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
+      const params = buildExportQueryParams(period);
+      await downloadExcelExport(api, `/api/admin/export-fridges?${params.toString()}`);
+      setShowExportModal(false);
+    } catch (e: unknown) {
       console.error('Ошибка экспорта:', e);
+      const err = e as { code?: string; message?: string; response?: { status?: number } };
       const isTimeout =
-        e?.code === 'ECONNABORTED' ||
-        e?.message?.includes('timeout') ||
-        e?.response?.status === 504;
+        err?.code === 'ECONNABORTED' ||
+        err?.message?.includes('timeout') ||
+        err?.response?.status === 504;
       alert(
         isTimeout
-          ? 'Экспорт не успел завершиться (таймаут). Отчёт по всем городам может идти до 15 минут — проверьте nginx: proxy_read_timeout 900s; и дождитесь завершения.'
-          : `Ошибка при экспорте файла: ${e?.message || 'Неизвестная ошибка'}`,
+          ? 'Экспорт не успел завершиться (таймаут). Для «Весь период» по всем городам может потребоваться до 15 минут — попробуйте меньший период.'
+          : `Ошибка при экспорте файла: ${err?.message || 'Неизвестная ошибка'}`,
       );
     } finally {
       setExporting(false);
@@ -866,7 +847,7 @@ export default function AdminDashboard() {
           </div>
           {/* Экспорт */}
           <button
-            onClick={handleExportExcel}
+            onClick={() => setShowExportModal(true)}
             disabled={exporting || totalFridges === 0}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
           >
@@ -1934,6 +1915,13 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      <ExportExcelModal
+        open={showExportModal}
+        onClose={() => !exporting && setShowExportModal(false)}
+        onExport={runExportExcel}
+        exporting={exporting}
+      />
     </div>
   );
 }
