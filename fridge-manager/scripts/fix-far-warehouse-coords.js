@@ -13,7 +13,8 @@ const City = require('../models/City');
 const Checkin = require('../models/Checkin');
 const { forwardGeocodeQuery, buildGeocodeQuery } = require('../lib/nominatimGeocode');
 const { isLocationNearCity, getCityFilterRadiusKm } = require('../lib/cityLocationValidation');
-const { isAtCityDepotCenter } = require('../lib/fridgeReturnHelpers');
+const { isAtCityDepotCenter, applyReturnToHomeCity } = require('../lib/fridgeReturnHelpers');
+const { isGenericWarehouseAddress } = require('../lib/warehouseAddressHelpers');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -84,6 +85,16 @@ async function main() {
       );
 
       if (!apply) continue;
+
+      if (await isGenericWarehouseAddress(city._id, f.address)) {
+        const doc = await Fridge.findById(f._id);
+        if (doc) {
+          applyReturnToHomeCity(doc, city);
+          await doc.save();
+        }
+        byReason.generic_reset = (byReason.generic_reset || 0) + 1;
+        continue;
+      }
 
       const query = buildGeocodeQuery(f.address, city.name);
       const coords = await forwardGeocodeQuery(query);
