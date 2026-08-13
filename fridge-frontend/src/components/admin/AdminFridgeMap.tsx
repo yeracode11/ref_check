@@ -361,7 +361,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
     }
 
     if (filterOutliers && skippedFar > 0 && markerLayers.length > 0) {
-      setHint(`${skippedFar} точек скрыто — координаты вне «${cityName || 'города'}» (ошибка адреса или cityId).`);
+      setHint(`${skippedFar} точек скрыто — GPS далеко от «${cityName || 'города'}» (отметка в другом регионе или неверный адрес).`);
     }
 
     window.setTimeout(() => map.invalidateSize({ animate: false }), 100);

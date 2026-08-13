@@ -22,6 +22,7 @@ const {
   canonicalCheckinFridgeId,
   fridgeIdMatchesCandidates,
 } = require('./checkinDedup');
+const { isLocationNearCity } = require('./cityLocationValidation');
 
 const CHECKIN_IDEMPOTENCY_WINDOW_MS = (() => {
   const n = parseInt(process.env.CHECKIN_IDEMPOTENCY_WINDOW_MS || '300000', 10);
@@ -80,20 +81,22 @@ async function syncFridgeFromCheckin({
   }
 
   const currentWarehouseStatus = target.warehouseStatus || 'warehouse';
-  // На складе / возврат: статус не меняем, но GPS отметки — реальная точка на складе для карты
+  const cityDoc = target.cityId
+    ? await City.findById(target.cityId).select('name code').lean()
+    : null;
+  const checkinInHomeCity = !cityDoc || !location || isLocationNearCity(location, cityDoc);
+
+  // На складе / возврат: GPS на карту только если отметка в регионе «родного» города
   if (currentWarehouseStatus === 'returned' || currentWarehouseStatus === 'warehouse') {
-    await Fridge.findByIdAndUpdate(
-      target._id,
-      {
-        $set: {
-          location,
-          locationAtDepot: false,
-          ...(address ? { address } : {}),
-          ...fridgeStatusUpdate,
-        },
-      },
-      { new: true },
-    );
+    const update = {
+      ...(address ? { address } : {}),
+      ...fridgeStatusUpdate,
+    };
+    if (checkinInHomeCity) {
+      update.location = location;
+      update.locationAtDepot = false;
+    }
+    await Fridge.findByIdAndUpdate(target._id, { $set: update }, { new: true });
     return;
   }
 

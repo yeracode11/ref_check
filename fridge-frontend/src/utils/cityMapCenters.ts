@@ -15,8 +15,8 @@ type MapPointLike = {
 
 /** Центры городов (lat/lng для Leaflet). Имена — lower case. */
 const BY_NAME: Record<string, CityMapCenter> = {
-  алматы: { lat: 43.238949, lng: 76.889709, zoom: 12 },
-  almaty: { lat: 43.238949, lng: 76.889709, zoom: 12 },
+  алматы: { lat: 43.238949, lng: 76.889709, zoom: 12, maxFilterKm: 220 },
+  almaty: { lat: 43.238949, lng: 76.889709, zoom: 12, maxFilterKm: 220 },
   астана: { lat: 51.169392, lng: 71.449074, zoom: 11 },
   astana: { lat: 51.169392, lng: 71.449074, zoom: 11 },
   'нур-султан': { lat: 51.169392, lng: 71.449074, zoom: 11 },
@@ -55,7 +55,7 @@ const BY_NAME: Record<string, CityMapCenter> = {
 /** Коды из справочника городов Stellref (01, 02, …) + латинские аббревиатуры */
 const BY_CODE: Record<string, CityMapCenter> = {
   '01': { lat: 51.169392, lng: 71.449074, zoom: 11 },
-  '02': { lat: 43.238949, lng: 76.889709, zoom: 12 },
+  '02': { lat: 43.238949, lng: 76.889709, zoom: 12, maxFilterKm: 220 },
   '03': { lat: 53.283, lng: 69.4, zoom: 11 },
   '04': { lat: 50.283933, lng: 57.166978, zoom: 11 },
   '06': { lat: 47.116667, lng: 51.883333, zoom: 11 },
@@ -69,7 +69,7 @@ const BY_CODE: Record<string, CityMapCenter> = {
   '17': { lat: 42.341737, lng: 69.590101, zoom: 12 },
   '18': { lat: 50.411, lng: 80.227, zoom: 11 },
   '19': { lat: 45.0156, lng: 78.3739, zoom: 12, maxFilterKm: 340 },
-  ALA: { lat: 43.238949, lng: 76.889709, zoom: 12 },
+  ALA: { lat: 43.238949, lng: 76.889709, zoom: 12, maxFilterKm: 220 },
   AST: { lat: 51.169392, lng: 71.449074, zoom: 11 },
   TRZ: { lat: 42.8996, lng: 71.3696, zoom: 12 },
   AKX: { lat: 50.283933, lng: 57.166978, zoom: 11 },
