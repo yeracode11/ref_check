@@ -208,13 +208,18 @@ router.get('/', authenticateToken, async (req, res) => {
     const total = await Fridge.countDocuments(filter);
 
     /**
-     * Упрощённый ответ без join к checkins — для списков, где не нужны lastVisit/visitStatus
-     * (иначе limit=10000 + $lookup по каждому холодильнику даёт минуты работы и 504 от nginx).
+     * По умолчанию simple (без тяжёлого join к checkins). Aggregate — только с enrich=1.
      */
+    const wantEnrich = req.query.enrich === '1' || req.query.enrich === 'true';
+    const simpleFlag = req.query.simple;
     const simple =
-      req.query.simple === '1' ||
-      req.query.simple === 'true' ||
-      req.query.simple === 'yes';
+      !wantEnrich && (
+        simpleFlag === '1' ||
+        simpleFlag === 'true' ||
+        simpleFlag === 'yes' ||
+        simpleFlag === undefined ||
+        simpleFlag === ''
+      );
     if (simple) {
       const list = await Fridge.find(filter)
         .populate('cityId', 'name code')

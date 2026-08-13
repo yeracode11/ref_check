@@ -169,6 +169,7 @@ export default function FridgesList() {
       }
       params.append('limit', String(ITEMS_PER_PAGE));
       params.append('skip', String(skip));
+      params.append('simple', '1');
       
       const res = await api.get(`/api/fridges?${params.toString()}`);
       if (!alive) return;

@@ -44,6 +44,16 @@ function buildCheckinIdListFromFridges(fridges) {
   return expandCheckinFridgeIdsForInQuery([...ids]);
 }
 
+/** Фильтр отметок за период с учётом fridgeRef (не только legacy fridgeId) */
+async function buildAnalyticsPeriodMatch(cityId, startDate) {
+  const match = { visitedAt: { $gte: startDate } };
+  if (cityId && cityId !== 'all') {
+    const { getCheckinFilterForCity } = require('./cityScope');
+    Object.assign(match, await getCheckinFilterForCity(cityId));
+  }
+  return match;
+}
+
 function buildTopUnvisitedFromFridges(fridges, statsByFridgeId, limit = 20) {
   const rows = fridges.map((f) => {
     const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeId, f);
@@ -191,6 +201,7 @@ function buildUnvisitedExportRows(fridges, statsByFridgeId, nowMs = Date.now()) 
 
 module.exports = {
   buildCheckinIdListFromFridges,
+  buildAnalyticsPeriodMatch,
   buildTopUnvisitedFromFridges,
   buildVisitCategoryExportRows,
   buildUnvisitedExportRows,

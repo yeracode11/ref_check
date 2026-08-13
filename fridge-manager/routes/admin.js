@@ -21,7 +21,7 @@ const {
   mapDailyCheckinsAggregationResult,
 } = require('../lib/fridgeVisitHelpers');
 const { getCheckinStatsForFridges, getCheckinStatsForFridgeQuery, invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
-const { buildCheckinIdListFromFridges, buildTopUnvisitedFromFridges } = require('../lib/analyticsHelpers');
+const { buildTopUnvisitedFromFridges, buildAnalyticsPeriodMatch } = require('../lib/analyticsHelpers');
 const { deduplicateCityCheckins } = require('../lib/deduplicateCheckins');
 const {
   generateFullExportBuffer,
@@ -1253,7 +1253,7 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       .populate('cityId', 'name')
       .lean();
 
-    let fridgeFilter = {};
+    let periodMatch = { visitedAt: { $gte: startDate } };
     if (cityId && cityId !== 'all') {
       if (allFridges.length === 0) {
         return res.json({
@@ -1269,15 +1269,11 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
           },
         });
       }
-
-      const fridgeCodes = buildCheckinIdListFromFridges(allFridges);
-      fridgeFilter = { fridgeId: { $in: fridgeCodes.length ? fridgeCodes : ['__none__'] } };
+      periodMatch = await buildAnalyticsPeriodMatch(cityId, startDate);
     }
 
     const statsCacheKey = JSON.stringify({ route: 'admin-analytics', cityId: cityId || 'all' });
     const statsByFridgeId = await getCheckinStatsForFridges(allFridges, statsCacheKey, { useCache: true });
-
-    const periodMatch = { visitedAt: { $gte: startDate }, ...fridgeFilter };
 
     const [
       checkinsByDay,
@@ -1434,9 +1430,8 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       .select('code number name address warehouseStatus clientInfo type')
       .populate('cityId', 'name code')
       .lean();
-    const fridgeCodes = buildCheckinIdListFromFridges(cityFridges);
 
-    if (fridgeCodes.length === 0) {
+    if (cityFridges.length === 0) {
       return res.json({
         dailyCheckins: [],
         managerStats: [],
@@ -1453,10 +1448,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       });
     }
 
-    const periodMatch = {
-      fridgeId: { $in: fridgeCodes },
-      visitedAt: { $gte: startDate },
-    };
+    const periodMatch = await buildAnalyticsPeriodMatch(scopedCityId, startDate);
 
     const statsCacheKey = JSON.stringify({ route: 'accountant-analytics', cityId: String(scopedCityId) });
     const statsByFridgeId = await getCheckinStatsForFridges(cityFridges, statsCacheKey, { useCache: true });

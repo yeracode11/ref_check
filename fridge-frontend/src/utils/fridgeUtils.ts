@@ -163,3 +163,59 @@ export function getEquipmentMarkerColor(indicator: EquipmentIndicator): string {
 export function showSeasonalClosureCheckbox(type?: string | null): boolean {
   return type === 'school' || type === 'restricted';
 }
+
+export type WarehouseStatus = 'warehouse' | 'installed' | 'returned' | 'moved';
+
+export type WarehouseStatusTransition = {
+  targetStatus: WarehouseStatus;
+  actionLabel: string;
+  modalTitle: string;
+  confirmLabel: string;
+  needsClientForm: boolean;
+  confirmClassName: string;
+};
+
+/** Следующий статус склада и подписи для UI бухгалтера */
+export function getWarehouseStatusTransition(
+  current?: WarehouseStatus | string | null,
+): WarehouseStatusTransition {
+  switch (current) {
+    case 'installed':
+      return {
+        targetStatus: 'returned',
+        actionLabel: 'Возврат',
+        modalTitle: 'Возврат на склад',
+        confirmLabel: 'Вернуть на склад',
+        needsClientForm: false,
+        confirmClassName: 'bg-blue-600 hover:bg-blue-700',
+      };
+    case 'returned':
+      return {
+        targetStatus: 'warehouse',
+        actionLabel: 'На склад',
+        modalTitle: 'Принять на склад',
+        confirmLabel: 'Принять на склад',
+        needsClientForm: false,
+        confirmClassName: 'bg-slate-600 hover:bg-slate-700',
+      };
+    case 'moved':
+      return {
+        targetStatus: 'installed',
+        actionLabel: 'Установить',
+        modalTitle: 'Установка после перемещения',
+        confirmLabel: 'Установить',
+        needsClientForm: true,
+        confirmClassName: 'bg-green-600 hover:bg-green-700',
+      };
+    case 'warehouse':
+    default:
+      return {
+        targetStatus: 'installed',
+        actionLabel: 'Установить',
+        modalTitle: 'Установка холодильника',
+        confirmLabel: 'Установить',
+        needsClientForm: true,
+        confirmClassName: 'bg-green-600 hover:bg-green-700',
+      };
+  }
+}

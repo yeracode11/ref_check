@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDisplayIdentifier } from '../utils/fridgeUtils';
+import { getDisplayIdentifier, getWarehouseStatusTransition, type WarehouseStatus } from '../utils/fridgeUtils';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge } from '../components/ui/Card';
@@ -110,8 +110,12 @@ export default function AccountantDashboard() {
   });
 
   // Форма изменения статуса
-  const [statusForm, setStatusForm] = useState({
-    warehouseStatus: 'installed' as 'warehouse' | 'installed' | 'returned',
+  const [statusForm, setStatusForm] = useState<{
+    warehouseStatus: WarehouseStatus;
+    notes: string;
+    isSeasonalClosure: boolean;
+  }>({
+    warehouseStatus: 'installed',
     notes: '',
     isSeasonalClosure: false,
   });
@@ -387,9 +391,10 @@ export default function AccountantDashboard() {
 
   // Открыть изменение статуса
   const openStatusChange = (fridge: Fridge) => {
+    const transition = getWarehouseStatusTransition(fridge.warehouseStatus);
     setSelectedFridge(fridge);
     setStatusForm({
-      warehouseStatus: fridge.warehouseStatus === 'installed' ? 'returned' : 'installed',
+      warehouseStatus: transition.targetStatus,
       notes: '',
       isSeasonalClosure: !!fridge.isSeasonalClosure,
     });
@@ -728,7 +733,7 @@ export default function AccountantDashboard() {
                     onClick={() => openStatusChange(f)}
                     className="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
                   >
-                    {f.warehouseStatus === 'installed' ? 'Возврат' : 'Установить'}
+                    {getWarehouseStatusTransition(f.warehouseStatus).actionLabel}
                   </button>
                   <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer select-none">
                     <input
@@ -934,11 +939,13 @@ export default function AccountantDashboard() {
       )}
 
       {/* Модальное окно: Изменить статус */}
-      {showStatusModal && selectedFridge && (
+      {showStatusModal && selectedFridge && (() => {
+        const transition = getWarehouseStatusTransition(selectedFridge.warehouseStatus);
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowStatusModal(false)}>
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-slate-900 mb-4">
-              {statusForm.warehouseStatus === 'installed' ? 'Установка холодильника' : 'Возврат на склад'}
+              {transition.modalTitle}
             </h3>
             <p className="text-sm text-slate-600 mb-4">
               Холодильник: {selectedFridge.name}{' '}
@@ -964,7 +971,7 @@ export default function AccountantDashboard() {
               })()}
             </p>
             
-            {statusForm.warehouseStatus === 'installed' && (
+            {statusForm.warehouseStatus === 'installed' && transition.needsClientForm && (
               <div className="space-y-4 mb-4 p-4 bg-slate-50 rounded-lg">
                 <p className="text-sm font-medium text-slate-700">Данные клиента:</p>
                 <div>
@@ -1043,11 +1050,9 @@ export default function AccountantDashboard() {
               <button
                 onClick={handleChangeStatus}
                 disabled={saving}
-                className={`flex-1 px-4 py-2 text-white rounded-lg disabled:opacity-50 transition-colors font-medium ${
-                  statusForm.warehouseStatus === 'installed' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'
-                }`}
+                className={`flex-1 px-4 py-2 text-white rounded-lg disabled:opacity-50 transition-colors font-medium ${transition.confirmClassName}`}
               >
-                {saving ? 'Сохранение...' : statusForm.warehouseStatus === 'installed' ? 'Установить' : 'Вернуть на склад'}
+                {saving ? 'Сохранение...' : transition.confirmLabel}
               </button>
               <button
                 onClick={() => setShowStatusModal(false)}
@@ -1058,7 +1063,8 @@ export default function AccountantDashboard() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Модальное окно детального просмотра */}
       {selectedFridgeDetailId && (
