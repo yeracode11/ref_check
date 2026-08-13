@@ -195,7 +195,7 @@ function MapLegend({
       </span>
       <span className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#1d4ed8' }} />
-        На складе (по отметке)
+        На складе / возврат (по отметке)
       </span>
       <span className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#2563eb' }} />
@@ -206,7 +206,7 @@ function MapLegend({
       )}
       {warehouseHidden != null && warehouseHidden > 0 && (
         <span className="text-slate-500">
-          · на складе без GPS-отметки: {warehouseHidden.toLocaleString('ru-RU')} (скрыты)
+          · на складе / возврат без отметки: {warehouseHidden.toLocaleString('ru-RU')} (скрыты)
         </span>
       )}
       {hint && <span className="text-amber-700 ml-auto">{hint}</span>}

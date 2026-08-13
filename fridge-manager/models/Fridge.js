@@ -76,7 +76,7 @@ const FridgeSchema = new mongoose.Schema(
       default: 'regular',
       index: true,
     },
-    // true = точка-заглушка в центре города (скрыта на карте); false = реальные координаты (отметка/адрес)
+    // true = «на складе» / «возврат» без отметки МХО (скрыт на карте)
     locationAtDepot: { type: Boolean, default: true, index: true },
   },
   { timestamps: true }

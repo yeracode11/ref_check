@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Сбрасывает координаты returned/warehouse холодильников в центр их cityId.
+ * Сбрасывает координаты returned/warehouse в центр cityId (скрыты на карте до отметки).
  * Запуск: node scripts/fix-returned-fridge-locations.js [--dry-run]
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });

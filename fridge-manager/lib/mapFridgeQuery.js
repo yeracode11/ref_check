@@ -10,7 +10,7 @@ function buildMapLocationFilter() {
 /**
  * На карте:
  * - installed / moved — всегда;
- * - warehouse / returned — только с реальной точкой (отметка менеджера на складе), не заглушка в центре города.
+ * - warehouse / returned — только после отметки менеджера (locationAtDepot: false).
  */
 function buildMapVisibleFilter() {
   return {
@@ -32,7 +32,7 @@ function applyMapVisibleFilters(filter) {
 }
 
 /** @deprecated use buildMapVisibleFilter */
-const FIELD_MAP_WAREHOUSE_STATUSES = ['installed', 'moved'];
+const FIELD_MAP_WAREHOUSE_STATUSES = ['warehouse', 'installed', 'moved'];
 
 function buildFieldMapStatusFilter() {
   return buildMapVisibleFilter();

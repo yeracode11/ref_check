@@ -1,7 +1,7 @@
 /**
- * Проставляет locationAtDepot: заглушка в центре города для warehouse/returned.
+ * locationAtDepot=true для «на складе» и «возврат» без отметки (скрыты на карте).
+ * После отметки МХО checkinService ставит locationAtDepot=false.
  *
- *   node scripts/mark-depot-locations.js --dry-run
  *   node scripts/mark-depot-locations.js --apply
  */
 const path = require('path');
@@ -23,22 +23,26 @@ async function main() {
   await mongoose.connect(loadMongoUri());
 
   try {
-    const depotQuery = { warehouseStatus: { $in: ['warehouse', 'returned'] } };
-    const fieldQuery = { warehouseStatus: { $in: ['installed', 'moved'] } };
-
-    const [depotTotal, fieldTotal] = await Promise.all([
-      Fridge.countDocuments(depotQuery),
-      Fridge.countDocuments(fieldQuery),
+    const [depot, field] = await Promise.all([
+      Fridge.countDocuments({ warehouseStatus: { $in: ['warehouse', 'returned'] } }),
+      Fridge.countDocuments({ warehouseStatus: { $in: ['installed', 'moved'] } }),
     ]);
 
-    console.log(`[mark-depot] warehouse/returned: ${depotTotal}, installed/moved: ${fieldTotal}, apply=${apply}`);
+    console.log(`[mark-depot] warehouse+returned=${depot} field=${field} apply=${apply}`);
 
     if (apply) {
       const [depotRes, fieldRes] = await Promise.all([
-        Fridge.updateMany(depotQuery, { $set: { locationAtDepot: true } }),
-        Fridge.updateMany(fieldQuery, { $set: { locationAtDepot: false } }),
+        Fridge.updateMany(
+          { warehouseStatus: { $in: ['warehouse', 'returned'] }, locationAtDepot: { $ne: false } },
+          { $set: { locationAtDepot: true } },
+        ),
+        Fridge.updateMany(
+          { warehouseStatus: { $in: ['installed', 'moved'] } },
+          { $set: { locationAtDepot: false } },
+        ),
       ]);
-      console.log('[mark-depot] updated depot:', depotRes.modifiedCount, 'field:', fieldRes.modifiedCount);
+      console.log('[mark-depot] marked depot (no check-in yet):', depotRes.modifiedCount);
+      console.log('[mark-depot] field statuses:', fieldRes.modifiedCount);
     } else {
       console.log('[mark-depot] Dry-run — добавьте --apply');
     }

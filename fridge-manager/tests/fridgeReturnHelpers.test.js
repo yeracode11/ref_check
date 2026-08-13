@@ -25,6 +25,19 @@ describe('fridgeReturnHelpers', () => {
     assert.deepEqual(fridge.location, cityCenterToGeoPoint(resolveCityMapCenter('Алматы')));
   });
 
+  it('applyReturnToHomeCity moves warehouse fridge to city center', () => {
+    const fridge = {
+      warehouseStatus: 'warehouse',
+      location: { type: 'Point', coordinates: [69.59, 42.34] },
+      clientInfo: { name: 'Test IP' },
+    };
+    const result = applyReturnToHomeCity(fridge, { name: 'Алматы', code: '02' });
+    assert.equal(result.applied, true);
+    assert.equal(fridge.clientInfo?.name, 'Test IP');
+    assert.equal(fridge.locationAtDepot, true);
+    assert.deepEqual(fridge.location, cityCenterToGeoPoint(resolveCityMapCenter('Алматы')));
+  });
+
   it('applyReturnToHomeCity skips installed fridges', () => {
     const fridge = {
       warehouseStatus: 'installed',

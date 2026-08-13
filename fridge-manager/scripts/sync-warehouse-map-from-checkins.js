@@ -1,5 +1,5 @@
 /**
- * Для warehouse/returned с locationAtDepot: ставит GPS из последней отметки
+ * Для warehouse/returned с locationAtDepot: ставит GPS из последней отметки менеджера.
  * после последнего перевода на склад/возврат (statusHistory).
  *
  *   node scripts/sync-warehouse-map-from-checkins.js --dry-run

@@ -1111,10 +1111,11 @@ router.post('/fridges/geocode-locations', authenticateToken, requireAdminOrAccou
     const fullMode = mode === 'all_with_address' ? 'all_with_address' : 'zero_only';
 
     const fridges = await Fridge.find({ cityId })
-      .select('_id address location code')
+      .select('_id address location code warehouseStatus')
       .lean();
 
     const { forwardGeocodeQuery } = require('../lib/nominatimGeocode');
+    const { isAtCityDepotCenter } = require('../lib/fridgeReturnHelpers');
 
     let updated = 0;
     let failed = 0;
@@ -1131,7 +1132,11 @@ router.post('/fridges/geocode-locations', authenticateToken, requireAdminOrAccou
         !Array.isArray(c) ||
         c.length < 2 ||
         (Number(c[0]) === 0 && Number(c[1]) === 0);
-      if (fullMode === 'zero_only' && !isZero) {
+      const atDepotCenter = isAtCityDepotCenter(
+        { location: f.location, warehouseStatus: 'warehouse' },
+        city,
+      );
+      if (fullMode === 'zero_only' && !isZero && !atDepotCenter) {
         skipped += 1;
         continue;
       }
@@ -1928,7 +1933,7 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
         notes: notes || `Изменен статус с "${oldStatus}" на "${warehouseStatus}"`,
       });
 
-      // Возврат на склад: координаты остаются у клиента → холодильник «не в своём городе» на карте
+      // На складе / возврат: заглушка в центре города до отметки менеджера
       if (WAREHOUSE_STATUSES.has(warehouseStatus)) {
         let cityDoc = fridge.cityId;
         if (cityDoc && typeof cityDoc === 'object' && !cityDoc.name) {
