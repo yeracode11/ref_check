@@ -1,5 +1,6 @@
 const express = require('express');
 const User = require('../models/User');
+const { normalizeCityId } = require('../lib/cityScope');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -88,7 +89,7 @@ router.patch('/:id', async (req, res) => {
     }
     if (fullName !== undefined) user.fullName = fullName;
     if (phone !== undefined) user.phone = phone;
-    if (cityId !== undefined) user.cityId = cityId || null;
+    if (cityId !== undefined) user.cityId = normalizeCityId(cityId);
     if (active !== undefined) user.active = active;
     if (password && password.length >= 6) {
       user.password = password;

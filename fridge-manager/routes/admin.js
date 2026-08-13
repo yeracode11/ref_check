@@ -28,7 +28,7 @@ const {
   buildExportFileName,
   buildFridgesExportFileName,
 } = require('../lib/salesReportExport');
-const { getAssignedCityId, resolveCityFilter, userCanAccessFridge } = require('../lib/cityScope');
+const { getAssignedCityId, resolveCityFilter, userCanAccessFridge, buildCheckinFilterForFridge, normalizeCityId } = require('../lib/cityScope');
 const { applyReturnToHomeCity, WAREHOUSE_STATUSES } = require('../lib/fridgeReturnHelpers');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const { buildMapLocationFilter, isMapMarkersRequest } = require('../lib/mapFridgeQuery');
@@ -1766,7 +1766,7 @@ router.patch('/users/:id', authenticateToken, requireAdmin, async (req, res) => 
     }
     if (fullName !== undefined) user.fullName = fullName;
     if (phone !== undefined) user.phone = phone;
-    if (cityId !== undefined) user.cityId = cityId || null;
+    if (cityId !== undefined) user.cityId = normalizeCityId(cityId);
     if (active !== undefined) user.active = active;
 
     // Если передан новый пароль - обновляем (хешируется в pre-save)
@@ -1932,7 +1932,7 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
       fridge.statusHistory.push({
         status: warehouseStatus,
         changedAt: new Date(),
-        changedBy: req.user._id,
+        changedBy: req.user.id,
         notes: notes || `Изменен статус с "${oldStatus}" на "${warehouseStatus}"`,
       });
 
@@ -1985,7 +1985,7 @@ router.patch('/fridges/:id', authenticateToken, requireAdminOrAccountant, async 
     
     // Только админ может менять cityId и active
     if (req.user.role === 'admin') {
-      if (cityId !== undefined) fridge.cityId = cityId || null;
+      if (cityId !== undefined) fridge.cityId = normalizeCityId(cityId);
       if (active !== undefined) fridge.active = active;
     }
 
@@ -2211,13 +2211,12 @@ router.delete('/fridges/:id', authenticateToken, requireAdminOrAccountant, async
       return res.status(404).json({ error: 'Холодильник не найден' });
     }
 
-    // Также удаляем связанные чек-ины
-      // Удаляем все check-ins для этого холодильника (и по code, и по number)
-      const fridgeIds = [fridge.code];
-      if (fridge.number) {
-        fridgeIds.push(fridge.number);
-      }
-      const deletedCheckins = await Checkin.deleteMany({ fridgeId: { $in: fridgeIds } });
+    if (req.user.role === 'accountant' && !userCanAccessFridge(req.user, fridge)) {
+      return res.status(403).json({ error: 'Доступ запрещён: можно удалять только холодильники своего города' });
+    }
+
+    const checkinFilter = buildCheckinFilterForFridge(fridge);
+    const deletedCheckins = await Checkin.deleteMany(checkinFilter);
 
     await Fridge.findByIdAndDelete(req.params.id);
 

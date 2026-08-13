@@ -10,6 +10,7 @@ const {
   getAssignedCityId,
   userCanAccessCity,
   invalidateCityCheckinIdsCache,
+  normalizeCityId,
 } = require('./cityScope');
 const {
   buildCheckinFridgeIdCandidates,
@@ -59,6 +60,12 @@ async function syncFridgeFromCheckin({
   }
   if (!target?._id) {
     console.warn(`[Checkins] Fridge not found for sync: ${normalizedFridgeId}`);
+    return;
+  }
+
+  const currentWarehouseStatus = target.warehouseStatus || 'warehouse';
+  // На складе / возврат — координаты и статус меняет бухгалтер (PATCH status), не отметка
+  if (currentWarehouseStatus === 'returned' || currentWarehouseStatus === 'warehouse') {
     return;
   }
 
@@ -150,15 +157,6 @@ function normalizeLocationInput(location) {
   return null;
 }
 
-function locationFromLatLngFields(body) {
-  const lat = body?.lat != null ? Number(body.lat) : NaN;
-  const lng = body?.lng != null ? Number(body.lng) : NaN;
-  if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    return { type: 'Point', coordinates: [lng, lat] };
-  }
-  return normalizeLocationInput(body?.location);
-}
-
 async function resolveFridgeForCheckin(user, normalizedFridgeId) {
   const fridge = await findFridgeByIdentifier(normalizedFridgeId);
   if (!fridge) {
@@ -173,7 +171,7 @@ async function resolveFridgeForCheckin(user, normalizedFridgeId) {
     let cityId = getAssignedCityId(user);
     if (!cityId && user.id) {
       const dbUser = await User.findById(user.id).select('cityId').lean();
-      cityId = dbUser?.cityId || null;
+      cityId = normalizeCityId(dbUser?.cityId);
     }
     if (!cityId) {
       const err = new Error('Для менеджера не назначен город');
@@ -425,7 +423,6 @@ module.exports = {
   CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M,
   syncFridgeFromCheckin,
   normalizeLocationInput,
-  locationFromLatLngFields,
   createCheckinRecord,
   resolveFridgeForCheckin,
   enrichCheckinsWithFridgeData,

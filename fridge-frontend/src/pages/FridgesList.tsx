@@ -157,9 +157,10 @@ export default function FridgesList() {
       if (equipmentStatusFilter !== 'all') {
         params.append('equipmentStatus', equipmentStatusFilter);
       }
-      // Для бухгалтера/менеджера город добавляется на бэкенде автоматически
-      // Для админов - если выбран город, фильтруем по нему, иначе (пустая строка = "Все города") показываем все
-      if (!isCityBound && selectedCityId && selectedCityId.trim() !== '') {
+      // Город: для менеджера/бухгалтера — на бэкенде; для МХО/НОП — явно в query
+      if (isCityBound && assignedCityId) {
+        params.append('cityId', assignedCityId);
+      } else if (!isCityBound && selectedCityId && selectedCityId.trim() !== '') {
         params.append('cityId', selectedCityId);
       }
       // Если selectedCityId пустой - не добавляем параметр cityId, backend вернет все холодильники
@@ -192,7 +193,7 @@ export default function FridgesList() {
         setLoadingMore(false);
       }
     }
-  }, [selectedCityId, warehouseStatusFilter, equipmentStatusFilter, searchQuery, isCityBound]);
+  }, [selectedCityId, warehouseStatusFilter, equipmentStatusFilter, searchQuery, isCityBound, assignedCityId]);
 
   // Debounce для поиска - обновляем searchQuery после задержки
   useEffect(() => {

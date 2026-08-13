@@ -2,7 +2,6 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   normalizeLocationInput,
-  locationFromLatLngFields,
 } = require('../lib/checkinService');
 const { publicUploadUrl } = require('../lib/uploadStorage');
 
@@ -12,8 +11,8 @@ describe('checkinService location', () => {
     assert.deepEqual(loc, { type: 'Point', coordinates: [71.4, 42.9] });
   });
 
-  it('locationFromLatLngFields reads form fields', () => {
-    const loc = locationFromLatLngFields({ lat: '42.9', lng: '71.4' });
+  it('normalizeLocationInput accepts string lat/lng', () => {
+    const loc = normalizeLocationInput({ lat: '42.9', lng: '71.4' });
     assert.deepEqual(loc, { type: 'Point', coordinates: [71.4, 42.9] });
   });
 });

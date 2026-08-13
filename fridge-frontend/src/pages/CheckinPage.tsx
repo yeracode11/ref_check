@@ -5,7 +5,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { getDisplayIdentifier, showSeasonalClosureCheckbox } from '../utils/fridgeUtils';
 import { resolveUserCityId } from '../utils/userCityId';
 import { Card, Button, Badge } from '../components/ui/Card';
-import ServiceFridgeScanPage from './ServiceFridgeScanPage';
 
 type Fridge = {
   _id: string;
@@ -241,9 +240,20 @@ export default function CheckinPage() {
     );
   }
 
-  // МХО: при сканировании QR — карточка с историей ремонтов
-  if (user.role === 'service_manager' && fridge) {
-    return <ServiceFridgeScanPage fridge={fridge} />;
+  if (user.role !== 'manager' && user.role !== 'admin') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 px-4">
+        <Card className="max-w-md w-full">
+          <h1 className="text-xl font-semibold mb-2">Отметки — только для менеджеров</h1>
+          <p className="text-slate-600 text-sm mb-4">
+            Ваша роль не может создавать отметки посещений. Используйте список холодильников.
+          </p>
+          <Button onClick={() => navigate('/fridges')} className="w-full">
+            К холодильникам
+          </Button>
+        </Card>
+      </div>
+    );
   }
 
   const managerCityId = resolveUserCityId(user.cityId);

@@ -47,11 +47,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const res = await api.post('/api/auth/login', { username, password });
-    const { token: newToken, user: userData } = res.data;
+    const { token: newToken } = res.data;
     setToken(newToken);
-    setUser(userData);
     localStorage.setItem('token', newToken);
-    return userData; // Возвращаем данные пользователя для использования после логина
+    const me = await api.get('/api/auth/me');
+    const userData = me.data;
+    setUser(userData);
+    return userData;
   };
 
   const logout = () => {

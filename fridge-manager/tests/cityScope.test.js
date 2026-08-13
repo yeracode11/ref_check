@@ -7,12 +7,19 @@ const {
   userCanAccessFridge,
   resolveFridgeCityId,
   findFridgeByIdentifier,
+  normalizeCityId,
 } = require('../lib/cityScope');
 
 describe('cityScope access', () => {
   const cityId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439011');
   const otherCityId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439012');
   const accountant = { role: 'accountant', cityId };
+
+  it('normalizeCityId handles populated object and rejects [object Object]', () => {
+    assert.equal(normalizeCityId({ _id: cityId }).toString(), cityId.toString());
+    assert.equal(normalizeCityId('[object Object]'), null);
+    assert.equal(normalizeCityId(cityId.toString()).toString(), cityId.toString());
+  });
 
   it('userCanAccessCity compares ObjectId and string safely', () => {
     assert.equal(userCanAccessCity(accountant, cityId.toString()), true);

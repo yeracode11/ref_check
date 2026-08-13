@@ -7,8 +7,10 @@ const {
 } = require('./fridgeVisitHelpers');
 const { fridgeIdMatchesCandidates } = require('./checkinDedup');
 
-/** Роли, привязанные к одному городу (поле user.cityId) */
-const CITY_SCOPED_ROLES = ['manager', 'accountant', 'service_manager', 'sales_head'];
+/** Роли с фильтром списка холодильников по городу (менеджер, бухгалтер) */
+const CITY_SCOPED_ROLES = ['manager', 'accountant'];
+/** Роли, которым обязателен cityId в профиле */
+const ROLES_REQUIRING_CITY = ['manager', 'accountant', 'service_manager', 'sales_head'];
 const CITY_CHECKIN_IDS_TTL_MS = parseInt(process.env.CITY_CHECKIN_IDS_CACHE_TTL_MS || '300000', 10);
 /** @type {Map<string, { ids: string[], at: number }>} */
 const checkinIdsByCityCache = new Map();
@@ -17,10 +19,26 @@ function isCityScopedRole(role) {
   return CITY_SCOPED_ROLES.includes(role);
 }
 
+/** Нормализует cityId из строки, ObjectId или populate { _id, name } */
+function normalizeCityId(cityRef) {
+  if (cityRef == null) return null;
+  if (typeof cityRef === 'string') {
+    const trimmed = cityRef.trim();
+    if (!trimmed || trimmed === '[object Object]') return null;
+    return mongoose.Types.ObjectId.isValid(trimmed) ? new mongoose.Types.ObjectId(trimmed) : null;
+  }
+  if (typeof cityRef === 'object') {
+    const raw = cityRef._id != null ? cityRef._id : cityRef;
+    if (raw == null) return null;
+    const s = String(raw);
+    return mongoose.Types.ObjectId.isValid(s) ? new mongoose.Types.ObjectId(s) : null;
+  }
+  return null;
+}
+
 function getAssignedCityId(user) {
-  if (!user?.cityId || !isCityScopedRole(user.role)) return null;
-  const id = String(user.cityId);
-  return mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : user.cityId;
+  if (!user?.cityId || user.role === 'admin') return null;
+  return normalizeCityId(user.cityId);
 }
 
 /**
@@ -42,10 +60,11 @@ function resolveCityFilter(user, queryCityId) {
 function userCanAccessCity(user, cityId) {
   if (!user || user.role === 'admin') return true;
   const assigned = getAssignedCityId(user);
-  if (isCityScopedRole(user.role) && !assigned) return false;
+  if (ROLES_REQUIRING_CITY.includes(user.role) && !assigned) return false;
   if (!assigned) return true;
-  if (!cityId) return false;
-  return String(assigned) === String(cityId);
+  const target = normalizeCityId(cityId) || cityId;
+  if (!target) return false;
+  return String(assigned) === String(target);
 }
 
 /** cityId из документа Fridge (Mongoose doc, lean, populate или ObjectId) */
@@ -75,7 +94,7 @@ function userCanAccessFridge(user, fridgeOrCityId) {
 
 function ensureCityScopedUserHasCity(req, res) {
   if (!req.user || req.user.role === 'admin') return true;
-  if (!isCityScopedRole(req.user.role)) return true;
+  if (!ROLES_REQUIRING_CITY.includes(req.user.role)) return true;
   if (!getAssignedCityId(req.user)) {
     res.status(403).json({
       error: 'Для роли не назначен город. Обратитесь к администратору.',
@@ -209,7 +228,9 @@ function buildCheckinFilterForFridge(fridge) {
 
 module.exports = {
   CITY_SCOPED_ROLES,
+  ROLES_REQUIRING_CITY,
   isCityScopedRole,
+  normalizeCityId,
   getAssignedCityId,
   resolveCityFilter,
   userCanAccessCity,

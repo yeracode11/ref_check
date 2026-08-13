@@ -13,7 +13,6 @@ const {
 } = require('../lib/cityScope');
 const {
   createCheckinRecord,
-  locationFromLatLngFields,
   normalizeLocationInput,
   enrichCheckinsWithFridgeData,
 } = require('../lib/checkinService');
@@ -33,8 +32,12 @@ router.post('/', authenticateToken, async (req, res) => {
   try {
     if (req.user?.role === 'manager' && !ensureCityScopedUserHasCity(req, res)) return;
 
-    const location = normalizeLocationInput(req.body.location)
-      || locationFromLatLngFields(req.body);
+    const location = normalizeLocationInput(req.body.location);
+    if (!location) {
+      return res.status(400).json({
+        error: 'location is required (GeoJSON Point or { lat, lng })',
+      });
+    }
 
     const result = await createCheckinRecord({
       user: req.user,

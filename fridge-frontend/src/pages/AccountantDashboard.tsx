@@ -625,7 +625,12 @@ export default function AccountantDashboard() {
         <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Карта холодильников {user?.role === 'accountant' && user?.cityId && cities.length > 0 && `- ${cities[0]?.name}`}
         </h2>
-        <AdminFridgeMap key={mapRefreshKey} cityId={assignedCityId} />
+        <AdminFridgeMap
+          key={mapRefreshKey}
+          cityId={assignedCityId}
+          cityName={cities[0]?.name}
+          cityCode={cities[0]?.code}
+        />
       </Card>
 
       {/* Фильтры */}

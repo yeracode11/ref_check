@@ -40,7 +40,7 @@ export default function NewCheckin() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get('/api/fridges?active=true');
+        const res = await api.get('/api/fridges?active=true&simple=1&limit=100');
         const raw = res.data;
         const list = Array.isArray(raw) ? raw : (raw?.data ?? []);
         setFridges(list);
