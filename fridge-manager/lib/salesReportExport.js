@@ -17,6 +17,7 @@ const {
   appendFridgeListSheet,
   buildFridgesExportFileName,
 } = require('./fridgeExcelExport');
+const { legacyNumericFridgeIdVariant, bareFridgeId } = require('./fridgeIdFormat');
 const { labelsFromCompletedWorks } = require('./mxoRepairWorks');
 const { isComplexRepairRecord } = require('./repairHelpers');
 
@@ -134,8 +135,8 @@ async function countBrokenCheckinsByFridge(fridges, checkinIdList) {
       const fridgeKey = String(fridge._id);
       for (const id of buildCheckinFridgeIdCandidates(fridge)) {
         fridgeByCheckinId.set(String(id).trim(), fridgeKey);
-        const n = Number(id);
-        if (Number.isFinite(n)) fridgeByCheckinId.set(String(n), fridgeKey);
+        const numeric = legacyNumericFridgeIdVariant(bareFridgeId(id));
+        if (numeric != null) fridgeByCheckinId.set(String(numeric), fridgeKey);
       }
     }
     for (const row of legacyRows) {
@@ -303,8 +304,8 @@ async function fetchCheckinSummarySheetRows(fridges, limit = CHECKIN_SUMMARY_MAX
     fridgeByRef.set(String(f._id), f);
     for (const id of buildCheckinFridgeIdCandidates(f)) {
       fridgeByCheckinId.set(String(id).trim(), f);
-      const n = Number(id);
-      if (Number.isFinite(n)) fridgeByCheckinId.set(String(n), f);
+      const numeric = legacyNumericFridgeIdVariant(bareFridgeId(id));
+      if (numeric != null) fridgeByCheckinId.set(String(numeric), f);
     }
   });
 

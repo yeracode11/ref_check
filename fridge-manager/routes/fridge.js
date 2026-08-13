@@ -15,6 +15,12 @@ const {
 
 const router = express.Router();
 
+function markLegacyFridgeApiDeprecated(res) {
+  res.set('Deprecation', 'true');
+  res.set('Sunset', '2026-12-01');
+  res.set('Link', '</api/admin/fridges>; rel="successor-version"');
+}
+
 function leanCheckinForApi(doc) {
   if (!doc) return null;
   const o = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
@@ -463,6 +469,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 // POST /api/fridges (legacy — предпочтительно /api/admin/fridges)
 router.post('/', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  markLegacyFridgeApiDeprecated(res);
   try {
     const { code, name, address, description } = req.body;
     if (!code || !name) {
@@ -494,6 +501,7 @@ router.post('/', authenticateToken, requireAdminOrAccountant, async (req, res) =
 
 // PATCH /api/fridges/:id (legacy — предпочтительно /api/admin/fridges/:id)
 router.patch('/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  markLegacyFridgeApiDeprecated(res);
   try {
     const existing = await Fridge.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -515,6 +523,7 @@ router.patch('/:id', authenticateToken, requireAdminOrAccountant, async (req, re
 
 // DELETE /api/fridges/:id (legacy — предпочтительно /api/admin/fridges/:id)
 router.delete('/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
+  markLegacyFridgeApiDeprecated(res);
   try {
     const existing = await Fridge.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });

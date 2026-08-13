@@ -3,6 +3,8 @@
  * и как по дате визита получить today / week / old (для карты и отчётов).
  */
 
+const { bareFridgeId, legacyNumericFridgeIdVariant } = require('./fridgeIdFormat');
+
 const DEFAULT_VISIT_TIMEZONE = 'Asia/Almaty';
 
 /** Сколько календарных дней в зоне считать «ещё свежо» после «сегодня» (по умолчанию 7) */
@@ -80,9 +82,9 @@ function expandCheckinFridgeIdsForInQuery(ids) {
     if (bare) {
       expanded.add(bare);
       expanded.add(`#${bare}`);
-      const n = Number(bare);
-      if (Number.isFinite(n)) {
-        expanded.add(n);
+      const numeric = legacyNumericFridgeIdVariant(bare);
+      if (numeric != null) {
+        expanded.add(numeric);
       }
     }
   }
@@ -132,9 +134,9 @@ function buildCheckinFridgeIdMatchCondition(fridgeLike) {
   const or = [];
   for (const id of candidates) {
     or.push({ fridgeId: id });
-    const n = Number(id);
-    if (Number.isFinite(n)) {
-      or.push({ fridgeId: n });
+    const numeric = legacyNumericFridgeIdVariant(bareFridgeId(id));
+    if (numeric != null) {
+      or.push({ fridgeId: numeric });
     }
   }
   return or.length ? { $or: or } : null;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,11 +14,25 @@ type Fridge = {
   cityId?: { name: string };
 };
 
+const SEARCH_DEBOUNCE_MS = 400;
+
+function fridgeOptionLabel(f: Fridge) {
+  const city = f.cityId?.name;
+  const idPart =
+    city === 'Шымкент' || city === 'Кызылорда'
+      ? f.number || f.code
+      : f.code;
+  return `${f.name}${city ? ` · ${city}` : ''} (${idPart})`;
+}
+
 export default function NewCheckin() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [fridgeId, setFridgeId] = useState('');
-  const [fridges, setFridges] = useState<Fridge[]>([]);
+  const [fridgeSearch, setFridgeSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<Fridge[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedFridge, setSelectedFridge] = useState<Fridge | null>(null);
+  const [manualCode, setManualCode] = useState('');
   const [notes, setNotes] = useState('');
   const [address, setAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -31,26 +45,45 @@ export default function NewCheckin() {
   const [fridgeCondition, setFridgeCondition] = useState<'working' | 'broken'>('working');
   const [isSeasonalClosure, setIsSeasonalClosure] = useState(false);
 
-  const selectedFridge = fridges.find((f) => f.code === fridgeId);
+  const fridgeId = selectedFridge?.code || manualCode.trim();
 
   useEffect(() => {
     locationRef.current = currentLocation;
   }, [currentLocation]);
 
   useEffect(() => {
-    (async () => {
+    const q = fridgeSearch.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    let alive = true;
+    const timer = setTimeout(async () => {
+      setSearching(true);
       try {
-        const res = await api.get('/api/fridges?active=true&simple=1&limit=100');
+        const res = await api.get(
+          `/api/fridges?active=true&simple=1&search=${encodeURIComponent(q)}&limit=30`,
+        );
+        if (!alive) return;
         const raw = res.data;
         const list = Array.isArray(raw) ? raw : (raw?.data ?? []);
-        setFridges(list);
-      } catch (e: any) {
-        console.error('Failed to load fridges', e);
+        setSearchResults(list);
+      } catch (e) {
+        console.error('Fridge search failed', e);
+        if (alive) setSearchResults([]);
+      } finally {
+        if (alive) setSearching(false);
       }
-    })();
-  }, []);
+    }, SEARCH_DEBOUNCE_MS);
 
-  async function getGeolocation(): Promise<{ lat: number; lng: number } | null> {
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [fridgeSearch]);
+
+  const getGeolocation = useCallback(async (): Promise<{ lat: number; lng: number } | null> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
         resolve(null);
@@ -69,7 +102,7 @@ export default function NewCheckin() {
           if (locationRef.current) {
             setLocationStatus('success');
             setGeoRefreshWarning(
-              'Обновить координаты не удалось; при отправке будет использована ранее определённая точка.'
+              'Обновить координаты не удалось; при отправке будет использована ранее определённая точка.',
             );
           } else {
             setLocationStatus('error');
@@ -77,13 +110,18 @@ export default function NewCheckin() {
           }
           resolve(null);
         },
-        { enableHighAccuracy: true, timeout: 7000 }
+        { enableHighAccuracy: true, timeout: 7000 },
       );
     });
-  }
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!fridgeId) {
+      setError('Выберите холодильник из списка или введите код');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     setSuccess(null);
@@ -93,7 +131,9 @@ export default function NewCheckin() {
       let geo = currentLocation;
       if (!geo) {
         geo = await getGeolocation();
-        if (!geo) throw new Error('Не удалось получить геолокацию. Разрешите доступ к геолокации в настройках браузера.');
+        if (!geo) {
+          throw new Error('Не удалось получить геолокацию. Разрешите доступ к геолокации в настройках браузера.');
+        }
       }
 
       const res = await api.post('/api/checkins', {
@@ -109,7 +149,7 @@ export default function NewCheckin() {
       setSuccess(
         res.data?.idempotentReplay
           ? 'Отметка уже сохранена (повторный запрос не создал дубликат).'
-          : 'Отметка успешно создана!'
+          : 'Отметка успешно создана!',
       );
       setTimeout(() => {
         navigate('/');
@@ -125,49 +165,88 @@ export default function NewCheckin() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Новая отметка посещения</h1>
-        <p className="text-slate-500 mt-1">Создайте новую отметку с геолокацией</p>
+        <p className="text-slate-500 mt-1">
+          Поиск по названию, коду или номеру. Для QR используйте ссылку из QR-кода.
+        </p>
       </div>
 
       <Card>
         <form onSubmit={onSubmit} className="space-y-5">
-          {/* Manager Info */}
           <div className="bg-slate-50 p-3 rounded-lg">
             <div className="text-sm text-slate-500">Менеджер</div>
             <div className="font-medium text-slate-900">{user?.username || user?.fullName || user?.email}</div>
           </div>
 
-          {/* Fridge Selection */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
-              Холодильник <span className="text-red-500">*</span>
+              Поиск холодильника <span className="text-red-500">*</span>
             </label>
-            {fridges.length > 0 ? (
-              <select
-                value={fridgeId}
-                onChange={(e) => setFridgeId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                required
-              >
-                <option value="">Выберите холодильник</option>
-                {fridges.map((f) => (
-                  <option key={f._id} value={f.code}>
-                    {f.name} {(f.cityId?.name === 'Шымкент' || f.cityId?.name === 'Кызылорда') && f.number ? `(${f.number})` : `(#${f.code})`}
-                  </option>
+            <input
+              type="search"
+              value={fridgeSearch}
+              onChange={(e) => {
+                setFridgeSearch(e.target.value);
+                setSelectedFridge(null);
+              }}
+              placeholder="Минимум 2 символа: название, код или номер"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              autoComplete="off"
+            />
+            {searching && (
+              <p className="text-xs text-slate-500 mt-1">Поиск…</p>
+            )}
+            {searchResults.length > 0 && !selectedFridge && (
+              <ul className="mt-2 max-h-48 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {searchResults.map((f) => (
+                  <li key={f._id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFridge(f);
+                        setFridgeSearch(fridgeOptionLabel(f));
+                        setSearchResults([]);
+                        setManualCode('');
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                    >
+                      {fridgeOptionLabel(f)}
+                    </button>
+                  </li>
                 ))}
-              </select>
-            ) : (
-              <input
-                type="text"
-                value={fridgeId}
-                onChange={(e) => setFridgeId(e.target.value)}
-                placeholder="Введите код холодильника"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                required
-              />
+              </ul>
+            )}
+            {selectedFridge && (
+              <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                Выбран: {fridgeOptionLabel(selectedFridge)}
+                <button
+                  type="button"
+                  className="ml-2 text-slate-600 underline"
+                  onClick={() => {
+                    setSelectedFridge(null);
+                    setFridgeSearch('');
+                  }}
+                >
+                  Сбросить
+                </button>
+              </p>
             )}
           </div>
 
-          {/* Состояние холодильника */}
+          {!selectedFridge && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Или код вручную
+              </label>
+              <input
+                type="text"
+                value={manualCode}
+                onChange={(e) => setManualCode(e.target.value)}
+                placeholder="Код из QR или номер холодильника"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
               Состояние холодильника
@@ -210,11 +289,8 @@ export default function NewCheckin() {
             </label>
           )}
 
-          {/* Address */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Адрес
-            </label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Адрес</label>
             <input
               type="text"
               value={address}
@@ -224,11 +300,8 @@ export default function NewCheckin() {
             />
           </div>
 
-          {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Заметки
-            </label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Заметки</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -238,7 +311,6 @@ export default function NewCheckin() {
             />
           </div>
 
-          {/* Location Status */}
           <div className="bg-slate-50 p-4 rounded-lg">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-slate-700">Геолокация</span>
@@ -275,7 +347,6 @@ export default function NewCheckin() {
             </div>
           )}
 
-          {/* Error/Success Messages */}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
@@ -287,20 +358,15 @@ export default function NewCheckin() {
             </div>
           )}
 
-          {/* Submit Button */}
           <div className="flex gap-3 pt-2">
             <Button
               type="submit"
-              disabled={submitting || locationStatus === 'getting'}
+              disabled={submitting || locationStatus === 'getting' || !fridgeId}
               className="flex-1"
             >
               {submitting ? 'Сохраняю...' : 'Создать отметку'}
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => navigate('/')}
-            >
+            <Button type="button" variant="secondary" onClick={() => navigate('/')}>
               Отмена
             </Button>
           </div>

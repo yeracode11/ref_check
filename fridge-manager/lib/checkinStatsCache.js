@@ -75,7 +75,7 @@ async function aggregateStatsByFridgeRef(fridgeObjectIds) {
   return byRef;
 }
 
-/** Отметки без fridgeRef (legacy) — их мало после backfill. */
+/** Отметки без fridgeRef — только если CHECKIN_STATS_USE_LEGACY=true (после cleanup 2026 обычно не нужно). */
 async function aggregateLegacyStatsByFridgeId() {
   const byFridgeId = new Map();
   const rows = await Checkin.aggregate([

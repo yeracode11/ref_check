@@ -3,6 +3,7 @@ const {
   buildCheckinFridgeIdCandidates,
   expandCheckinFridgeIdsForInQuery,
 } = require('./fridgeVisitHelpers');
+const { canonicalCheckinFridgeId } = require('./fridgeIdFormat');
 
 function normalizeFridgeIdForCompare(id) {
   return String(id ?? '').trim().replace(/^#+/, '');
@@ -51,23 +52,6 @@ function buildFridgeIdInQueryForDedupe(fridge, normalizedFridgeId) {
     : [normalizedFridgeId];
   const expanded = expandCheckinFridgeIdsForInQuery(ids);
   return expanded.length ? { fridgeId: { $in: expanded } } : { fridgeId: normalizedFridgeId };
-}
-
-/**
- * Единый fridgeId при записи: число, если number — числовой (как в старых чекинах).
- */
-function canonicalCheckinFridgeId(fridge, normalizedFridgeId) {
-  if (!fridge) return normalizedFridgeId;
-  if (fridge.number != null && String(fridge.number).trim() !== '') {
-    const bare = String(fridge.number).trim().replace(/^#+/, '');
-    const n = Number(bare);
-    if (Number.isFinite(n)) return n;
-    return bare;
-  }
-  if (fridge.code != null && String(fridge.code).trim() !== '') {
-    return String(fridge.code).trim().replace(/^#+/, '');
-  }
-  return normalizedFridgeId;
 }
 
 module.exports = {
