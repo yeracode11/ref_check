@@ -166,6 +166,36 @@ export function showSeasonalClosureCheckbox(type?: string | null): boolean {
 
 export type WarehouseStatus = 'warehouse' | 'installed' | 'returned' | 'moved';
 
+export function getWarehouseStatusLabel(status?: WarehouseStatus | string | null): string {
+  switch (status) {
+    case 'warehouse':
+      return 'На складе';
+    case 'installed':
+      return 'Установлен';
+    case 'returned':
+      return 'Возврат';
+    case 'moved':
+      return 'Перемещен';
+    default:
+      return status || 'Неизвестно';
+  }
+}
+
+export function getWarehouseStatusBadgeClass(status?: WarehouseStatus | string | null): string {
+  switch (status) {
+    case 'warehouse':
+      return 'bg-blue-100 text-blue-700';
+    case 'installed':
+      return 'bg-green-100 text-green-700';
+    case 'returned':
+      return 'bg-yellow-100 text-yellow-700';
+    case 'moved':
+      return 'bg-gray-900 text-white';
+    default:
+      return 'bg-slate-100 text-slate-700';
+  }
+}
+
 export type WarehouseStatusTransition = {
   targetStatus: WarehouseStatus;
   actionLabel: string;

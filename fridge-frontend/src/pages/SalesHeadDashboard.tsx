@@ -16,6 +16,7 @@ import {
   getEquipmentIndicatorClasses,
   EquipmentStatus,
 } from '../utils/fridgeUtils';
+import { WarehouseStatusBadge } from '../components/WarehouseStatusBadge';
 import { resolveUserCityId } from '../utils/userCityId';
 
 type City = { _id: string; name: string; code: string };
@@ -80,21 +81,6 @@ function formatDate(dateStr: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function getWarehouseBadge(status: string) {
-  switch (status) {
-    case 'warehouse':
-      return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
-    case 'installed':
-      return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
-    case 'returned':
-      return <Badge className="bg-red-100 text-red-700">Возврат</Badge>;
-    case 'moved':
-      return <Badge className="bg-gray-900 text-white">Перемещен</Badge>;
-    default:
-      return <Badge className="bg-slate-100 text-slate-700">{status}</Badge>;
-  }
 }
 
 export default function SalesHeadDashboard() {
@@ -429,7 +415,7 @@ export default function SalesHeadDashboard() {
                 <div className="flex-1 min-w-[200px]">
                   <div className="flex items-center gap-2 flex-wrap mb-2">
                     <span className="font-semibold text-slate-900">{f.name}</span>
-                    {getWarehouseBadge(f.warehouseStatus)}
+                    <WarehouseStatusBadge status={f.warehouseStatus} />
                     <Badge className={getEquipmentIndicatorClasses(getEquipmentIndicator(f.status))}>
                       {getEquipmentStatusLabel(f.status)}
                     </Badge>

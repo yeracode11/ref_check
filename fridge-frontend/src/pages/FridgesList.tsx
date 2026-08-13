@@ -13,6 +13,7 @@ import {
   getEquipmentIndicatorClasses,
   EquipmentStatus,
 } from '../utils/fridgeUtils';
+import { WarehouseStatusBadge } from '../components/WarehouseStatusBadge';
 import { resolveUserCityId } from '../utils/userCityId';
 
 type City = {
@@ -44,22 +45,6 @@ type Fridge = {
 
 const ITEMS_PER_PAGE = 30; // Количество элементов на странице
 const SEARCH_DEBOUNCE_MS = 500; // Задержка перед поиском (мс)
-
-function getStatusBadge(status?: string) {
-  if (!status) return <Badge className="bg-slate-100 text-slate-700">Неизвестно</Badge>;
-  switch (status) {
-    case 'warehouse':
-      return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
-    case 'installed':
-      return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
-    case 'returned':
-      return <Badge className="bg-yellow-100 text-yellow-700">Возврат</Badge>;
-    case 'moved':
-      return <Badge className="bg-gray-900 text-white">Перемещен</Badge>;
-    default:
-      return <Badge className="bg-slate-100 text-slate-700">{status}</Badge>;
-  }
-}
 
 export default function FridgesList() {
   const { user } = useAuth();
@@ -469,7 +454,7 @@ export default function FridgesList() {
                       <Badge className={getEquipmentIndicatorClasses(getEquipmentIndicator(f.status))}>
                         {getEquipmentStatusLabel(f.status)}
                       </Badge>
-                      {getStatusBadge(f.warehouseStatus)}
+                      <WarehouseStatusBadge status={f.warehouseStatus} />
                     </div>
                   </div>
                   

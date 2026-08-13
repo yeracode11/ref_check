@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../shared/apiClient';
 import { Card, Badge } from '../components/ui/Card';
+import { WarehouseStatusBadge } from '../components/WarehouseStatusBadge';
 import { LoadingCard, EmptyState, LoadingSpinner } from '../components/ui/Loading';
 
 type City = {
@@ -196,21 +197,6 @@ export default function CitiesManagement() {
       setDeletingCityFridges(false);
     }
   };
-
-  function getStatusBadge(status?: string) {
-    switch (status) {
-      case 'warehouse':
-        return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
-      case 'installed':
-        return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
-      case 'returned':
-        return <Badge className="bg-yellow-100 text-yellow-700">Возврат</Badge>;
-      case 'moved':
-        return <Badge className="bg-orange-100 text-orange-700">Перемещен</Badge>;
-      default:
-        return null;
-    }
-  }
 
   if (!currentUser || currentUser.role !== 'admin') {
     return (
@@ -553,7 +539,7 @@ export default function CitiesManagement() {
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
                               <span className="font-semibold text-slate-900">{fridge.name}</span>
-                              {getStatusBadge(fridge.warehouseStatus)}
+                              <WarehouseStatusBadge status={fridge.warehouseStatus} />
                               {!fridge.active && (
                                 <Badge className="bg-red-100 text-red-700 text-xs">Неактивен</Badge>
                               )}

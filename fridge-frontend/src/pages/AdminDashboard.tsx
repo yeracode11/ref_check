@@ -627,7 +627,8 @@ export default function AdminDashboard() {
       alert(
         `Город: ${res.data.cityName}\nОбновлено: ${res.data.updated}\nНе найдено по адресу: ${res.data.failed}\nПропущено: ${res.data.skipped}`,
       );
-      window.location.reload();
+      await bumpMapRefresh();
+      loadFridges(0, true);
     } catch (e: any) {
       alert('Ошибка: ' + (e?.response?.data?.error || e?.message));
     } finally {
@@ -1688,11 +1689,8 @@ export default function AdminDashboard() {
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     // После удаления всех отметок все холодильники должны получить status = 'never'
                     await bumpMapRefresh();
+                    loadFridges(0, true);
                     setShowDeleteAllCheckins(false);
-                    // Принудительно обновляем страницу, чтобы карта точно обновилась и старые метки исчезли
-                    setTimeout(() => {
-                      window.location.reload();
-                    }, 1000);
                   } catch (e: any) {
                     alert('Ошибка: ' + (e?.response?.data?.error || e.message));
                   } finally {
@@ -1912,11 +1910,8 @@ export default function AdminDashboard() {
                     // Показываем сообщение об успехе
                     const message = response.data?.message || `Удалено ${response.data?.deleted || 0} холодильников`;
                     alert(message);
-                    
-                    // Перезагружаем страницу для полного обновления
-                    setTimeout(() => {
-                      window.location.reload();
-                    }, 1000);
+                    await bumpMapRefresh();
+                    loadFridges(0, true);
                   } catch (e: any) {
                     alert('Ошибка: ' + (e?.response?.data?.error || e.message));
                   } finally {

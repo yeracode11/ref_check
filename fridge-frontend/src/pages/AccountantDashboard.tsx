@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getDisplayIdentifier, getWarehouseStatusTransition, type WarehouseStatus } from '../utils/fridgeUtils';
+import { WarehouseStatusBadge } from '../components/WarehouseStatusBadge';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge } from '../components/ui/Card';
@@ -529,21 +530,6 @@ export default function AccountantDashboard() {
     setShowQRModal(true);
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'warehouse':
-        return <Badge className="bg-blue-100 text-blue-700">На складе</Badge>;
-      case 'installed':
-        return <Badge className="bg-green-100 text-green-700">Установлен</Badge>;
-      case 'returned':
-        return <Badge className="bg-red-100 text-red-700">Возврат</Badge>;
-      case 'moved':
-        return <Badge className="bg-gray-900 text-white">Перемещен</Badge>;
-      default:
-        return <Badge className="bg-slate-100 text-slate-700">{status}</Badge>;
-    }
-  };
-
   if (!user || (user.role !== 'accountant' && user.role !== 'admin')) {
     return (
       <Card>
@@ -679,7 +665,7 @@ export default function AccountantDashboard() {
                 <div className="flex-1 min-w-[200px]">
                   <div className="flex items-center gap-3 mb-2">
                     <span className="font-semibold text-slate-900">{f.name}</span>
-                    {getStatusBadge(f.warehouseStatus)}
+                    <WarehouseStatusBadge status={f.warehouseStatus} />
                   </div>
                   <div className="text-sm text-slate-600 space-y-1">
                     {(() => {
