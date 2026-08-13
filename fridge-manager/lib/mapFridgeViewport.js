@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const Fridge = require('../models/Fridge');
-const { buildMapLocationFilter } = require('./mapFridgeQuery');
+const { buildMapLocationFilter, applyFieldMapFilters } = require('./mapFridgeQuery');
 const { resolveCityFilter } = require('./cityScope');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
 const {
@@ -44,7 +44,7 @@ function gridCellDegrees(zoom) {
 }
 
 function buildViewportQuery(user, query, bbox) {
-  const filter = {
+  const filter = applyFieldMapFilters({
     active: true,
     ...buildMapLocationFilter(),
     location: {
@@ -55,7 +55,7 @@ function buildViewportQuery(user, query, bbox) {
         ],
       },
     },
-  };
+  });
 
   const scopedCityId = resolveCityFilter(user, query.cityId);
   if (scopedCityId) {
@@ -185,10 +185,10 @@ async function fetchViewportPoints(filter, bbox, zoom) {
 }
 
 function buildBulkFilter(user, query) {
-  const filter = {
+  const filter = applyFieldMapFilters({
     active: true,
     ...buildMapLocationFilter(),
-  };
+  });
   if (user.role === 'admin' && query.cityId) {
     const raw = String(query.cityId).trim();
     if (!mongoose.Types.ObjectId.isValid(raw)) {
@@ -212,8 +212,16 @@ async function fetchMapFridgeBulk(user, query) {
   const limitRaw = parseInt(query.limit, 10);
   const limit = Math.min(5000, Math.max(100, Number.isFinite(limitRaw) ? limitRaw : 3000));
   const filter = buildBulkFilter(user, query);
+  const warehouseHiddenFilter = {
+    active: true,
+    ...buildMapLocationFilter(),
+    warehouseStatus: { $in: ['warehouse', 'returned'] },
+  };
+  if (filter.cityId) {
+    warehouseHiddenFilter.cityId = filter.cityId;
+  }
 
-  const [total, fridges] = await Promise.all([
+  const [total, fridges, warehouseHidden] = await Promise.all([
     Fridge.countDocuments(filter),
     Fridge.find(filter)
       .select('_id code name address location warehouseStatus status type')
@@ -221,6 +229,7 @@ async function fetchMapFridgeBulk(user, query) {
       .skip(skip)
       .limit(limit)
       .lean(),
+    Fridge.countDocuments(warehouseHiddenFilter),
   ]);
 
   const statsByFridgeId = await getCheckinStatsForFridges(
@@ -236,6 +245,7 @@ async function fetchMapFridgeBulk(user, query) {
     mode: 'points',
     items,
     total,
+    warehouseHidden,
     skip,
     limit,
     loaded: skip + items.length,

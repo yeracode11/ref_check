@@ -40,6 +40,7 @@ type BulkResponse = {
   total: number;
   loaded: number;
   hasMore: boolean;
+  warehouseHidden?: number;
 };
 
 type Props = {
@@ -158,7 +159,15 @@ function buildPopupHtml(f: AdminFridgeForMap): string {
   `;
 }
 
-function MapLegend({ pointCount, hint }: { pointCount?: number; hint?: string | null }) {
+function MapLegend({
+  pointCount,
+  warehouseHidden,
+  hint,
+}: {
+  pointCount?: number;
+  warehouseHidden?: number;
+  hint?: string | null;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
       <span className="flex items-center gap-1.5">
@@ -183,6 +192,11 @@ function MapLegend({ pointCount, hint }: { pointCount?: number; hint?: string | 
       </span>
       {pointCount != null && pointCount > 0 && (
         <span className="text-slate-500 ml-auto">{pointCount.toLocaleString('ru-RU')} точек на карте</span>
+      )}
+      {warehouseHidden != null && warehouseHidden > 0 && (
+        <span className="text-slate-500">
+          · на складе/возврате: {warehouseHidden.toLocaleString('ru-RU')} (не на карте)
+        </span>
       )}
       {hint && <span className="text-amber-700 ml-auto">{hint}</span>}
     </div>
@@ -239,6 +253,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [hint, setHint] = useState<string | null>(null);
   const [pointCount, setPointCount] = useState(0);
+  const [warehouseHidden, setWarehouseHidden] = useState(0);
 
   const destroyMap = useCallback(() => {
     abortRef.current?.abort();
@@ -275,12 +290,12 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
 
     for (const f of points) {
       if (!f.location?.coordinates) continue;
+      if (f.warehouseStatus === 'warehouse' || f.warehouseStatus === 'returned') continue;
       const [lng, lat] = f.location.coordinates;
       if (lat === 0 && lng === 0) continue;
       if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
 
-      if (filterOutliers && f.warehouseStatus !== 'returned' && f.warehouseStatus !== 'warehouse'
-        && !isNearCityCenter(lat, lng, viewCenter)) {
+      if (filterOutliers && !isNearCityCenter(lat, lng, viewCenter)) {
         skippedFar++;
         continue;
       }
@@ -352,6 +367,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
     setDataPhase('loading');
     setHint(null);
     setPointCount(0);
+    setWarehouseHidden(0);
     setProgress({ loaded: 0, total: 0 });
     pointsRef.current = [];
     pointClusterRef.current?.clearLayers();
@@ -362,6 +378,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
     }
 
     let skip = 0;
+    let hiddenWarehouse = 0;
 
     try {
       while (true) {
@@ -375,6 +392,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
 
         if (controller.signal.aborted) return;
 
+        hiddenWarehouse = res.data.warehouseHidden ?? hiddenWarehouse;
         pointsRef.current.push(...res.data.items);
         skip = res.data.loaded;
         setProgress({ loaded: skip, total: res.data.total });
@@ -383,6 +401,8 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
       }
 
       if (controller.signal.aborted) return;
+
+      setWarehouseHidden(hiddenWarehouse);
 
       const view = buildMapViewSettings(targetCityId, cityName, cityCode, pointsRef.current);
 
@@ -469,7 +489,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
 
   return (
     <div className="space-y-2">
-      <MapLegend pointCount={dataPhase === 'ready' ? pointCount : undefined} hint={hint} />
+      <MapLegend pointCount={dataPhase === 'ready' ? pointCount : undefined} warehouseHidden={warehouseHidden} hint={hint} />
       <div
         className="relative w-full rounded-lg border border-slate-200 overflow-hidden"
         style={{ height: MAP_HEIGHT }}
