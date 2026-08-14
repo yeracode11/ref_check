@@ -54,8 +54,20 @@ type DataPhase = 'loading' | 'ready' | 'error';
 const DEFAULT_ZOOM = 12;
 const BULK_CHUNK = 3000;
 const MAP_HEIGHT = 480;
+/** Холодильники ближе этого расстояния считаются одной точкой на карте */
+const SAME_POINT_METERS = 35;
 
 const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const r = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * r * Math.asin(Math.sqrt(a));
+}
 
 function getVisitMarkerColor(status: string): string {
   if (status === 'broken') return getEquipmentMarkerColor('purple');
@@ -148,7 +160,7 @@ function createMarkerClusterGroup(): L.MarkerClusterGroup {
     disableClusteringAtZoom: 19,
     spiderfyOnMaxZoom: true,
     showCoverageOnHover: false,
-    zoomToBoundsOnClick: true,
+    zoomToBoundsOnClick: false,
     iconCreateFunction: createClusterIcon,
   });
 }
@@ -175,21 +187,78 @@ function buildPopupHtml(f: AdminFridgeForMap): string {
   `;
 }
 
-function locationGroupKey(lat: number, lng: number): string {
-  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
+function groupPointsByProximity(points: MapPointItem[], maxMeters = SAME_POINT_METERS): MapPointItem[][] {
+  if (!points.length) return [];
+
+  const parent = points.map((_, index) => index);
+  const find = (index: number): number => {
+    if (parent[index] !== index) parent[index] = find(parent[index]);
+    return parent[index];
+  };
+  const unite = (a: number, b: number) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent[rootB] = rootA;
+  };
+
+  for (let i = 0; i < points.length; i += 1) {
+    const [lng1, lat1] = points[i].location!.coordinates;
+    for (let j = i + 1; j < points.length; j += 1) {
+      const [lng2, lat2] = points[j].location!.coordinates;
+      if (haversineMeters(lat1, lng1, lat2, lng2) <= maxMeters) unite(i, j);
+    }
+  }
+
+  const buckets = new Map<number, MapPointItem[]>();
+  for (let i = 0; i < points.length; i += 1) {
+    const root = find(i);
+    const list = buckets.get(root);
+    if (list) list.push(points[i]);
+    else buckets.set(root, [points[i]]);
+  }
+
+  return Array.from(buckets.values());
 }
 
-function groupPointsByLocation(points: MapPointItem[]): MapPointItem[][] {
-  const groups = new Map<string, MapPointItem[]>();
-  for (const point of points) {
-    if (!point.location?.coordinates) continue;
-    const [lng, lat] = point.location.coordinates;
-    const key = locationGroupKey(lat, lng);
-    const list = groups.get(key);
-    if (list) list.push(point);
-    else groups.set(key, [point]);
+function groupCentroid(group: MapPointItem[]): L.LatLngTuple {
+  let latSum = 0;
+  let lngSum = 0;
+  for (const item of group) {
+    const [lng, lat] = item.location!.coordinates;
+    latSum += lat;
+    lngSum += lng;
   }
-  return Array.from(groups.values());
+  return [latSum / group.length, lngSum / group.length];
+}
+
+function isTightGroup(group: AdminFridgeForMap[], maxMeters = SAME_POINT_METERS): boolean {
+  if (group.length <= 1) return true;
+  const first = group[0].location?.coordinates;
+  if (!first) return false;
+  const [lng0, lat0] = first;
+  return group.every((item) => {
+    const coords = item.location?.coordinates;
+    if (!coords) return false;
+    const [lng, lat] = coords;
+    return haversineMeters(lat0, lng0, lat, lng) <= maxMeters;
+  });
+}
+
+function collectFridgeItems(markers: L.Marker[]): AdminFridgeForMap[] {
+  const items: AdminFridgeForMap[] = [];
+  for (const marker of markers) {
+    const group = (marker.options as L.MarkerOptions & { fridgeGroup?: AdminFridgeForMap[] }).fridgeGroup;
+    if (group?.length) items.push(...group);
+  }
+  return items;
+}
+
+function openFridgePopup(map: L.Map, latlng: L.LatLngExpression, items: AdminFridgeForMap[]): void {
+  const html = items.length > 1 ? buildStackPopupHtml(items) : buildPopupHtml(items[0]);
+  L.popup({ maxWidth: 340, autoPanPadding: [24, 24] })
+    .setLatLng(latlng)
+    .setContent(html)
+    .openOn(map);
 }
 
 function buildStackPopupHtml(items: AdminFridgeForMap[]): string {
@@ -197,15 +266,17 @@ function buildStackPopupHtml(items: AdminFridgeForMap[]): string {
     ? items[0].address
     : null;
 
-  const rows = items.map((item) => `
+  const rows = items.map((item, index) => `
     <div style="padding:8px 0;border-top:1px solid #e2e8f0;">
+      <div style="font-size:11px;color:#64748b;margin-bottom:4px;">${index + 1} из ${items.length}</div>
       ${buildPopupHtml(item)}
     </div>
   `).join('');
 
   return `
     <div style="min-width: 240px; max-width: 320px; max-height: 360px; overflow-y: auto;">
-      <strong>${items.length} холодильников в одной точке</strong>
+      <strong>${items.length} холодильников рядом</strong>
+      <div style="margin-top:4px;font-size:12px;color:#64748b;">Прокрутите список, чтобы увидеть все</div>
       ${sharedAddress ? `<div style="margin-top:4px;font-size:12px;color:#64748b;">${sharedAddress}</div>` : ''}
       <div style="margin-top:4px;">${rows}</div>
     </div>
@@ -342,7 +413,6 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
     popupDataRef.current.clear();
 
     const markerLayers: L.Marker[] = [];
-    let popupId = 0;
     let skippedFar = 0;
     const visiblePoints: MapPointItem[] = [];
 
@@ -360,10 +430,8 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
       visiblePoints.push(f);
     }
 
-    for (const group of groupPointsByLocation(visiblePoints)) {
-      const f = group[0];
-      const [lng, lat] = f.location!.coordinates;
-      const position: L.LatLngTuple = [lat, lng];
+    for (const group of groupPointsByProximity(visiblePoints)) {
+      const position = groupCentroid(group);
       const stackCount = group.length;
       const equipmentStatuses = group.map((item) => item.equipmentStatus);
       const visitStatuses = group.map((item) => {
@@ -388,20 +456,16 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
         iconCacheRef.current.set(iconKey, icon);
       }
 
-      const id = popupId++;
-      popupDataRef.current.set(id, stackCount > 1 ? group : group[0]);
-
       const marker = L.marker(position, {
         icon,
         status: visitStatuses[0],
         equipmentStatus: equipmentStatuses[0],
-      } as L.MarkerOptions & { status: string; equipmentStatus: EquipmentStatus });
+        fridgeGroup: group,
+      } as L.MarkerOptions & { status: string; equipmentStatus: EquipmentStatus; fridgeGroup: MapPointItem[] });
 
-      marker.on('click', () => {
-        const row = popupDataRef.current.get(id);
-        if (!row) return;
-        const html = Array.isArray(row) ? buildStackPopupHtml(row) : buildPopupHtml(row);
-        marker.bindPopup(html, { maxWidth: 340, autoPanPadding: [24, 24] }).openPopup();
+      marker.on('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        openFridgePopup(map, position, group);
       });
 
       markerLayers.push(marker);
@@ -513,6 +577,30 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
     }).addTo(map);
 
     const pointCluster = createMarkerClusterGroup();
+    pointCluster.on('clusterclick', (event) => {
+      const map = mapInstanceRef.current;
+      if (!map) return;
+
+      const layer = event.layer as L.MarkerClusterGroup & { getAllChildMarkers: () => L.Marker[]; getBounds: () => L.LatLngBounds; getLatLng: () => L.LatLng };
+      const markers = layer.getAllChildMarkers();
+      const items = collectFridgeItems(markers);
+      if (!items.length) return;
+
+      if (items.length === 1) {
+        openFridgePopup(map, layer.getLatLng(), items);
+        return;
+      }
+
+      if (isTightGroup(items)) {
+        openFridgePopup(map, layer.getLatLng(), items);
+        return;
+      }
+
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+      }
+    });
 
     map.addLayer(pointCluster);
     mapInstanceRef.current = map;
