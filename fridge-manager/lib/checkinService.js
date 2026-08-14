@@ -332,9 +332,7 @@ async function createCheckinRecord(params) {
     }
   }
 
-  const id = await getNextSequence('checkin');
-  const checkin = await Checkin.create({
-    id,
+  const createPayload = {
     managerId: managerIdCandidates[0] || String(managerId),
     fridgeId: storeFridgeId,
     fridgeRef: fridge._id,
@@ -345,7 +343,30 @@ async function createCheckinRecord(params) {
     visitedAt: params.visitedAt ? new Date(params.visitedAt) : undefined,
     fridgeCondition,
     isSeasonalClosure,
-  });
+  };
+
+  let checkin = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const id = await getNextSequence('checkin');
+    try {
+      checkin = await Checkin.create({ id, ...createPayload });
+      break;
+    } catch (err) {
+      const duplicateId = err?.code === 11000 && String(err?.message || '').includes('id_1');
+      if (duplicateId && attempt < 4) {
+        const { syncCheckinCounter } = require('../models/Counter');
+        await syncCheckinCounter();
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (!checkin) {
+    const err = new Error('Не удалось сохранить отметку. Попробуйте ещё раз.');
+    err.status = 503;
+    throw err;
+  }
 
   try {
     await syncFridgeFromCheckin({
