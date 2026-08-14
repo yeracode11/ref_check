@@ -7,6 +7,7 @@ const {
   userCanAccessFridge,
   resolveFridgeCityId,
   findFridgeByIdentifier,
+  resolveFridgeDocumentByIdOrIdentifier,
   normalizeCityId,
 } = require('../lib/cityScope');
 
@@ -94,5 +95,35 @@ describe('cityScope access', () => {
 
   it('admin always has access', () => {
     assert.equal(userCanAccessFridge({ role: 'admin' }, { cityId: otherCityId }), true);
+  });
+
+  it('resolveFridgeDocumentByIdOrIdentifier falls back to identifier for accountant', async () => {
+    const fridgeOid = new mongoose.Types.ObjectId();
+    const originalFindById = Fridge.findById;
+    const originalFind = Fridge.find;
+
+    Fridge.findById = async (id) => {
+      if (String(id) === String(fridgeOid)) {
+        return { _id: fridgeOid, cityId, code: 'LONG-SERIAL' };
+      }
+      return null;
+    };
+    Fridge.find = (query) => ({
+      limit: () => ({
+        lean: async () => {
+          assert.equal(String(query.cityId), String(cityId));
+          return [{ _id: fridgeOid, cityId, code: 'LONG-SERIAL' }];
+        },
+      }),
+    });
+
+    try {
+      const bySerial = await resolveFridgeDocumentByIdOrIdentifier('140306000270002624471405121081', accountant);
+      assert.ok(bySerial);
+      assert.equal(String(bySerial._id), String(fridgeOid));
+    } finally {
+      Fridge.findById = originalFindById;
+      Fridge.find = originalFind;
+    }
   });
 });

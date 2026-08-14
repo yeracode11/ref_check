@@ -248,6 +248,7 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
   const [repairs, setRepairs] = useState<RepairItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingCheckins, setLoadingCheckins] = useState(false);
+  const [checkinsError, setCheckinsError] = useState<string | null>(null);
   const [loadingRepairs, setLoadingRepairs] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showQR, setShowQR] = useState(false);
@@ -294,9 +295,10 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
     if (!fridgeId && !fridgeCode) return;
     try {
       setLoadingCheckins(true);
+      setCheckinsError(null);
       if (useAdminApi) {
-        const res = await api.get(`/api/admin/fridges/${fridgeId}/checkins?limit=50`);
-        setCheckins(res.data);
+        const res = await api.get(`/api/admin/fridges/${encodeURIComponent(fridgeId)}/checkins?limit=50`);
+        setCheckins(Array.isArray(res.data) ? res.data : []);
       } else if (isSalesHead && fridgeId) {
         const code = fridgeCode || fridge?.code || fridge?.number;
         if (!code) return;
@@ -323,8 +325,10 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
         const res = await api.get(`/api/checkins?${params.toString()}`);
         setCheckins(res.data);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Ошибка загрузки истории:', e);
+      setCheckins([]);
+      setCheckinsError(e?.response?.data?.error || e?.message || 'Не удалось загрузить посещения');
     } finally {
       setLoadingCheckins(false);
     }
@@ -369,8 +373,8 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
       try {
         setLoading(true);
         const res = useAdminApi
-          ? await api.get(`/api/admin/fridges/${fridgeId}`)
-          : await api.get(`/api/fridges/${fridgeId}`);
+          ? await api.get(`/api/admin/fridges/${encodeURIComponent(fridgeId)}`)
+          : await api.get(`/api/fridges/${encodeURIComponent(fridgeId)}`);
         if (!alive) return;
         setFridge(res.data);
         setError(null);
@@ -865,7 +869,19 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
           ) : (
             /* История посещений */
             <div className="space-y-3">
-              {loadingCheckins ? (
+              {checkinsError ? (
+                <div className="text-center py-8 text-red-600 bg-red-50 rounded-lg border border-red-100">
+                  <div className="text-4xl mb-2">⚠️</div>
+                  <p>{checkinsError}</p>
+                  <button
+                    type="button"
+                    onClick={() => loadCheckins(fridge?.code)}
+                    className="mt-3 px-3 py-1.5 text-sm bg-white border border-red-200 rounded-lg hover:bg-red-100"
+                  >
+                    Повторить
+                  </button>
+                </div>
+              ) : loadingCheckins ? (
                 <div className="flex justify-center py-8">
                   <div className="animate-spin rounded-full h-6 w-6 border-2 border-slate-300 border-t-slate-900"></div>
                 </div>

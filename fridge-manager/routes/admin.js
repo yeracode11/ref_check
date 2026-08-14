@@ -29,7 +29,7 @@ const {
   buildFridgesExportFileName,
   parseExportPeriod,
 } = require('../lib/salesReportExport');
-const { getAssignedCityId, resolveCityFilter, userCanAccessFridge, buildCheckinFilterForFridge, normalizeCityId } = require('../lib/cityScope');
+const { getAssignedCityId, resolveCityFilter, userCanAccessFridge, buildCheckinFilterForFridge, normalizeCityId, resolveFridgeDocumentByIdOrIdentifier } = require('../lib/cityScope');
 const { applyReturnToHomeCity, WAREHOUSE_STATUSES } = require('../lib/fridgeReturnHelpers');
 const { buildCaseInsensitiveRegex } = require('../lib/stringHelpers');
 const { buildMapLocationFilter, isMapMarkersRequest } = require('../lib/mapFridgeQuery');
@@ -1181,7 +1181,12 @@ router.post('/fridges/geocode-locations', authenticateToken, requireAdminOrAccou
 router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (req, res) => {
   try {
     const { id } = req.params;
-    const fridgeDoc = await Fridge.findById(id)
+    const fridgeBase = await resolveFridgeDocumentByIdOrIdentifier(id, req.user);
+    if (!fridgeBase) {
+      return res.status(404).json({ error: 'Холодильник не найден' });
+    }
+
+    const fridgeDoc = await Fridge.findById(fridgeBase._id)
       .populate('cityId', 'name code')
       .populate('statusHistory.changedBy', 'username fullName');
 
@@ -1198,11 +1203,10 @@ router.get('/fridges/:id', authenticateToken, requireAdminOrAccountant, async (r
       return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
     }
 
-    const idMatch = buildCheckinFridgeIdMatchCondition(fridgeDoc);
-
-    const latestCheckin = idMatch
-      ? await Checkin.findOne(idMatch, { visitedAt: 1 }).sort({ visitedAt: -1 }).lean()
-      : null;
+    const checkinFilter = buildCheckinFilterForFridge(fridgeDoc);
+    const latestCheckin = await Checkin.findOne(checkinFilter, { visitedAt: 1 })
+      .sort({ visitedAt: -1 })
+      .lean();
 
     const lastVisit = latestCheckin?.visitedAt || null;
     const visitStatus = visitStatusFromLastVisit(lastVisit, { nowMs: Date.now() });
@@ -1224,7 +1228,7 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
     const { id } = req.params;
     const { limit = 50 } = req.query;
 
-    const fridge = await Fridge.findById(id);
+    const fridge = await resolveFridgeDocumentByIdOrIdentifier(id, req.user);
     if (!fridge) {
       return res.status(404).json({ error: 'Холодильник не найден' });
     }
@@ -1234,10 +1238,12 @@ router.get('/fridges/:id/checkins', authenticateToken, requireAdminOrAccountant,
       return res.status(403).json({ error: 'Доступ запрещён: холодильник из другого города' });
     }
 
-    const idMatch = buildCheckinFridgeIdMatchCondition(fridge);
-    const checkins = idMatch
-      ? await Checkin.find(idMatch).sort({ visitedAt: -1 }).limit(parseInt(limit, 10))
-      : [];
+    const checkinFilter = buildCheckinFilterForFridge(fridge);
+    const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
+    const checkins = await Checkin.find(checkinFilter)
+      .sort({ visitedAt: -1 })
+      .limit(limitNum)
+      .lean();
 
     return res.json(checkins);
   } catch (err) {

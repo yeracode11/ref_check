@@ -95,6 +95,8 @@ async function syncFridgeFromCheckin({
     if (checkinInHomeCity) {
       update.location = location;
       update.locationAtDepot = false;
+      // Отметка на точке = холодильник установлен у клиента (не на складе)
+      update.warehouseStatus = 'installed';
     }
     await Fridge.findByIdAndUpdate(target._id, { $set: update }, { new: true });
     return;

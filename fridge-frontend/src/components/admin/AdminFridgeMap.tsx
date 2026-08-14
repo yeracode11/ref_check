@@ -74,18 +74,27 @@ function getMarkerColor(
   if (equipmentStatus === 'broken' || equipmentStatus === 'under_repair') {
     return getEquipmentMarkerColor(getEquipmentIndicator(equipmentStatus));
   }
-  if (warehouseStatus === 'warehouse' || warehouseStatus === 'returned') {
+  // Синий — только «на складе / возврат» без свежей отметки (never).
+  // Если ТП уже отметился — показываем зелёный/красный по давности визита.
+  const atDepotWithoutVisit =
+    (warehouseStatus === 'warehouse' || warehouseStatus === 'returned')
+    && (visitStatus === 'never' || visitStatus === 'warehouse');
+  if (atDepotWithoutVisit) {
     return '#1d4ed8';
   }
   return getVisitMarkerColor(visitStatus);
 }
 
-function createPointIcon(color: string): L.DivIcon {
+function createPointIcon(color: string, count = 1): L.DivIcon {
+  const size = count > 1 ? 28 : 20;
+  const badge = count > 1
+    ? `<span style="position:absolute;top:-6px;right:-8px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#0f172a;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;border:2px solid white;">${count > 99 ? '99+' : count}</span>`
+    : '';
   return L.divIcon({
     className: 'custom-marker',
-    html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"></div>`,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    html: `<div style="position:relative;background-color: ${color}; width: ${size}px; height: ${size}px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">${badge}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
   });
 }
 
@@ -136,7 +145,7 @@ function createMarkerClusterGroup(): L.MarkerClusterGroup {
     chunkInterval: 150,
     chunkDelay: 40,
     maxClusterRadius: 50,
-    disableClusteringAtZoom: 17,
+    disableClusteringAtZoom: 19,
     spiderfyOnMaxZoom: true,
     showCoverageOnHover: false,
     zoomToBoundsOnClick: true,
@@ -162,6 +171,43 @@ function buildPopupHtml(f: AdminFridgeForMap): string {
       <div>Оборудование: ${getEquipmentStatusLabel(equipmentStatus)}</div>
       <div>Склад: ${warehouseLabel}</div>
       <div>Отметка: ${visitLabel}</div>
+    </div>
+  `;
+}
+
+function locationGroupKey(lat: number, lng: number): string {
+  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
+}
+
+function groupPointsByLocation(points: MapPointItem[]): MapPointItem[][] {
+  const groups = new Map<string, MapPointItem[]>();
+  for (const point of points) {
+    if (!point.location?.coordinates) continue;
+    const [lng, lat] = point.location.coordinates;
+    const key = locationGroupKey(lat, lng);
+    const list = groups.get(key);
+    if (list) list.push(point);
+    else groups.set(key, [point]);
+  }
+  return Array.from(groups.values());
+}
+
+function buildStackPopupHtml(items: AdminFridgeForMap[]): string {
+  const sharedAddress = items.every((item) => item.address === items[0].address)
+    ? items[0].address
+    : null;
+
+  const rows = items.map((item) => `
+    <div style="padding:8px 0;border-top:1px solid #e2e8f0;">
+      ${buildPopupHtml(item)}
+    </div>
+  `).join('');
+
+  return `
+    <div style="min-width: 240px; max-width: 320px; max-height: 360px; overflow-y: auto;">
+      <strong>${items.length} холодильников в одной точке</strong>
+      ${sharedAddress ? `<div style="margin-top:4px;font-size:12px;color:#64748b;">${sharedAddress}</div>` : ''}
+      <div style="margin-top:4px;">${rows}</div>
     </div>
   `;
 }
@@ -255,7 +301,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
   const mapInstanceRef = useRef<L.Map | null>(null);
   const pointClusterRef = useRef<L.MarkerClusterGroup | null>(null);
   const iconCacheRef = useRef(new Map<string, L.DivIcon>());
-  const popupDataRef = useRef(new Map<number, AdminFridgeForMap>());
+  const popupDataRef = useRef(new Map<number, AdminFridgeForMap | AdminFridgeForMap[]>());
   const abortRef = useRef<AbortController | null>(null);
   const pointsRef = useRef<MapPointItem[]>([]);
 
@@ -298,6 +344,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
     const markerLayers: L.Marker[] = [];
     let popupId = 0;
     let skippedFar = 0;
+    const visiblePoints: MapPointItem[] = [];
 
     for (const f of points) {
       if (!f.location?.coordinates) continue;
@@ -310,31 +357,51 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
         continue;
       }
 
+      visiblePoints.push(f);
+    }
+
+    for (const group of groupPointsByLocation(visiblePoints)) {
+      const f = group[0];
+      const [lng, lat] = f.location!.coordinates;
       const position: L.LatLngTuple = [lat, lng];
-      const equipmentStatus = f.equipmentStatus || 'working';
-      const visitForIcon = equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
-        ? 'never'
-        : f.status;
-      const iconKey = `${visitForIcon}:${equipmentStatus}:${f.warehouseStatus || ''}`;
+      const stackCount = group.length;
+      const equipmentStatuses = group.map((item) => item.equipmentStatus);
+      const visitStatuses = group.map((item) => {
+        const equipmentStatus = item.equipmentStatus || 'working';
+        return equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
+          ? 'never'
+          : item.status;
+      });
+      const markerColor = stackCount > 1
+        ? getClusterColor(visitStatuses, equipmentStatuses)
+        : getMarkerColor(
+          visitStatuses[0],
+          equipmentStatuses[0],
+          group[0].warehouseStatus,
+        );
+      const iconKey = stackCount > 1
+        ? `stack:${markerColor}:${stackCount}`
+        : `${visitStatuses[0]}:${equipmentStatuses[0] || 'working'}:${group[0].warehouseStatus || ''}`;
       let icon = iconCacheRef.current.get(iconKey);
       if (!icon) {
-        icon = createPointIcon(getMarkerColor(visitForIcon, equipmentStatus, f.warehouseStatus));
+        icon = createPointIcon(markerColor, stackCount);
         iconCacheRef.current.set(iconKey, icon);
       }
 
       const id = popupId++;
-      popupDataRef.current.set(id, f);
+      popupDataRef.current.set(id, stackCount > 1 ? group : group[0]);
 
       const marker = L.marker(position, {
         icon,
-        status: f.status,
-        equipmentStatus,
+        status: visitStatuses[0],
+        equipmentStatus: equipmentStatuses[0],
       } as L.MarkerOptions & { status: string; equipmentStatus: EquipmentStatus });
 
       marker.on('click', () => {
         const row = popupDataRef.current.get(id);
         if (!row) return;
-        marker.bindPopup(buildPopupHtml(row)).openPopup();
+        const html = Array.isArray(row) ? buildStackPopupHtml(row) : buildPopupHtml(row);
+        marker.bindPopup(html, { maxWidth: 340, autoPanPadding: [24, 24] }).openPopup();
       });
 
       markerLayers.push(marker);

@@ -34,16 +34,21 @@ async function main() {
   const mongoose = require('mongoose');
   const Fridge = require('../models/Fridge');
   const Checkin = require('../models/Checkin');
+  const City = require('../models/City');
+  const { isLocationNearCity } = require('../lib/cityLocationValidation');
 
   await mongoose.connect(loadMongoUri());
 
   try {
-    const stats = { scanned: 0, updated: 0, noCheckin: 0, skippedOld: 0 };
+    const stats = { scanned: 0, updated: 0, noCheckin: 0, skippedOld: 0, skippedFar: 0 };
+    const cityById = new Map(
+      (await City.find({}).select('_id name code').lean()).map((c) => [String(c._id), c]),
+    );
     const cursor = Fridge.find({
       warehouseStatus: { $in: ['warehouse', 'returned'] },
       locationAtDepot: { $ne: false },
     })
-      .select('_id code statusHistory warehouseStatus location')
+      .select('_id code cityId statusHistory warehouseStatus location')
       .cursor();
 
     for await (const fridge of cursor) {
@@ -69,6 +74,12 @@ async function main() {
       const [lng, lat] = checkin.location.coordinates;
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
         stats.skippedOld += 1;
+        continue;
+      }
+
+      const city = cityById.get(String(fridge.cityId));
+      if (city && !isLocationNearCity(checkin.location, city)) {
+        stats.skippedFar += 1;
         continue;
       }
 

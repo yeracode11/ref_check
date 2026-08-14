@@ -178,6 +178,10 @@ function invalidateCityCheckinIdsCache(cityId) {
   checkinIdsByCityCache.clear();
 }
 
+function isMongoObjectIdString(value) {
+  return /^[a-fA-F0-9]{24}$/.test(String(value || '').trim());
+}
+
 async function findFridgeByIdentifier(identifier, options = {}) {
   const normalized = String(identifier || '').trim().replace(/^#/, '');
   if (!normalized) return null;
@@ -204,6 +208,27 @@ async function findFridgeByIdentifier(identifier, options = {}) {
   }
 
   return null;
+}
+
+/**
+ * Находит холодильник по MongoDB _id или по коду/номеру/ИНН (QR, длинный serial).
+ * Для бухгалтера identifier ищется только в его городе.
+ */
+async function resolveFridgeDocumentByIdOrIdentifier(id, user) {
+  const raw = String(id || '').trim();
+  if (!raw) return null;
+
+  const scopedCityId = user?.role === 'accountant' ? getAssignedCityId(user) : null;
+  const lookupOpts = scopedCityId ? { cityId: scopedCityId } : {};
+
+  if (isMongoObjectIdString(raw)) {
+    const byId = await Fridge.findById(raw);
+    if (byId) return byId;
+  }
+
+  const matched = await findFridgeByIdentifier(raw, lookupOpts);
+  if (!matched?._id) return null;
+  return Fridge.findById(matched._id);
 }
 
 function buildCheckinFilterForFridge(fridge) {
@@ -242,5 +267,7 @@ module.exports = {
   getCheckinFilterForCity,
   invalidateCityCheckinIdsCache,
   findFridgeByIdentifier,
+  isMongoObjectIdString,
+  resolveFridgeDocumentByIdOrIdentifier,
   buildCheckinFilterForFridge,
 };
