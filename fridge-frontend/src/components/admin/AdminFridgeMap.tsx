@@ -220,32 +220,20 @@ function groupPointsByProximity(points: MapPointItem[], maxMeters = SAME_POINT_M
   return Array.from(buckets.values());
 }
 
-function groupCentroid(group: MapPointItem[]): L.LatLngTuple {
-  let latSum = 0;
-  let lngSum = 0;
-  for (const item of group) {
-    const [lng, lat] = item.location!.coordinates;
-    latSum += lat;
-    lngSum += lng;
-  }
-  return [latSum / group.length, lngSum / group.length];
+function exactLocationKey(lat: number, lng: number): string {
+  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
 }
 
-/** Разводит маркеры в одном адресе по кругу, чтобы каждый холодильник был отдельной точкой */
-function offsetMarkerPosition(
-  lat: number,
-  lng: number,
-  index: number,
-  total: number,
-): L.LatLngTuple {
-  if (total <= 1) return [lat, lng];
-
-  const angle = (2 * Math.PI * index) / total;
-  const radiusM = Math.min(18, 6 + total * 2.5);
-  const latRad = (lat * Math.PI) / 180;
-  const dLat = (radiusM / 111_320) * Math.cos(angle);
-  const dLng = (radiusM / (111_320 * Math.cos(latRad))) * Math.sin(angle);
-  return [lat + dLat, lng + dLng];
+function groupPointsByExactLocation(points: MapPointItem[]): MapPointItem[][] {
+  const groups = new Map<string, MapPointItem[]>();
+  for (const point of points) {
+    const [lng, lat] = point.location!.coordinates;
+    const key = exactLocationKey(lat, lng);
+    const list = groups.get(key);
+    if (list) list.push(point);
+    else groups.set(key, [point]);
+  }
+  return Array.from(groups.values());
 }
 
 function isTightGroup(group: AdminFridgeForMap[], maxMeters = SAME_POINT_METERS): boolean {
@@ -292,7 +280,7 @@ function buildStackPopupHtml(items: AdminFridgeForMap[]): string {
 
   return `
     <div style="min-width: 240px; max-width: 320px; max-height: 360px; overflow-y: auto;">
-      <strong>${items.length} холодильников рядом</strong>
+      <strong>${items.length} холодильников в одной точке</strong>
       <div style="margin-top:4px;font-size:12px;color:#64748b;">Прокрутите список, чтобы увидеть все</div>
       ${sharedAddress ? `<div style="margin-top:4px;font-size:12px;color:#64748b;">${sharedAddress}</div>` : ''}
       <div style="margin-top:4px;">${rows}</div>
@@ -463,39 +451,47 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
       visiblePoints.push(f);
     }
 
-    for (const group of groupPointsByProximity(visiblePoints)) {
-      const [centroidLat, centroidLng] = groupCentroid(group);
+    for (const group of groupPointsByExactLocation(visiblePoints)) {
+      const f = group[0];
+      const [lng, lat] = f.location!.coordinates;
+      const position: L.LatLngTuple = [lat, lng];
       const stackCount = group.length;
-
-      group.forEach((item, index) => {
+      const equipmentStatuses = group.map((item) => item.equipmentStatus);
+      const visitStatuses = group.map((item) => {
         const equipmentStatus = item.equipmentStatus || 'working';
-        const visitForIcon = equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
+        return equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
           ? 'never'
           : item.status;
-        const markerColor = getMarkerColor(visitForIcon, equipmentStatus, item.warehouseStatus);
-        const iconKey = `${visitForIcon}:${equipmentStatus}:${item.warehouseStatus || ''}:${item.id}`;
-        let icon = iconCacheRef.current.get(iconKey);
-        if (!icon) {
-          icon = createPointIcon(markerColor);
-          iconCacheRef.current.set(iconKey, icon);
-        }
-
-        const position = offsetMarkerPosition(centroidLat, centroidLng, index, stackCount);
-
-        const marker = L.marker(position, {
-          icon,
-          status: item.status,
-          equipmentStatus,
-          fridgeGroup: [item],
-        } as L.MarkerOptions & { status: string; equipmentStatus: EquipmentStatus; fridgeGroup: MapPointItem[] });
-
-        marker.on('click', (event) => {
-          L.DomEvent.stopPropagation(event);
-          openFridgePopup(map, position, [item]);
-        });
-
-        markerLayers.push(marker);
       });
+      const markerColor = stackCount > 1
+        ? getClusterColor(visitStatuses, equipmentStatuses)
+        : getMarkerColor(
+          visitStatuses[0],
+          equipmentStatuses[0],
+          group[0].warehouseStatus,
+        );
+      const iconKey = stackCount > 1
+        ? `stack:${markerColor}:${stackCount}:${lat}:${lng}`
+        : `${visitStatuses[0]}:${equipmentStatuses[0] || 'working'}:${group[0].warehouseStatus || ''}:${f.id}`;
+      let icon = iconCacheRef.current.get(iconKey);
+      if (!icon) {
+        icon = createPointIcon(markerColor, stackCount);
+        iconCacheRef.current.set(iconKey, icon);
+      }
+
+      const marker = L.marker(position, {
+        icon,
+        status: visitStatuses[0],
+        equipmentStatus: equipmentStatuses[0],
+        fridgeGroup: group,
+      } as L.MarkerOptions & { status: string; equipmentStatus: EquipmentStatus; fridgeGroup: MapPointItem[] });
+
+      marker.on('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        openFridgePopup(map, position, group);
+      });
+
+      markerLayers.push(marker);
     }
 
     if (markerLayers.length) {
