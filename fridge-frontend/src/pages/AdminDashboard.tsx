@@ -111,8 +111,6 @@ export default function AdminDashboard() {
   const [totalFridges, setTotalFridges] = useState(0);
   const [deleteCheckinId, setDeleteCheckinId] = useState<number | null>(null); // Для подтверждения удаления отметки
   const [deletingCheckin, setDeletingCheckin] = useState(false);
-  const [showDeleteAllCheckins, setShowDeleteAllCheckins] = useState(false); // Для подтверждения удаления всех отметок
-  const [deletingAllCheckins, setDeletingAllCheckins] = useState(false);
   const [showDeleteAllFridges, setShowDeleteAllFridges] = useState(false); // Для подтверждения удаления всех холодильников
   const [deletingAllFridges, setDeletingAllFridges] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -135,7 +133,6 @@ export default function AdminDashboard() {
     importGeocodeSkipped?: number;
   } | null>(null);
   const [importGeocodeAddresses, setImportGeocodeAddresses] = useState(true);
-  const [geocodingMap, setGeocodingMap] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingProgress, setProcessingProgress] = useState<string>(''); // Прогресс обработки на сервере
   const [showAddFridgeModal, setShowAddFridgeModal] = useState(false);
@@ -587,33 +584,6 @@ export default function AdminDashboard() {
           setUploadProgress(0);
         }
       }, 2000);
-    }
-  };
-
-  /** Координаты по полю «адрес» через OpenStreetMap Nominatim (~1 запрос/с). */
-  const runGeocodeForCity = async (mode: 'zero_only' | 'all_with_address') => {
-    if (selectedCityIdForMap === 'all') return;
-    const label =
-      mode === 'zero_only'
-        ? 'Проставить координаты по адресу только для холодильников с точкой (0, 0)?'
-        : 'Перезаписать координаты по адресу для ВСЕХ холодильников выбранного города с заполненным адресом? Текущие координаты с отметок будут заменены.';
-    if (!window.confirm(label)) return;
-    try {
-      setGeocodingMap(true);
-      const res = await api.post(
-        '/api/admin/fridges/geocode-locations',
-        { cityId: selectedCityIdForMap, mode },
-        { timeout: 7200000 },
-      );
-      alert(
-        `Город: ${res.data.cityName}\nОбновлено: ${res.data.updated}\nНе найдено по адресу: ${res.data.failed}\nПропущено: ${res.data.skipped}`,
-      );
-      await bumpMapRefresh();
-      loadFridges(0, true);
-    } catch (e: any) {
-      alert('Ошибка: ' + (e?.response?.data?.error || e?.message));
-    } finally {
-      setGeocodingMap(false);
     }
   };
 
@@ -1329,40 +1299,6 @@ export default function AdminDashboard() {
                   <option value="all">Все города (долго, ~30 сек)</option>
                 </select>
               </div>
-              {selectedCityIdForMap !== 'all' && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={geocodingMap}
-                    onClick={() => runGeocodeForCity('zero_only')}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-                    title="Только точки с координатами 0,0"
-                  >
-                    {geocodingMap ? '…' : 'Координаты по адресу (только 0,0)'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={geocodingMap}
-                    onClick={() => runGeocodeForCity('all_with_address')}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-500 bg-amber-100 text-amber-950 hover:bg-amber-200 disabled:opacity-50"
-                    title="Перезаписать координаты по адресу для всех с заполненным адресом"
-                  >
-                    {geocodingMap ? '…' : 'Перезаписать все по адресу'}
-                  </button>
-                </div>
-              )}
-              {(checkinsTotal ?? checkins.length) > 0 && (
-                <button
-                  onClick={() => setShowDeleteAllCheckins(true)}
-                  className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium shadow-sm flex items-center gap-2"
-                  title="Удалить все отметки и очистить карту"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Очистить все отметки
-                </button>
-              )}
             </div>
             {mapError && (
               <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 max-w-2xl">
@@ -1629,56 +1565,6 @@ export default function AdminDashboard() {
               <button
                 onClick={() => setDeleteCheckinId(null)}
                 disabled={deletingCheckin}
-                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
-              >
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Модальное окно подтверждения удаления всех отметок */}
-      {showDeleteAllCheckins && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllCheckins(false)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">🗑️ Удалить все отметки?</h3>
-            <p className="text-slate-600 mb-4">
-              Вы уверены, что хотите удалить{' '}
-              <strong>все {checkinsTotal ?? checkins.length} отметок</strong>?
-              <br /><br />
-              <span className="text-red-600 text-sm font-medium">⚠️ Это действие нельзя отменить.</span>
-              <br />
-              <span className="text-slate-500 text-sm">После удаления все метки на карте исчезнут, и карта станет пустой.</span>
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={async () => {
-                  try {
-                    setDeletingAllCheckins(true);
-                    await api.delete('/api/checkins');
-                    setCheckins([]);
-                    setCheckinsTotal(0);
-                    setCheckinsDistinctManagers(0);
-                    // Перезагружаем данные холодильников для карты, чтобы обновить статусы
-                    // После удаления всех отметок все холодильники должны получить status = 'never'
-                    await bumpMapRefresh();
-                    loadFridges(0, true);
-                    setShowDeleteAllCheckins(false);
-                  } catch (e: any) {
-                    alert('Ошибка: ' + (e?.response?.data?.error || e.message));
-                  } finally {
-                    setDeletingAllCheckins(false);
-                  }
-                }}
-                disabled={deletingAllCheckins}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium"
-              >
-                {deletingAllCheckins ? 'Удаление...' : '🗑️ Удалить все'}
-              </button>
-              <button
-                onClick={() => setShowDeleteAllCheckins(false)}
-                disabled={deletingAllCheckins}
                 className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
               >
                 Отмена
