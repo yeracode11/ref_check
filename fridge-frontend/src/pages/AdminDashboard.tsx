@@ -959,7 +959,6 @@ export default function AdminDashboard() {
                     <th className="text-right py-3 px-4 font-semibold text-blue-600">На складе</th>
                     <th className="text-right py-3 px-4 font-semibold text-slate-600">Установлены</th>
                     <th className="text-right py-3 px-4 font-semibold text-yellow-600">Возврат</th>
-                    <th className="text-right py-3 px-4 font-semibold text-orange-600">Перемещены</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -998,9 +997,6 @@ export default function AdminDashboard() {
                       <td className="py-3 px-4 text-right text-yellow-600">
                         {city.returned}
                       </td>
-                      <td className="py-3 px-4 text-right text-orange-600">
-                        {city.moved}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1024,9 +1020,6 @@ export default function AdminDashboard() {
                     </td>
                     <td className="py-3 px-4 text-right text-yellow-600">
                       {cityStatistics.cities.reduce((sum: number, c: any) => sum + c.returned, 0)}
-                    </td>
-                    <td className="py-3 px-4 text-right text-orange-600">
-                      {cityStatistics.cities.reduce((sum: number, c: any) => sum + c.moved, 0)}
                     </td>
                   </tr>
                 </tfoot>
