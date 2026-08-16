@@ -15,6 +15,7 @@ const {
 const {
   buildCheckinFridgeIdCandidates,
   expandCheckinFridgeIdsForInQuery,
+  localDateKeyFromVisit,
 } = require('./fridgeVisitHelpers');
 const {
   resolveManagerIdCandidates,
@@ -29,6 +30,22 @@ const CHECKIN_IDEMPOTENCY_WINDOW_MS = (() => {
   return Number.isFinite(n) && n >= 30_000 ? n : 300_000;
 })();
 const CHECKIN_IDEMPOTENCY_MAX_DISTANCE_M = 40;
+const MOVED_MIN_DISTANCE_M = 50;
+
+function shouldMarkFridgeMoved(recentCheckins) {
+  if (!recentCheckins || recentCheckins.length < 2) return false;
+  const lastLocation = recentCheckins[0].location;
+  const secondLastLocation = recentCheckins[1].location;
+  if (!lastLocation || !secondLastLocation) return false;
+
+  const distance = calculateDistanceMeters(secondLastLocation, lastLocation);
+  if (distance == null || distance <= MOVED_MIN_DISTANCE_M) return false;
+
+  // Повторная отправка с другим GPS в тот же день (нестабильный интернет) — не «перемещение».
+  const sameVisitDay = localDateKeyFromVisit(recentCheckins[0].visitedAt)
+    === localDateKeyFromVisit(recentCheckins[1].visitedAt);
+  return !sameVisitDay;
+}
 
 function calculateDistanceMeters(loc1, loc2) {
   if (!loc1 || !loc2 || !loc1.coordinates || !loc2.coordinates) {
@@ -119,17 +136,12 @@ async function syncFridgeFromCheckin({
       newWarehouseStatus = 'installed';
     }
   } else if (recentCheckins.length >= 2) {
-    const secondLastLocation = recentCheckins[1].location;
-    const lastLocation = recentCheckins[0].location;
-    if (secondLastLocation && lastLocation) {
-      const distance = calculateDistanceMeters(secondLastLocation, lastLocation);
-      if (distance !== null && distance > 50) {
-        newWarehouseStatus = 'moved';
-      } else if (target.warehouseStatus === 'warehouse' || target.warehouseStatus === 'returned') {
-        newWarehouseStatus = 'installed';
-      } else if (target.warehouseStatus === 'moved') {
-        newWarehouseStatus = 'installed';
-      }
+    if (shouldMarkFridgeMoved(recentCheckins)) {
+      newWarehouseStatus = 'moved';
+    } else if (target.warehouseStatus === 'warehouse' || target.warehouseStatus === 'returned') {
+      newWarehouseStatus = 'installed';
+    } else if (target.warehouseStatus === 'moved') {
+      newWarehouseStatus = 'installed';
     }
   }
 
