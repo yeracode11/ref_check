@@ -283,12 +283,22 @@ function buildStackPopupHtml(items: AdminFridgeForMap[]): string {
   `;
 }
 
+type MapRenderStats = {
+  fridgeCount: number;
+  markerCount: number;
+  installedCount: number;
+};
+
 function MapLegend({
-  pointCount,
+  fridgeCount,
+  markerCount,
+  installedCount,
   warehouseHidden,
   hint,
 }: {
-  pointCount?: number;
+  fridgeCount?: number;
+  markerCount?: number;
+  installedCount?: number;
   warehouseHidden?: number;
   hint?: string | null;
 }) {
@@ -318,8 +328,18 @@ function MapLegend({
         <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#2563eb' }} />
         Исправен / нет отметок
       </span>
-      {pointCount != null && pointCount > 0 && (
-        <span className="text-slate-500 ml-auto">{pointCount.toLocaleString('ru-RU')} точек на карте</span>
+      {fridgeCount != null && fridgeCount > 0 && (
+        <span className="text-slate-500 ml-auto">
+          {(installedCount ?? 0) > 0
+            ? `${installedCount!.toLocaleString('ru-RU')} установлено на карте`
+            : `${fridgeCount.toLocaleString('ru-RU')} холодильников на карте`}
+          {markerCount != null && markerCount > 0 && markerCount < fridgeCount && (
+            <span className="text-slate-400">
+              {' '}
+              · {markerCount.toLocaleString('ru-RU')} точек (несколько в одном адресе)
+            </span>
+          )}
+        </span>
       )}
       {warehouseHidden != null && warehouseHidden > 0 && (
         <span className="text-slate-500">
@@ -380,7 +400,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
   const [dataPhase, setDataPhase] = useState<DataPhase>('loading');
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [hint, setHint] = useState<string | null>(null);
-  const [pointCount, setPointCount] = useState(0);
+  const [mapStats, setMapStats] = useState<MapRenderStats | null>(null);
   const [warehouseHidden, setWarehouseHidden] = useState(0);
 
   const destroyMap = useCallback(() => {
@@ -407,7 +427,9 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
   ) => {
     const map = mapInstanceRef.current;
     const cluster = pointClusterRef.current;
-    if (!map || !cluster) return 0;
+    if (!map || !cluster) {
+      return { fridgeCount: 0, markerCount: 0, installedCount: 0 };
+    }
 
     cluster.clearLayers();
     popupDataRef.current.clear();
@@ -497,7 +519,15 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
 
     window.setTimeout(() => map.invalidateSize({ animate: false }), 100);
 
-    return markerLayers.length;
+    const installedCount = visiblePoints.filter(
+      (point) => point.warehouseStatus === 'installed' || point.warehouseStatus === 'moved',
+    ).length;
+
+    return {
+      fridgeCount: visiblePoints.length,
+      markerCount: markerLayers.length,
+      installedCount,
+    };
   }, [cityName]);
 
   const loadAllPoints = useCallback(async (targetCityId: string) => {
@@ -507,7 +537,7 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
 
     setDataPhase('loading');
     setHint(null);
-    setPointCount(0);
+    setMapStats(null);
     setWarehouseHidden(0);
     setProgress({ loaded: 0, total: 0 });
     pointsRef.current = [];
@@ -547,8 +577,8 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
 
       const view = buildMapViewSettings(targetCityId, cityName, cityCode, pointsRef.current);
 
-      const count = renderAllPoints(pointsRef.current, view.center, view.filterOutliers);
-      setPointCount(count);
+      const stats = renderAllPoints(pointsRef.current, view.center, view.filterOutliers);
+      setMapStats(stats);
       setDataPhase('ready');
     } catch (e: unknown) {
       if (controller.signal.aborted) return;
@@ -654,7 +684,13 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
 
   return (
     <div className="space-y-2">
-      <MapLegend pointCount={dataPhase === 'ready' ? pointCount : undefined} warehouseHidden={warehouseHidden} hint={hint} />
+      <MapLegend
+        fridgeCount={dataPhase === 'ready' ? mapStats?.fridgeCount : undefined}
+        markerCount={dataPhase === 'ready' ? mapStats?.markerCount : undefined}
+        installedCount={dataPhase === 'ready' ? mapStats?.installedCount : undefined}
+        warehouseHidden={warehouseHidden}
+        hint={hint}
+      />
       <div
         className="relative w-full rounded-lg border border-slate-200 overflow-hidden"
         style={{ height: MAP_HEIGHT }}
