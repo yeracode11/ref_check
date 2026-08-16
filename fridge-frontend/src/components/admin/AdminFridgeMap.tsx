@@ -231,6 +231,23 @@ function groupCentroid(group: MapPointItem[]): L.LatLngTuple {
   return [latSum / group.length, lngSum / group.length];
 }
 
+/** Разводит маркеры в одном адресе по кругу, чтобы каждый холодильник был отдельной точкой */
+function offsetMarkerPosition(
+  lat: number,
+  lng: number,
+  index: number,
+  total: number,
+): L.LatLngTuple {
+  if (total <= 1) return [lat, lng];
+
+  const angle = (2 * Math.PI * index) / total;
+  const radiusM = Math.min(18, 6 + total * 2.5);
+  const latRad = (lat * Math.PI) / 180;
+  const dLat = (radiusM / 111_320) * Math.cos(angle);
+  const dLng = (radiusM / (111_320 * Math.cos(latRad))) * Math.sin(angle);
+  return [lat + dLat, lng + dLng];
+}
+
 function isTightGroup(group: AdminFridgeForMap[], maxMeters = SAME_POINT_METERS): boolean {
   if (group.length <= 1) return true;
   const first = group[0].location?.coordinates;
@@ -331,14 +348,8 @@ function MapLegend({
       {fridgeCount != null && fridgeCount > 0 && (
         <span className="text-slate-500 ml-auto">
           {(installedCount ?? 0) > 0
-            ? `${installedCount!.toLocaleString('ru-RU')} установлено на карте`
-            : `${fridgeCount.toLocaleString('ru-RU')} холодильников на карте`}
-          {markerCount != null && markerCount > 0 && markerCount < fridgeCount && (
-            <span className="text-slate-400">
-              {' '}
-              · {markerCount.toLocaleString('ru-RU')} точек (несколько в одном адресе)
-            </span>
-          )}
+            ? `${installedCount!.toLocaleString('ru-RU')} установлено · ${fridgeCount.toLocaleString('ru-RU')} маркеров`
+            : `${fridgeCount.toLocaleString('ru-RU')} маркеров на карте`}
         </span>
       )}
       {warehouseHidden != null && warehouseHidden > 0 && (
@@ -453,44 +464,38 @@ function AdminFridgeMapInner({ cityId: cityIdProp, cityName, cityCode }: Props) 
     }
 
     for (const group of groupPointsByProximity(visiblePoints)) {
-      const position = groupCentroid(group);
+      const [centroidLat, centroidLng] = groupCentroid(group);
       const stackCount = group.length;
-      const equipmentStatuses = group.map((item) => item.equipmentStatus);
-      const visitStatuses = group.map((item) => {
+
+      group.forEach((item, index) => {
         const equipmentStatus = item.equipmentStatus || 'working';
-        return equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
+        const visitForIcon = equipmentStatus === 'broken' || equipmentStatus === 'under_repair'
           ? 'never'
           : item.status;
+        const markerColor = getMarkerColor(visitForIcon, equipmentStatus, item.warehouseStatus);
+        const iconKey = `${visitForIcon}:${equipmentStatus}:${item.warehouseStatus || ''}:${item.id}`;
+        let icon = iconCacheRef.current.get(iconKey);
+        if (!icon) {
+          icon = createPointIcon(markerColor);
+          iconCacheRef.current.set(iconKey, icon);
+        }
+
+        const position = offsetMarkerPosition(centroidLat, centroidLng, index, stackCount);
+
+        const marker = L.marker(position, {
+          icon,
+          status: item.status,
+          equipmentStatus,
+          fridgeGroup: [item],
+        } as L.MarkerOptions & { status: string; equipmentStatus: EquipmentStatus; fridgeGroup: MapPointItem[] });
+
+        marker.on('click', (event) => {
+          L.DomEvent.stopPropagation(event);
+          openFridgePopup(map, position, [item]);
+        });
+
+        markerLayers.push(marker);
       });
-      const markerColor = stackCount > 1
-        ? getClusterColor(visitStatuses, equipmentStatuses)
-        : getMarkerColor(
-          visitStatuses[0],
-          equipmentStatuses[0],
-          group[0].warehouseStatus,
-        );
-      const iconKey = stackCount > 1
-        ? `stack:${markerColor}:${stackCount}`
-        : `${visitStatuses[0]}:${equipmentStatuses[0] || 'working'}:${group[0].warehouseStatus || ''}`;
-      let icon = iconCacheRef.current.get(iconKey);
-      if (!icon) {
-        icon = createPointIcon(markerColor, stackCount);
-        iconCacheRef.current.set(iconKey, icon);
-      }
-
-      const marker = L.marker(position, {
-        icon,
-        status: visitStatuses[0],
-        equipmentStatus: equipmentStatuses[0],
-        fridgeGroup: group,
-      } as L.MarkerOptions & { status: string; equipmentStatus: EquipmentStatus; fridgeGroup: MapPointItem[] });
-
-      marker.on('click', (event) => {
-        L.DomEvent.stopPropagation(event);
-        openFridgePopup(map, position, group);
-      });
-
-      markerLayers.push(marker);
     }
 
     if (markerLayers.length) {
