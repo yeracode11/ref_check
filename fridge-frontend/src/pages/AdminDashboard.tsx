@@ -64,18 +64,16 @@ const ADMIN_CHECKINS_PREVIEW_LIMIT = 20;
 function parseCheckinsApiResponse(raw: unknown): {
   list: Checkin[];
   total: number;
-  distinctManagers: number | null;
 } {
   if (raw && typeof raw === 'object' && Array.isArray((raw as { data?: unknown }).data)) {
-    const r = raw as { data: Checkin[]; total?: number; distinctManagers?: number };
+    const r = raw as { data: Checkin[]; total?: number };
     return {
       list: r.data,
       total: typeof r.total === 'number' ? r.total : r.data.length,
-      distinctManagers: typeof r.distinctManagers === 'number' ? r.distinctManagers : null,
     };
   }
   const arr = Array.isArray(raw) ? (raw as Checkin[]) : [];
-  return { list: arr, total: arr.length, distinctManagers: null };
+  return { list: arr, total: arr.length };
 }
 
 const ADMIN_MAP_CITY_STORAGE_KEY = 'stellref_admin_map_city_id';
@@ -96,7 +94,6 @@ export default function AdminDashboard() {
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   /** Реальное число отметок в БД (GET /api/checkins?meta=1), не длина загруженной выборки */
   const [checkinsTotal, setCheckinsTotal] = useState<number | null>(null);
-  const [checkinsDistinctManagers, setCheckinsDistinctManagers] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +142,6 @@ export default function AdminDashboard() {
   const [dashboardSummary, setDashboardSummary] = useState<{
     totalFridges: number;
     totalCheckins: number;
-    distinctManagers: number;
   } | null>(null);
   const cityStatsSectionRef = useRef<HTMLDivElement | null>(null);
   const mapSectionRef = useRef<HTMLDivElement | null>(null);
@@ -203,10 +199,9 @@ export default function AdminDashboard() {
         ]);
         if (!alive) return;
         setDashboardSummary(summaryRes.data);
-        const { list, total, distinctManagers } = parseCheckinsApiResponse(checkinsRes.data);
+        const { list, total } = parseCheckinsApiResponse(checkinsRes.data);
         setCheckins(list);
         setCheckinsTotal(total);
-        setCheckinsDistinctManagers(distinctManagers);
       } catch (e) {
         console.error('[AdminDashboard] summary/checkins:', e);
       }
@@ -735,10 +730,6 @@ export default function AdminDashboard() {
     filteredAllFridges.filter((f) => f.status === 'never').length;
   const totalCheckins =
     dashboardSummary?.totalCheckins ?? checkinsTotal ?? checkins.length;
-  const uniqueManagers =
-    dashboardSummary?.distinctManagers ??
-    checkinsDistinctManagers ??
-    new Set(checkins.map((c) => c.managerId)).size;
 
   const recentCheckins = checkins.slice(0, ADMIN_CHECKINS_PREVIEW_LIMIT);
 
@@ -866,7 +857,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <p className="text-sm text-slate-500">Всего холодильников</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{displayTotalFridges.toLocaleString('ru-RU')}</p>
@@ -894,10 +885,6 @@ export default function AdminDashboard() {
               В блоке «Последние отметки» — {checkins.length} из {checkinsTotal}
             </p>
           ) : null}
-        </Card>
-        <Card>
-          <p className="text-sm text-slate-500">Менеджеры</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{uniqueManagers}</p>
         </Card>
         <Card>
           <p className="text-sm text-slate-500">Пользователь</p>
@@ -1328,7 +1315,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Аналитика */}
-      <AnalyticsPanel cities={cities} lazy />
+      <AnalyticsPanel cities={cities} hideManagerStats hideUnvisitedReport lazy />
 
       {/* Модальное окно для добавления холодильника */}
       {showAddFridgeModal && (
@@ -1546,7 +1533,6 @@ export default function AdminDashboard() {
                     const parsed = parseCheckinsApiResponse(checkinsRes.data);
                     setCheckins(parsed.list);
                     setCheckinsTotal(parsed.total);
-                    setCheckinsDistinctManagers(parsed.distinctManagers);
                     // Перезагружаем данные холодильников для карты, чтобы обновить статусы
                     await bumpMapRefresh();
                     setDeleteCheckinId(null);
@@ -1763,7 +1749,6 @@ export default function AdminDashboard() {
                     setTotalFridges(0);
                     setCheckins([]);
                     setCheckinsTotal(0);
-                    setCheckinsDistinctManagers(0);
                     
                     setShowDeleteAllFridges(false);
                     

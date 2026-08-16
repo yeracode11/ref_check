@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { api } from '../../shared/apiClient';
 import { Card } from '../ui/Card';
@@ -77,6 +77,8 @@ type AnalyticsPanelProps = {
   fixedCityId?: string;
   /** Для НОП: скрыть рейтинг менеджеров, показать сводку по непосещённым */
   hideManagerStats?: boolean;
+  /** Скрыть таблицу «Давно не посещались» (админ-панель) */
+  hideUnvisitedReport?: boolean;
   /** Для бухгалтера и НОП: в сводке показывать установленных, а не отметки за период */
   showInstalledCount?: boolean;
   /** Не грузить данные, пока блок не попадёт во viewport (карта и таблицы — первыми) */
@@ -88,6 +90,7 @@ export function AnalyticsPanel({
   cities = [],
   fixedCityId,
   hideManagerStats = false,
+  hideUnvisitedReport = false,
   showInstalledCount = false,
   lazy = false,
 }: AnalyticsPanelProps = {}) {
@@ -245,13 +248,13 @@ export function AnalyticsPanel({
               <p className="text-sm text-slate-500">Всего холодильников</p>
             </Card>
           </>
-        ) : (
+        ) : hideManagerStats ? (
           <>
             <Card className="text-center">
               <p className="text-3xl font-bold text-blue-600">{data.summary.totalCheckins}</p>
               <p className="text-sm text-slate-500">Отметок за период</p>
             </Card>
-            {hideManagerStats ? (
+            {!hideUnvisitedReport && (
               <>
                 <Card className="text-center">
                   <p className="text-3xl font-bold text-red-600">{data.summary.withoutCheckinsInPeriod ?? 0}</p>
@@ -262,18 +265,22 @@ export function AnalyticsPanel({
                   <p className="text-sm text-slate-500">Никогда не посещались</p>
                 </Card>
               </>
-            ) : (
-              <>
-                <Card className="text-center">
-                  <p className="text-3xl font-bold text-green-600">{data.summary.uniqueManagers}</p>
-                  <p className="text-sm text-slate-500">Активных менеджеров</p>
-                </Card>
-                <Card className="text-center">
-                  <p className="text-3xl font-bold text-orange-600">{data.summary.avgCheckinsPerDay}</p>
-                  <p className="text-sm text-slate-500">Отметок в день (ср.)</p>
-                </Card>
-              </>
             )}
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-slate-700">{data.summary.totalFridges}</p>
+              <p className="text-sm text-slate-500">Всего холодильников</p>
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-blue-600">{data.summary.totalCheckins}</p>
+              <p className="text-sm text-slate-500">Отметок за период</p>
+            </Card>
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-orange-600">{data.summary.avgCheckinsPerDay}</p>
+              <p className="text-sm text-slate-500">Отметок в день (ср.)</p>
+            </Card>
             <Card className="text-center">
               <p className="text-3xl font-bold text-slate-700">{data.summary.totalFridges}</p>
               <p className="text-sm text-slate-500">Всего холодильников</p>
@@ -356,37 +363,8 @@ export function AnalyticsPanel({
         </Card>
       </div>
 
-      {/* Статистика по менеджерам — только для бухгалтера/админа */}
-      {!hideManagerStats && (
-      <Card>
-        <h3 className="font-semibold text-slate-900 mb-4">👥 Топ менеджеров по отметкам</h3>
-        {data.managerStats.length > 0 ? (
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.managerStats.slice(0, 10)} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-                <YAxis 
-                  type="category" 
-                  dataKey="username" 
-                  width={100}
-                  tick={{ fontSize: 11 }}
-                  stroke="#94a3b8"
-                />
-                <Tooltip formatter={(value: number) => [value, 'Отметок']} />
-                <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="h-[250px] flex items-center justify-center text-slate-400">
-            Нет данных за выбранный период
-          </div>
-        )}
-      </Card>
-      )}
-
       {/* Точки без отметок / давно не посещались */}
+      {!hideUnvisitedReport && (
       <Card>
         <h3 className="font-semibold text-slate-900 mb-4">
           {hideManagerStats ? '⚠️ Без отметок или давно не посещались' : '⚠️ Давно не посещались'}
@@ -441,6 +419,7 @@ export function AnalyticsPanel({
           </div>
         )}
       </Card>
+      )}
     </div>
   );
 }
