@@ -320,6 +320,7 @@ export default function SalesHeadDashboard() {
         endpoint="/api/admin/analytics/accountant"
         fixedCityId={isSalesHead ? assignedCityId : (selectedCityId || undefined)}
         hideManagerStats
+        showInstalledCount
         lazy
       />
 

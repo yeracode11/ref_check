@@ -44,6 +44,7 @@ type AnalyticsData = {
       warehouse: number;
       installed: number;
       returned: number;
+      moved?: number;
     };
   };
 };
@@ -67,6 +68,8 @@ type AnalyticsPanelProps = {
   fixedCityId?: string;
   /** Для НОП: скрыть рейтинг менеджеров, показать сводку по непосещённым */
   hideManagerStats?: boolean;
+  /** Для бухгалтера и НОП: в сводке показывать установленных, а не отметки за период */
+  showInstalledCount?: boolean;
   /** Не грузить данные, пока блок не попадёт во viewport (карта и таблицы — первыми) */
   lazy?: boolean;
 };
@@ -76,6 +79,7 @@ export function AnalyticsPanel({
   cities = [],
   fixedCityId,
   hideManagerStats = false,
+  showInstalledCount = false,
   lazy = false,
 }: AnalyticsPanelProps = {}) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -171,6 +175,8 @@ export function AnalyticsPanel({
     { name: 'Возврат', value: data.summary.fridgesByStatus.returned, color: '#f44336' },
   ].filter(s => s.value > 0);
 
+  const installedCount = data.summary.fridgesByStatus.installed;
+
   return (
     <div className="space-y-6">
       {/* Период и фильтры */}
@@ -209,8 +215,17 @@ export function AnalyticsPanel({
       {/* Сводка */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="text-center">
-          <p className="text-3xl font-bold text-blue-600">{data.summary.totalCheckins}</p>
-          <p className="text-sm text-slate-500">Отметок за период</p>
+          {showInstalledCount ? (
+            <>
+              <p className="text-3xl font-bold text-green-600">{installedCount}</p>
+              <p className="text-sm text-slate-500">Установлено</p>
+            </>
+          ) : (
+            <>
+              <p className="text-3xl font-bold text-blue-600">{data.summary.totalCheckins}</p>
+              <p className="text-sm text-slate-500">Отметок за период</p>
+            </>
+          )}
         </Card>
         {hideManagerStats ? (
           <>

@@ -589,7 +589,7 @@ export default function AccountantDashboard() {
       </div>
 
       {/* Аналитика */}
-      <AnalyticsPanel endpoint="/api/admin/analytics/accountant" lazy />
+      <AnalyticsPanel endpoint="/api/admin/analytics/accountant" showInstalledCount lazy />
 
       {/* Карта холодильников */}
       <Card>
