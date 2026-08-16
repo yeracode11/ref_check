@@ -650,9 +650,12 @@ export default function AccountantDashboard() {
             <Card key={f._id}>
               <div className="flex flex-wrap gap-4 justify-between">
                 <div className="flex-1 min-w-[200px]">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-3 mb-2 flex-wrap">
                     <span className="font-semibold text-slate-900">{f.name}</span>
                     <WarehouseStatusBadge status={f.warehouseStatus} />
+                    {f.isSeasonalClosure && (
+                      <Badge className="bg-purple-100 text-purple-700">Каникулы</Badge>
+                    )}
                   </div>
                   <div className="text-sm text-slate-600 space-y-1">
                     {(() => {

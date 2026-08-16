@@ -26,7 +26,7 @@ export type AdminFridgeForMap = {
   name: string;
   code: string;
   address?: string;
-  status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed' | 'broken' | 'under_repair';
+  status: 'today' | 'week' | 'old' | 'never' | 'warehouse' | 'location_changed' | 'broken' | 'under_repair' | 'seasonal_closure';
   warehouseStatus?: 'warehouse' | 'installed' | 'returned' | 'moved';
   visitStatus?: 'today' | 'week' | 'old' | 'never';
   equipmentStatus?: EquipmentStatus;
@@ -72,7 +72,7 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
 function getVisitMarkerColor(status: string): string {
   if (status === 'broken') return getEquipmentMarkerColor('purple');
   if (status === 'under_repair') return getEquipmentMarkerColor('orange');
-  if (status === 'seasonal_closure') return '#9333ea';
+  if (status === 'seasonal_closure') return '#f59e0b';
   const normalizedStatus = status === 'location_changed' ? 'old' : status;
   if (normalizedStatus === 'today' || normalizedStatus === 'week') return '#28a745';
   if (normalizedStatus === 'old') return '#dc3545';
@@ -166,15 +166,25 @@ function createMarkerClusterGroup(): L.MarkerClusterGroup {
   });
 }
 
+function resolveVisitDisplayStatus(f: AdminFridgeForMap): string {
+  if (f.status === 'seasonal_closure') return 'seasonal_closure';
+  return f.visitStatus || (f.status === 'warehouse' ? 'never' : f.status);
+}
+
+function getVisitStatusLabel(status: string): string {
+  if (status === 'seasonal_closure') return 'Каникулы';
+  if (status === 'today') return 'Сегодня';
+  if (status === 'week') return 'Неделя';
+  if (status === 'old') return 'Давно';
+  return 'Нет отметок';
+}
+
 function buildPopupHtml(f: AdminFridgeForMap): string {
   const equipmentStatus = f.equipmentStatus || 'working';
   const warehouseLabel = f.warehouseStatus === 'warehouse' ? 'На складе'
     : f.warehouseStatus === 'returned' ? 'Возврат на склад'
       : 'Установлен';
-  const visitSource = f.visitStatus || (f.status === 'warehouse' ? 'never' : f.status);
-  const visitLabel = visitSource === 'today' ? 'Сегодня'
-    : visitSource === 'week' ? 'Неделя'
-      : visitSource === 'old' ? 'Давно' : 'Нет отметок';
+  const visitLabel = getVisitStatusLabel(resolveVisitDisplayStatus(f));
 
   return `
     <div style="min-width: 200px;">
@@ -310,6 +320,10 @@ function MapLegend({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+      <span className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#f59e0b' }} />
+        Каникулы
+      </span>
       <span className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-full border border-white shadow" style={{ background: '#9333ea' }} />
         Сломан

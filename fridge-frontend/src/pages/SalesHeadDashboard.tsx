@@ -407,7 +407,7 @@ export default function SalesHeadDashboard() {
                       {getEquipmentStatusLabel(f.status)}
                     </Badge>
                     {f.isSeasonalClosure && (
-                      <Badge className="bg-amber-100 text-amber-800">Закрыт временно</Badge>
+                      <Badge className="bg-purple-100 text-purple-700">Каникулы</Badge>
                     )}
                   </div>
                   <div className="text-sm text-slate-600 space-y-1">
