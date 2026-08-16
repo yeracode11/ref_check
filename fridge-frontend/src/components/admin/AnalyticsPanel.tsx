@@ -46,6 +46,15 @@ type AnalyticsData = {
       returned: number;
       moved?: number;
     };
+    visitCounts?: {
+      fresh: number;
+      old: number;
+      never: number;
+      installed: number;
+      warehouse: number;
+      returned: number;
+      moved: number;
+    };
   };
 };
 
@@ -175,7 +184,10 @@ export function AnalyticsPanel({
     { name: 'Возврат', value: data.summary.fridgesByStatus.returned, color: '#f44336' },
   ].filter(s => s.value > 0);
 
-  const installedCount = data.summary.fridgesByStatus.installed;
+  const installedCount = data.summary.visitCounts?.installed
+    ?? data.summary.fridgesByStatus.installed;
+  const freshCount = data.summary.visitCounts?.fresh ?? 0;
+  const depotCount = data.summary.visitCounts?.never ?? 0;
 
   return (
     <div className="space-y-6">
@@ -214,46 +226,60 @@ export function AnalyticsPanel({
 
       {/* Сводка */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="text-center">
-          {showInstalledCount ? (
-            <>
-              <p className="text-3xl font-bold text-green-600">{installedCount}</p>
-              <p className="text-sm text-slate-500">Установлено</p>
-            </>
-          ) : (
-            <>
-              <p className="text-3xl font-bold text-blue-600">{data.summary.totalCheckins}</p>
-              <p className="text-sm text-slate-500">Отметок за период</p>
-            </>
-          )}
-        </Card>
-        {hideManagerStats ? (
+        {showInstalledCount ? (
           <>
             <Card className="text-center">
-              <p className="text-3xl font-bold text-red-600">{data.summary.withoutCheckinsInPeriod ?? 0}</p>
-              <p className="text-sm text-slate-500">Без отметок за период</p>
+              <p className="text-3xl font-bold text-green-600">{installedCount}</p>
+              <p className="text-sm text-slate-500">Установлено</p>
             </Card>
             <Card className="text-center">
-              <p className="text-3xl font-bold text-orange-600">{data.summary.neverVisited ?? 0}</p>
-              <p className="text-sm text-slate-500">Никогда не посещались</p>
+              <p className="text-3xl font-bold text-emerald-600">{freshCount}</p>
+              <p className="text-sm text-slate-500">Свежие отметки</p>
+            </Card>
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-blue-600">{depotCount}</p>
+              <p className="text-sm text-slate-500">На складе</p>
+            </Card>
+            <Card className="text-center">
+              <p className="text-3xl font-bold text-slate-700">{data.summary.totalFridges}</p>
+              <p className="text-sm text-slate-500">Всего холодильников</p>
             </Card>
           </>
         ) : (
           <>
             <Card className="text-center">
-              <p className="text-3xl font-bold text-green-600">{data.summary.uniqueManagers}</p>
-              <p className="text-sm text-slate-500">Активных менеджеров</p>
+              <p className="text-3xl font-bold text-blue-600">{data.summary.totalCheckins}</p>
+              <p className="text-sm text-slate-500">Отметок за период</p>
             </Card>
+            {hideManagerStats ? (
+              <>
+                <Card className="text-center">
+                  <p className="text-3xl font-bold text-red-600">{data.summary.withoutCheckinsInPeriod ?? 0}</p>
+                  <p className="text-sm text-slate-500">Без отметок за период</p>
+                </Card>
+                <Card className="text-center">
+                  <p className="text-3xl font-bold text-orange-600">{data.summary.neverVisited ?? 0}</p>
+                  <p className="text-sm text-slate-500">Никогда не посещались</p>
+                </Card>
+              </>
+            ) : (
+              <>
+                <Card className="text-center">
+                  <p className="text-3xl font-bold text-green-600">{data.summary.uniqueManagers}</p>
+                  <p className="text-sm text-slate-500">Активных менеджеров</p>
+                </Card>
+                <Card className="text-center">
+                  <p className="text-3xl font-bold text-orange-600">{data.summary.avgCheckinsPerDay}</p>
+                  <p className="text-sm text-slate-500">Отметок в день (ср.)</p>
+                </Card>
+              </>
+            )}
             <Card className="text-center">
-              <p className="text-3xl font-bold text-orange-600">{data.summary.avgCheckinsPerDay}</p>
-              <p className="text-sm text-slate-500">Отметок в день (ср.)</p>
+              <p className="text-3xl font-bold text-slate-700">{data.summary.totalFridges}</p>
+              <p className="text-sm text-slate-500">Всего холодильников</p>
             </Card>
           </>
         )}
-        <Card className="text-center">
-          <p className="text-3xl font-bold text-slate-700">{data.summary.totalFridges}</p>
-          <p className="text-sm text-slate-500">Всего холодильников</p>
-        </Card>
       </div>
 
       {/* Графики */}

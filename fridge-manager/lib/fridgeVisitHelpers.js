@@ -234,6 +234,57 @@ function combinedVisitMapStatus(lastVisit, warehouseStatus, opts = {}) {
 }
 
 /**
+ * Сводка по городу: свежие/старые/на складе (по отметкам) и статусы склада.
+ * Та же логика, что в GET /admin/statistics/by-cities и аналитике бухгалтера/НОП.
+ */
+function computeCityFridgeStatsCounts(fridges, statsByFridgeId, nowMs = Date.now()) {
+  const counts = {
+    total: 0,
+    fresh: 0,
+    old: 0,
+    never: 0,
+    warehouse: 0,
+    installed: 0,
+    returned: 0,
+    moved: 0,
+  };
+
+  if (!Array.isArray(fridges)) return counts;
+
+  fridges.forEach((f) => {
+    counts.total++;
+    const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeId, f);
+    const warehouseStatus = f.warehouseStatus || 'warehouse';
+
+    const mapStatus = combinedVisitMapStatus(lastVisit, warehouseStatus, {
+      nowMs,
+      fridgeType: f.type,
+      locationAtDepot: f.locationAtDepot,
+    });
+
+    if (mapStatus === 'never') {
+      counts.never++;
+    } else if (mapStatus === 'today' || mapStatus === 'week') {
+      counts.fresh++;
+    } else {
+      counts.old++;
+    }
+
+    if (warehouseStatus === 'warehouse') {
+      counts.warehouse++;
+    } else if (warehouseStatus === 'installed') {
+      counts.installed++;
+    } else if (warehouseStatus === 'returned') {
+      counts.returned++;
+    } else if (warehouseStatus === 'moved') {
+      counts.moved++;
+    }
+  });
+
+  return counts;
+}
+
+/**
  * Сливает строки $group по fridgeId в одну Map по нормализованному ключу.
  * В MongoDB у части чекинов fridgeId строка "1133", у части — число 1133: это две группы агрегации,
  * но String(_id) совпадает — без слияния по max(lastVisit) остаётся случайная дата (часто старая).
@@ -359,5 +410,6 @@ module.exports = {
   shouldIncludeInUnvisitedReport,
   shouldCountAsWithoutCheckinsInPeriod,
   shouldCountAsNeverVisited,
+  computeCityFridgeStatsCounts,
   formatVisitDateTimeRu,
 };

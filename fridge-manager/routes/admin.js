@@ -17,6 +17,7 @@ const {
   shouldIncludeInUnvisitedReport,
   shouldCountAsWithoutCheckinsInPeriod,
   shouldCountAsNeverVisited,
+  computeCityFridgeStatsCounts,
   buildDailyCheckinsAggregationStages,
   mapDailyCheckinsAggregationResult,
 } = require('../lib/fridgeVisitHelpers');
@@ -1433,6 +1434,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
           withoutCheckinsInPeriod: 0,
           neverVisited: 0,
           fridgesByStatus: { warehouse: 0, installed: 0, returned: 0 },
+          visitCounts: { fresh: 0, old: 0, never: 0, installed: 0, warehouse: 0, returned: 0, moved: 0 },
         },
       });
     }
@@ -1446,7 +1448,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       cityId: scopedCityId,
       active: true,
     })
-      .select('code number name address warehouseStatus clientInfo type')
+      .select('code number name address warehouseStatus clientInfo type locationAtDepot')
       .populate('cityId', 'name code')
       .lean();
 
@@ -1463,6 +1465,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
           withoutCheckinsInPeriod: 0,
           neverVisited: 0,
           fridgesByStatus: { warehouse: 0, installed: 0, returned: 0 },
+          visitCounts: { fresh: 0, old: 0, never: 0, installed: 0, warehouse: 0, returned: 0, moved: 0 },
         },
       });
     }
@@ -1624,6 +1627,8 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       }
     });
 
+    const visitCounts = computeCityFridgeStatsCounts(cityFridges, statsByFridgeId);
+
     return res.json({
       dailyCheckins,
       managerStats: enrichedManagerStats,
@@ -1636,6 +1641,15 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
         withoutCheckinsInPeriod,
         neverVisited,
         fridgesByStatus: statusCounts,
+        visitCounts: {
+          fresh: visitCounts.fresh,
+          old: visitCounts.old,
+          never: visitCounts.never,
+          installed: visitCounts.installed,
+          warehouse: visitCounts.warehouse,
+          returned: visitCounts.returned,
+          moved: visitCounts.moved,
+        },
       },
     });
   } catch (err) {
