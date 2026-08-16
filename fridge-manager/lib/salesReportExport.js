@@ -168,8 +168,10 @@ function filterFridgesExcludingFreshVisits(fridges, statsByFridgeId, nowMs = Dat
     const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, {
       nowMs,
       fridgeType: f.type,
+      locationAtDepot: f.locationAtDepot,
+      isSeasonalClosure: f.isSeasonalClosure,
     });
-    return mapSt !== 'today' && mapSt !== 'week';
+    return mapSt !== 'today' && mapSt !== 'week' && mapSt !== 'seasonal_closure';
   });
 }
 

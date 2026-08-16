@@ -18,6 +18,7 @@ const {
   shouldCountAsWithoutCheckinsInPeriod,
   shouldCountAsNeverVisited,
   computeCityFridgeStatsCounts,
+  supportsSeasonalClosureFlag,
   buildDailyCheckinsAggregationStages,
   mapDailyCheckinsAggregationResult,
 } = require('../lib/fridgeVisitHelpers');
@@ -157,7 +158,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
 
     let query = Fridge.find(fridgeQuery);
     if (forMap) {
-      query = query.select('_id code name address location warehouseStatus status type').lean();
+      query = query.select('_id code name address location warehouseStatus status type locationAtDepot isSeasonalClosure').lean();
     } else {
       query = query.populate('cityId', 'name code').sort({ createdAt: -1 }).lean();
     }
@@ -205,6 +206,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
         nowMs: now,
         fridgeType: f.type,
         locationAtDepot: f.locationAtDepot,
+        isSeasonalClosure: f.isSeasonalClosure,
       });
       const finalStatus = status === 'location_changed' ? (visitStatus || 'never') : status;
 
@@ -1448,7 +1450,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       cityId: scopedCityId,
       active: true,
     })
-      .select('code number name address warehouseStatus clientInfo type locationAtDepot')
+      .select('code number name address warehouseStatus clientInfo type locationAtDepot isSeasonalClosure')
       .populate('cityId', 'name code')
       .lean();
 
@@ -1584,6 +1586,7 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
         address: f.address,
         cityId: f.cityId || null,
         type: f.type || 'regular',
+        isSeasonalClosure: f.isSeasonalClosure,
         lastVisit,
         daysSinceVisit,
       };
@@ -1611,7 +1614,10 @@ router.get('/analytics/accountant', authenticateToken, requireAdminOrAccountantO
       (f) => shouldCountAsWithoutCheckinsInPeriod(f, fridgeVisitedInPeriod(f)),
     ).length;
     const neverVisited = fridgesWithLastVisit.filter(
-      (row) => shouldCountAsNeverVisited({ type: row.type }, row.lastVisit),
+      (row) => shouldCountAsNeverVisited(
+        { type: row.type, isSeasonalClosure: row.isSeasonalClosure },
+        row.lastVisit,
+      ),
     ).length;
 
     // Холодильники по статусам
@@ -1921,6 +1927,11 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
     fridge.warehouseStatus = warehouseStatus;
 
     if (isSeasonalClosure !== undefined) {
+      if (!supportsSeasonalClosureFlag(fridge)) {
+        return res.status(400).json({
+          error: 'Флаг каникул доступен только для школ и режимных объектов',
+        });
+      }
       fridge.isSeasonalClosure = isSeasonalClosure === true || isSeasonalClosure === 'true';
     }
 
@@ -2007,6 +2018,11 @@ router.patch('/fridges/:id', authenticateToken, requireAdminOrAccountant, async 
     if (address !== undefined) fridge.address = address;
     if (description !== undefined) fridge.description = description;
     if (isSeasonalClosure !== undefined) {
+      if (!supportsSeasonalClosureFlag(fridge)) {
+        return res.status(400).json({
+          error: 'Флаг каникул доступен только для школ и режимных объектов',
+        });
+      }
       fridge.isSeasonalClosure = isSeasonalClosure === true || isSeasonalClosure === 'true';
     }
     
@@ -2289,7 +2305,7 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
     const cacheScopeKey = JSON.stringify({ route: 'by-cities', ...fridgeQuery });
     const [fridges, statsByFridgeId] = await Promise.all([
       Fridge.find(fridgeQuery)
-        .select('_id code number clientInfo.inn type cityId warehouseStatus locationAtDepot')
+        .select('_id code number clientInfo.inn type cityId warehouseStatus locationAtDepot isSeasonalClosure')
         .populate('cityId', 'name code')
         .lean(),
       getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, { useCache: true }),
@@ -2332,9 +2348,12 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
         nowMs: now,
         fridgeType: f.type,
         locationAtDepot: f.locationAtDepot,
+        isSeasonalClosure: f.isSeasonalClosure,
       });
 
-      if (mapStatus === 'never') {
+      if (mapStatus === 'seasonal_closure') {
+        // не учитываем в fresh/old/never
+      } else if (mapStatus === 'never') {
         stats.never++;
       } else if (mapStatus === 'today' || mapStatus === 'week') {
         stats.fresh++;

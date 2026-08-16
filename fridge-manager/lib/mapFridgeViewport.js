@@ -73,6 +73,7 @@ function mapFridgeToMarker(f, statsByFridgeId, now) {
     nowMs: now,
     fridgeType: f.type,
     locationAtDepot: f.locationAtDepot,
+    isSeasonalClosure: f.isSeasonalClosure,
   });
   const finalStatus = status === 'location_changed' ? (visitStatus || 'never') : status;
 
@@ -164,7 +165,7 @@ async function fetchViewportClusters(filter, bbox, cellSize) {
 async function fetchViewportPoints(filter, bbox, zoom) {
   const limit = Math.max(100, Math.min(5000, MAP_VIEWPORT_MAX_POINTS));
   const fridges = await Fridge.find(filter)
-    .select('_id code name address location warehouseStatus status type')
+    .select('_id code name address location warehouseStatus status type locationAtDepot isSeasonalClosure')
     .limit(limit)
     .lean();
 
@@ -229,7 +230,7 @@ async function fetchMapFridgeBulk(user, query) {
   const [total, fridges, warehouseHidden] = await Promise.all([
     Fridge.countDocuments(filter),
     Fridge.find(filter)
-      .select('_id code name address location warehouseStatus status type')
+      .select('_id code name address location warehouseStatus status type locationAtDepot isSeasonalClosure')
       .sort({ _id: 1 })
       .skip(skip)
       .limit(limit)

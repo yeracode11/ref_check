@@ -8,6 +8,7 @@ const {
   parseVisitTimeMs,
   DEFAULT_VISIT_TIMEZONE,
   formatVisitDateTimeRu,
+  visitStatusDisplayLabel,
 } = require('./fridgeVisitHelpers');
 
 const FRIDGE_TYPE_LABELS = {
@@ -27,11 +28,7 @@ function formatExportDateTime(value) {
 }
 
 function visitStatusLabel(mapSt) {
-  if (mapSt === 'never') return 'Нет отметок';
-  if (mapSt === 'old') return 'Давно';
-  if (mapSt === 'today') return 'Сегодня';
-  if (mapSt === 'week') return 'Неделя';
-  return mapSt || '';
+  return visitStatusDisplayLabel(mapSt);
 }
 
 function buildCheckinIdListFromFridges(fridges) {
@@ -75,6 +72,7 @@ function buildTopUnvisitedFromFridges(fridges, statsByFridgeId, limit = 20) {
       address: f.address,
       cityId,
       type: f.type || 'regular',
+      isSeasonalClosure: f.isSeasonalClosure,
       lastVisit,
       daysSinceVisit: lastVisitDate
         ? Math.floor((Date.now() - lastVisitDate.getTime()) / (1000 * 60 * 60 * 24))
@@ -84,7 +82,7 @@ function buildTopUnvisitedFromFridges(fridges, statsByFridgeId, limit = 20) {
 
   return rows
     .filter((row) => shouldIncludeInUnvisitedReport(
-      { type: row.type },
+      { type: row.type, isSeasonalClosure: row.isSeasonalClosure },
       { lastVisit: row.lastVisit, daysSinceVisit: row.daysSinceVisit },
     ))
     .sort((a, b) => {
@@ -159,7 +157,13 @@ function buildVisitCategoryExportRows(fridges, statsByFridgeId, nowMs = Date.now
     const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, {
       nowMs,
       fridgeType: f.type,
+      locationAtDepot: f.locationAtDepot,
+      isSeasonalClosure: f.isSeasonalClosure,
     });
+
+    if (mapSt === 'seasonal_closure') {
+      continue;
+    }
 
     const visitMs = parseVisitTimeMs(lastVisit);
     const daysSinceVisit = visitMs != null

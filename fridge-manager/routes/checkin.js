@@ -48,7 +48,6 @@ router.post('/', authenticateToken, async (req, res) => {
       notes: req.body.notes,
       visitedAt: req.body.visitedAt,
       fridgeCondition: req.body.fridgeCondition,
-      isSeasonalClosure: req.body.isSeasonalClosure,
       managerIdOverride: req.body.managerId,
     });
 

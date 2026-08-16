@@ -13,6 +13,7 @@ import {
   getEquipmentIndicatorLabel,
   getEquipmentIndicatorClasses,
   getEquipmentMarkerColor,
+  showSeasonalClosureCheckbox,
   EquipmentStatus,
 } from '../utils/fridgeUtils';
 import { RepairWorkChecklist } from './RepairWorkChecklist';
@@ -128,6 +129,7 @@ function getVisitStatusLabel(status?: string) {
     case 'today': return 'Отметка: Сегодня';
     case 'week': return 'Отметка: Неделя';
     case 'old': return 'Отметка: Давно';
+    case 'seasonal_closure': return 'Каникулы';
     default: return 'Отметка: Нет';
   }
 }
@@ -139,6 +141,8 @@ function getVisitStatusColor(status?: string) {
       return 'bg-green-100 text-green-700';
     case 'old':
       return 'bg-red-100 text-red-700';
+    case 'seasonal_closure':
+      return 'bg-purple-100 text-purple-700';
     default:
       return 'bg-blue-100 text-blue-700';
   }
@@ -479,8 +483,8 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
             <Badge className={getEquipmentIndicatorClasses(equipmentIndicator)}>
               {getEquipmentIndicatorLabel(fridge.status, activeRepair?.replacedParts, activeRepair?.completedWorks)}
             </Badge>
-            <Badge className={getVisitStatusColor(fridge.visitStatus)}>
-              {getVisitStatusLabel(fridge.visitStatus)}
+            <Badge className={getVisitStatusColor(fridge.isSeasonalClosure ? 'seasonal_closure' : fridge.visitStatus)}>
+              {getVisitStatusLabel(fridge.isSeasonalClosure ? 'seasonal_closure' : fridge.visitStatus)}
             </Badge>
             {fridge.isSeasonalClosure && (
               <Badge className="bg-amber-100 text-amber-800">Закрыт временно</Badge>
@@ -680,18 +684,20 @@ export function FridgeDetailModal({ fridgeId, onClose, onShowQR, onDeleted, onUp
                     Сделан возврат (холодильник возвращен на склад)
                   </label>
                 </div>
-                <div className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    id="isSeasonalClosure"
-                    checked={accountantForm.isSeasonalClosure}
-                    onChange={(e) => setAccountantForm({ ...accountantForm, isSeasonalClosure: e.target.checked })}
-                    className="w-4 h-4 mt-0.5 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
-                  />
-                  <label htmlFor="isSeasonalClosure" className="text-sm font-medium text-slate-700 cursor-pointer">
-                    Объект закрыт на каникулы / временно не работает
-                  </label>
-                </div>
+                {showSeasonalClosureCheckbox(fridge.type) && (
+                  <div className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      id="isSeasonalClosure"
+                      checked={accountantForm.isSeasonalClosure}
+                      onChange={(e) => setAccountantForm({ ...accountantForm, isSeasonalClosure: e.target.checked })}
+                      className="w-4 h-4 mt-0.5 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
+                    />
+                    <label htmlFor="isSeasonalClosure" className="text-sm font-medium text-slate-700 cursor-pointer">
+                      Объект закрыт на каникулы / временно не работает
+                    </label>
+                  </div>
+                )}
                 <button
                   onClick={async () => {
                     try {

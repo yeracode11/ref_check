@@ -23,6 +23,15 @@ function isRestrictedObject(fridgeLike) {
   return fridgeLike?.type === 'restricted';
 }
 
+function isObjectOnSeasonalClosure(fridgeLike) {
+  return fridgeLike?.isSeasonalClosure === true;
+}
+
+function supportsSeasonalClosureFlag(fridgeLike) {
+  const type = fridgeLike?.type;
+  return type === 'school' || type === 'restricted';
+}
+
 function freshDaysForFridgeType(fridgeType) {
   return fridgeType === 'restricted' ? restrictedVisitGraceDays() : freshCalendarDaysAfterToday();
 }
@@ -32,6 +41,7 @@ function freshDaysForFridgeType(fridgeType) {
  * Режимный объект не попадает, пока с последней отметки не прошло больше grace-дней.
  */
 function shouldIncludeInUnvisitedReport(fridgeLike, { lastVisit, daysSinceVisit } = {}) {
+  if (isObjectOnSeasonalClosure(fridgeLike)) return false;
   if (!isRestrictedObject(fridgeLike)) return true;
   if (!lastVisit) return false;
   const grace = restrictedVisitGraceDays();
@@ -39,13 +49,22 @@ function shouldIncludeInUnvisitedReport(fridgeLike, { lastVisit, daysSinceVisit 
 }
 
 function shouldCountAsWithoutCheckinsInPeriod(fridgeLike, visitedInPeriod) {
-  if (isRestrictedObject(fridgeLike)) return false;
+  if (isObjectOnSeasonalClosure(fridgeLike) || isRestrictedObject(fridgeLike)) return false;
   return !visitedInPeriod;
 }
 
 function shouldCountAsNeverVisited(fridgeLike, lastVisit) {
-  if (isRestrictedObject(fridgeLike)) return false;
+  if (isObjectOnSeasonalClosure(fridgeLike) || isRestrictedObject(fridgeLike)) return false;
   return !lastVisit;
+}
+
+function visitStatusDisplayLabel(mapSt) {
+  if (mapSt === 'seasonal_closure') return 'Каникулы';
+  if (mapSt === 'never') return 'Нет отметок';
+  if (mapSt === 'old') return 'Давно';
+  if (mapSt === 'today') return 'Сегодня';
+  if (mapSt === 'week') return 'Неделя';
+  return mapSt || '';
 }
 
 /**
@@ -213,6 +232,10 @@ function isWarehouseHiddenAtDepot(warehouseStatus, locationAtDepot) {
  * При возврате на склад и «на складе» без отметки на карте не показываем давность старых чекинов.
  */
 function combinedVisitMapStatus(lastVisit, warehouseStatus, opts = {}) {
+  if (opts.isSeasonalClosure === true) {
+    return 'seasonal_closure';
+  }
+
   const nowMs = opts.nowMs != null ? opts.nowMs : Date.now();
   const ws = warehouseStatus || 'warehouse';
   const visitTimeliness = visitStatusFromLastVisit(lastVisit, {
@@ -260,9 +283,12 @@ function computeCityFridgeStatsCounts(fridges, statsByFridgeId, nowMs = Date.now
       nowMs,
       fridgeType: f.type,
       locationAtDepot: f.locationAtDepot,
+      isSeasonalClosure: f.isSeasonalClosure,
     });
 
-    if (mapStatus === 'never') {
+    if (mapStatus === 'seasonal_closure') {
+      // Временно закрытые объекты не попадают в fresh/old/never
+    } else if (mapStatus === 'never') {
       counts.never++;
     } else if (mapStatus === 'today' || mapStatus === 'week') {
       counts.fresh++;
@@ -406,10 +432,13 @@ module.exports = {
   freshCalendarDaysAfterToday,
   restrictedVisitGraceDays,
   isRestrictedObject,
+  isObjectOnSeasonalClosure,
+  supportsSeasonalClosureFlag,
   freshDaysForFridgeType,
   shouldIncludeInUnvisitedReport,
   shouldCountAsWithoutCheckinsInPeriod,
   shouldCountAsNeverVisited,
+  visitStatusDisplayLabel,
   computeCityFridgeStatsCounts,
   formatVisitDateTimeRu,
 };

@@ -5,6 +5,7 @@ const {
   combinedVisitMapStatus,
   getLastVisitFromStatsMap,
   formatVisitDateTimeRu,
+  visitStatusDisplayLabel,
 } = require('./fridgeVisitHelpers');
 const { getCheckinStatsForFridges } = require('./checkinStatsCache');
 const { resolveCityFilter } = require('./cityScope');
@@ -150,15 +151,13 @@ async function fetchFridgeListSheetRows(user, query = {}, opts = {}, exportConte
     const mapSt = combinedVisitMapStatus(lastVisit, f.warehouseStatus, {
       nowMs: now,
       fridgeType: f.type,
+      locationAtDepot: f.locationAtDepot,
+      isSeasonalClosure: f.isSeasonalClosure,
     });
     if (opts.excludeFreshVisits && (mapSt === 'today' || mapSt === 'week')) {
       continue;
     }
-    const status =
-      mapSt === 'today' ? 'Сегодня'
-        : mapSt === 'week' ? 'Неделя'
-          : mapSt === 'old' ? 'Давно'
-            : 'Нет отметок';
+    const status = visitStatusDisplayLabel(mapSt);
 
     let warehouseStatusLabel = '';
     let isReturned = false;

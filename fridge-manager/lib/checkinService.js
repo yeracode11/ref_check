@@ -69,7 +69,6 @@ async function syncFridgeFromCheckin({
   normalizedFridgeId,
   location,
   fridgeCondition,
-  isSeasonalClosure,
   address,
 }) {
   let target = fridge;
@@ -90,11 +89,6 @@ async function syncFridgeFromCheckin({
   } else if (target.status !== 'under_repair') {
     fridgeStatusUpdate.status = 'working';
     fridgeStatusUpdate.brokenSince = null;
-  }
-
-  const seasonalTypes = ['school', 'restricted'];
-  if (seasonalTypes.includes(target.type)) {
-    fridgeStatusUpdate.isSeasonalClosure = isSeasonalClosure;
   }
 
   const currentWarehouseStatus = target.warehouseStatus || 'warehouse';
@@ -264,8 +258,6 @@ async function createCheckinRecord(params) {
   }
 
   const fridgeCondition = params.fridgeCondition === 'broken' ? 'broken' : 'working';
-  const isSeasonalClosure = params.isSeasonalClosure === true
-    || params.isSeasonalClosure === 'true';
 
   const [reqLng, reqLat] = location.coordinates;
   const dupWindowStart = new Date(Date.now() - CHECKIN_IDEMPOTENCY_WINDOW_MS);
@@ -274,6 +266,7 @@ async function createCheckinRecord(params) {
     resolveFridgeForCheckin(user, normalizedFridgeId),
     resolveManagerIdCandidates(User, managerId),
   ]);
+  const checkinSeasonalSnapshot = !!fridge?.isSeasonalClosure;
   const fridgeIdCandidates = buildCheckinFridgeIdCandidates(fridge);
   const storeFridgeId = canonicalCheckinFridgeId(fridge, normalizedFridgeId);
 
@@ -311,10 +304,6 @@ async function createCheckinRecord(params) {
         existing.fridgeCondition = fridgeCondition;
         changed = true;
       }
-      if (existing.isSeasonalClosure !== isSeasonalClosure) {
-        existing.isSeasonalClosure = isSeasonalClosure;
-        changed = true;
-      }
       if (photos.length) {
         const merged = [...new Set([...(existing.photos || []), ...photos])];
         if (merged.length !== (existing.photos || []).length) {
@@ -330,7 +319,6 @@ async function createCheckinRecord(params) {
           normalizedFridgeId,
           location,
           fridgeCondition,
-          isSeasonalClosure,
           address: params.address,
         });
       } catch (updateErr) {
@@ -356,7 +344,7 @@ async function createCheckinRecord(params) {
     notes: params.notes,
     visitedAt: params.visitedAt ? new Date(params.visitedAt) : undefined,
     fridgeCondition,
-    isSeasonalClosure,
+    isSeasonalClosure: checkinSeasonalSnapshot,
   };
 
   let checkin = null;
@@ -388,7 +376,6 @@ async function createCheckinRecord(params) {
       normalizedFridgeId,
       location,
       fridgeCondition,
-      isSeasonalClosure,
       address: params.address,
     });
   } catch (updateErr) {

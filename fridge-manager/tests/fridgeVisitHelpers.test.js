@@ -41,6 +41,30 @@ describe('combinedVisitMapStatus', () => {
   });
 });
 
+describe('seasonal closure visit rules', () => {
+  const {
+    combinedVisitMapStatus,
+    shouldIncludeInUnvisitedReport,
+    visitStatusDisplayLabel,
+  } = require('../lib/fridgeVisitHelpers');
+
+  it('seasonal closure never counts as old or never in reports', () => {
+    const oldVisit = new Date('2026-01-01T08:00:00.000Z');
+    const st = combinedVisitMapStatus(oldVisit, 'installed', {
+      isSeasonalClosure: true,
+    });
+    assert.equal(st, 'seasonal_closure');
+    assert.equal(visitStatusDisplayLabel(st), 'Каникулы');
+    assert.equal(
+      shouldIncludeInUnvisitedReport(
+        { type: 'restricted', isSeasonalClosure: true },
+        { lastVisit: oldVisit, daysSinceVisit: 120 },
+      ),
+      false,
+    );
+  });
+});
+
 describe('restricted object visit rules', () => {
   const {
     shouldIncludeInUnvisitedReport,

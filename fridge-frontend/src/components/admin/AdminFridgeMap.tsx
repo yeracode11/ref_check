@@ -72,6 +72,7 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
 function getVisitMarkerColor(status: string): string {
   if (status === 'broken') return getEquipmentMarkerColor('purple');
   if (status === 'under_repair') return getEquipmentMarkerColor('orange');
+  if (status === 'seasonal_closure') return '#9333ea';
   const normalizedStatus = status === 'location_changed' ? 'old' : status;
   if (normalizedStatus === 'today' || normalizedStatus === 'week') return '#28a745';
   if (normalizedStatus === 'old') return '#dc3545';

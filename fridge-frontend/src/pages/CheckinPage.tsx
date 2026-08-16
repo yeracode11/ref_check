@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
-import { getDisplayIdentifier, showSeasonalClosureCheckbox } from '../utils/fridgeUtils';
+import { getDisplayIdentifier } from '../utils/fridgeUtils';
 import { resolveUserCityId } from '../utils/userCityId';
 import { Card, Button, Badge } from '../components/ui/Card';
 import { useDeviceGeolocation } from '../hooks/useDeviceGeolocation';
@@ -52,7 +52,6 @@ export default function CheckinPage() {
   } = useDeviceGeolocation({ prefetch: true });
   const [address, setAddress] = useState('');
   const [fridgeCondition, setFridgeCondition] = useState<'working' | 'broken'>('working');
-  const [isSeasonalClosure, setIsSeasonalClosure] = useState(false);
 
   useEffect(() => {
     if (!code) {
@@ -135,7 +134,6 @@ export default function CheckinPage() {
         address: address || undefined,
         location: geo,
         fridgeCondition,
-        isSeasonalClosure: showSeasonalClosureCheckbox(fridge?.type) ? isSeasonalClosure : undefined,
       });
 
       setSuccess(
@@ -324,20 +322,6 @@ export default function CheckinPage() {
               </label>
             </div>
           </div>
-
-          {showSeasonalClosureCheckbox(fridge?.type) && (
-            <label className="flex items-start gap-2 cursor-pointer p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <input
-                type="checkbox"
-                checked={isSeasonalClosure}
-                onChange={(e) => setIsSeasonalClosure(e.target.checked)}
-                className="mt-0.5 rounded border-amber-300"
-              />
-              <span className="text-sm text-amber-900">
-                Объект закрыт на каникулы / временно не работает
-              </span>
-            </label>
-          )}
 
           {/* Адрес точки (опционально) */}
           <div>

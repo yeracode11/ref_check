@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDisplayIdentifier, getWarehouseStatusTransition, type WarehouseStatus } from '../utils/fridgeUtils';
+import { getDisplayIdentifier, getWarehouseStatusTransition, showSeasonalClosureCheckbox, type WarehouseStatus } from '../utils/fridgeUtils';
 import { WarehouseStatusBadge } from '../components/WarehouseStatusBadge';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,6 +34,7 @@ type Fridge = {
   cityId?: { _id: string; name: string; code: string } | null;
   warehouseStatus: 'warehouse' | 'installed' | 'returned' | 'moved';
   isSeasonalClosure?: boolean;
+  type?: 'regular' | 'school' | 'restricted';
   clientInfo?: ClientInfo | null;
   createdAt: string;
 };
@@ -707,16 +708,18 @@ export default function AccountantDashboard() {
                   >
                     {getWarehouseStatusTransition(f.warehouseStatus).actionLabel}
                   </button>
-                  <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                      checked={!!f.isSeasonalClosure}
-                      disabled={togglingSeasonalId === f._id}
-                      onChange={(e) => handleSeasonalClosureToggle(f, e.target.checked)}
-                    />
-                    <span>Объект закрыт на каникулы / временно не работает</span>
-                  </label>
+                  {showSeasonalClosureCheckbox(f.type) && (
+                    <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                        checked={!!f.isSeasonalClosure}
+                        disabled={togglingSeasonalId === f._id}
+                        onChange={(e) => handleSeasonalClosureToggle(f, e.target.checked)}
+                      />
+                      <span>Объект закрыт на каникулы / временно не работает</span>
+                    </label>
+                  )}
                 </div>
               </div>
             </Card>
@@ -995,17 +998,19 @@ export default function AccountantDashboard() {
               </div>
             )}
 
-            <div className="mb-4">
-              <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                  checked={statusForm.isSeasonalClosure}
-                  onChange={(e) => setStatusForm({ ...statusForm, isSeasonalClosure: e.target.checked })}
-                />
-                <span>Объект закрыт на каникулы / временно не работает</span>
-              </label>
-            </div>
+            {showSeasonalClosureCheckbox(selectedFridge.type) && (
+              <div className="mb-4">
+                <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    checked={statusForm.isSeasonalClosure}
+                    onChange={(e) => setStatusForm({ ...statusForm, isSeasonalClosure: e.target.checked })}
+                  />
+                  <span>Объект закрыт на каникулы / временно не работает</span>
+                </label>
+              </div>
+            )}
 
             <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">Примечание</label>
