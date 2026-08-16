@@ -1315,7 +1315,13 @@ export default function AdminDashboard() {
       </div>
 
       {/* Аналитика */}
-      <AnalyticsPanel cities={cities} hideManagerStats hideUnvisitedReport lazy />
+      <AnalyticsPanel
+        cities={cities}
+        hideManagerStats
+        hideUnvisitedReport
+        hideSummaryCards
+        lazy
+      />
 
       {/* Модальное окно для добавления холодильника */}
       {showAddFridgeModal && (

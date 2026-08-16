@@ -79,6 +79,8 @@ type AnalyticsPanelProps = {
   hideManagerStats?: boolean;
   /** Скрыть таблицу «Давно не посещались» (админ-панель) */
   hideUnvisitedReport?: boolean;
+  /** Скрыть карточки сводки — метрики уже есть выше на дашборде (админ) */
+  hideSummaryCards?: boolean;
   /** Для бухгалтера и НОП: в сводке показывать установленных, а не отметки за период */
   showInstalledCount?: boolean;
   /** Не грузить данные, пока блок не попадёт во viewport (карта и таблицы — первыми) */
@@ -91,6 +93,7 @@ export function AnalyticsPanel({
   fixedCityId,
   hideManagerStats = false,
   hideUnvisitedReport = false,
+  hideSummaryCards = false,
   showInstalledCount = false,
   lazy = false,
 }: AnalyticsPanelProps = {}) {
@@ -192,6 +195,17 @@ export function AnalyticsPanel({
   const freshCount = data.summary.visitCounts?.fresh ?? 0;
   const depotCount = data.summary.visitCounts?.never ?? 0;
 
+  const summaryCardCount = showInstalledCount
+    ? 4
+    : hideManagerStats
+      ? (hideUnvisitedReport ? 2 : 4)
+      : 3;
+  const summaryGridClass = summaryCardCount <= 2
+    ? 'grid grid-cols-1 sm:grid-cols-2 gap-4'
+    : summaryCardCount === 3
+      ? 'grid grid-cols-1 sm:grid-cols-3 gap-4'
+      : 'grid grid-cols-2 md:grid-cols-4 gap-4';
+
   return (
     <div className="space-y-6">
       {/* Период и фильтры */}
@@ -228,7 +242,8 @@ export function AnalyticsPanel({
       </div>
 
       {/* Сводка */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {!hideSummaryCards && (
+      <div className={summaryGridClass}>
         {showInstalledCount ? (
           <>
             <Card className="text-center">
@@ -288,6 +303,7 @@ export function AnalyticsPanel({
           </>
         )}
       </div>
+      )}
 
       {/* Графики */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
