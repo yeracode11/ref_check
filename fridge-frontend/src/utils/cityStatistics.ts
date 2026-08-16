@@ -2,6 +2,8 @@ type MapFridge = {
   city?: { _id?: string; name?: string; code?: string } | null;
   visitStatus?: string;
   warehouseStatus?: string;
+  locationAtDepot?: boolean;
+  status?: string;
 };
 
 type CityStatRow = {
@@ -45,10 +47,11 @@ export function buildCityStatisticsFromMapFridges(fridges: MapFridge[]) {
     const stats = cityStatsMap.get(cityId)!;
     stats.total++;
 
-    const visitStatus = f.visitStatus || 'never';
+    const visitStatus = f.visitStatus || f.status || 'never';
     const warehouseStatus = f.warehouseStatus || 'warehouse';
+    const atDepot = warehouseStatus === 'warehouse' && f.locationAtDepot !== false;
 
-    if (visitStatus === 'never' || warehouseStatus === 'returned') {
+    if (visitStatus === 'never' || warehouseStatus === 'returned' || atDepot) {
       stats.never++;
     } else if (visitStatus === 'today' || visitStatus === 'week') {
       stats.fresh++;

@@ -202,9 +202,15 @@ function visitStatusFromLastVisit(lastVisit, opts = {}) {
   return 'old';
 }
 
+function isWarehouseHiddenAtDepot(warehouseStatus, locationAtDepot) {
+  const ws = warehouseStatus || 'warehouse';
+  if (ws !== 'warehouse') return false;
+  return locationAtDepot !== false;
+}
+
 /**
  * Итоговый статус отметки для карты, списка и Excel — как поле status в GET /admin/fridge-status.
- * При возврате на склад не показываем давность старых отметок (всегда never).
+ * При возврате на склад и «на складе» без отметки на карте не показываем давность старых чекинов.
  */
 function combinedVisitMapStatus(lastVisit, warehouseStatus, opts = {}) {
   const nowMs = opts.nowMs != null ? opts.nowMs : Date.now();
@@ -219,6 +225,9 @@ function combinedVisitMapStatus(lastVisit, warehouseStatus, opts = {}) {
     return 'never';
   }
   if (ws === 'returned') {
+    return 'never';
+  }
+  if (isWarehouseHiddenAtDepot(ws, opts.locationAtDepot)) {
     return 'never';
   }
   return visitTimeliness;

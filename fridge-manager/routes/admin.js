@@ -203,6 +203,7 @@ router.get('/fridge-status', authenticateToken, requireAdminOrAccountantOrSalesH
       const status = combinedVisitMapStatus(lastVisit, warehouseStatus, {
         nowMs: now,
         fridgeType: f.type,
+        locationAtDepot: f.locationAtDepot,
       });
       const finalStatus = status === 'location_changed' ? (visitStatus || 'never') : status;
 
@@ -2274,7 +2275,7 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
     const cacheScopeKey = JSON.stringify({ route: 'by-cities', ...fridgeQuery });
     const [fridges, statsByFridgeId] = await Promise.all([
       Fridge.find(fridgeQuery)
-        .select('_id code number clientInfo.inn type cityId warehouseStatus')
+        .select('_id code number clientInfo.inn type cityId warehouseStatus locationAtDepot')
         .populate('cityId', 'name code')
         .lean(),
       getCheckinStatsForFridgeQuery(fridgeQuery, cacheScopeKey, { useCache: true }),
@@ -2309,21 +2310,22 @@ router.get('/statistics/by-cities', authenticateToken, requireAdminOrAccountant,
       const stats = cityStatsMap.get(cityId);
       stats.total++;
 
-      const { lastVisit, lastVisitTime } = getLastVisitFromStatsMap(statsByFridgeId, f);
+      const { lastVisit } = getLastVisitFromStatsMap(statsByFridgeId, f);
 
       const warehouseStatus = f.warehouseStatus || 'warehouse';
 
-      if (!lastVisitTime) {
+      const mapStatus = combinedVisitMapStatus(lastVisit, warehouseStatus, {
+        nowMs: now,
+        fridgeType: f.type,
+        locationAtDepot: f.locationAtDepot,
+      });
+
+      if (mapStatus === 'never') {
         stats.never++;
-      } else if (warehouseStatus === 'returned') {
-        stats.never++;
+      } else if (mapStatus === 'today' || mapStatus === 'week') {
+        stats.fresh++;
       } else {
-        const vs = visitStatusFromLastVisit(lastVisit, { nowMs: now });
-        if (vs === 'today' || vs === 'week') {
-          stats.fresh++;
-        } else {
-          stats.old++;
-        }
+        stats.old++;
       }
 
       // Статус склада (для информации)

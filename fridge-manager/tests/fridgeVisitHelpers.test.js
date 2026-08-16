@@ -23,6 +23,22 @@ describe('combinedVisitMapStatus', () => {
   it('no lastVisit is never', () => {
     assert.equal(combinedVisitMapStatus(null, 'installed', { nowMs: now }), 'never');
   });
+
+  it('warehouse at depot ignores stale checkins', () => {
+    const oldVisit = new Date('2026-03-01T08:00:00.000Z');
+    assert.equal(
+      combinedVisitMapStatus(oldVisit, 'warehouse', { nowMs: now, locationAtDepot: true }),
+      'never',
+    );
+  });
+
+  it('warehouse on map after checkin uses visit timeliness', () => {
+    const oldVisit = new Date('2026-03-01T08:00:00.000Z');
+    assert.equal(
+      combinedVisitMapStatus(oldVisit, 'warehouse', { nowMs: now, locationAtDepot: false }),
+      'old',
+    );
+  });
 });
 
 describe('restricted object visit rules', () => {

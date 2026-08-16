@@ -72,6 +72,7 @@ function mapFridgeToMarker(f, statsByFridgeId, now) {
   const status = combinedVisitMapStatus(lastVisit, warehouseStatus, {
     nowMs: now,
     fridgeType: f.type,
+    locationAtDepot: f.locationAtDepot,
   });
   const finalStatus = status === 'location_changed' ? (visitStatus || 'never') : status;
 
