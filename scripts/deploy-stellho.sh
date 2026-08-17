@@ -22,7 +22,8 @@ git pull
 
 cd fridge-manager
 npm install --omit=dev
-pm2 restart fridge-manager
+chmod +x scripts/watchdog-health.sh scripts/setup-autorestart.sh 2>/dev/null || true
+bash scripts/setup-autorestart.sh
 
 cd ../fridge-frontend
 npm ci

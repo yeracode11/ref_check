@@ -150,27 +150,36 @@ async function start() {
     
     console.log('[Server] ✅ Connected to MongoDB');
     console.log('[Server] Database:', mongoose.connection.db.databaseName);
-    
-    // Test user lookup
-    const User = require('./models/User');
-    const testUser = await User.findOne({ username: 'admin' });
-    if (testUser) {
-      console.log(`[Server] ✅ Test user 'admin' found in database`);
-    } else {
-      console.log(`[Server] ⚠️  Test user 'admin' NOT found in database`);
-      const userCount = await User.countDocuments();
-      console.log(`[Server] Total users in database: ${userCount}`);
-    }
-    
+
     const port = process.env.PORT || 4000;
     const server = app.listen(port, '0.0.0.0', () => {
       console.log(`[Server] Server listening on http://0.0.0.0:${port}`);
     });
-    
+
     // Увеличиваем таймауты для длительных операций (импорт больших файлов)
     server.timeout = 900000; // 15 минут (экспорт / импорт)
     server.keepAliveTimeout = 65000; // 65 секунд
     server.headersTimeout = 66000; // 66 секунд (должен быть больше keepAliveTimeout)
+
+    // Диагностика после старта — не блокирует accept()
+    const User = require('./models/User');
+    User.findOne({ username: 'admin' })
+      .select('username')
+      .lean()
+      .then((testUser) => {
+        if (testUser) {
+          console.log("[Server] ✅ Test user 'admin' found in database");
+        } else {
+          console.log("[Server] ⚠️  Test user 'admin' NOT found in database");
+          return User.countDocuments().then((userCount) => {
+            console.log(`[Server] Total users in database: ${userCount}`);
+          });
+        }
+        return null;
+      })
+      .catch((err) => {
+        console.error('[Server] Startup user check failed:', err.message || err);
+      });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[Server] Failed to start server:', err);

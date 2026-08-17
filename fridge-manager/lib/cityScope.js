@@ -133,11 +133,23 @@ async function getCheckinFridgeIdsForCity(cityId) {
 }
 
 /**
- * Фильтр MongoDB для отметок одного города (fridgeRef + legacy fridgeId в scope города).
- * Не использует общий $in по числовым номерам — иначе одинаковые number в разных городах смешиваются.
+ * Фильтр MongoDB для отметок одного города.
+ * По умолчанию только fridgeRef ($in по _id холодильников города) — быстро по индексу.
+ * Legacy-ветка (fridgeId без fridgeRef) — только при CHECKIN_LEGACY_FILTER=true;
+ * иначе $or из тысяч подусловий вешает MongoDB на больших городах.
  */
 async function getCheckinFilterForCity(cityId) {
   if (!cityId) return {};
+
+  const useLegacyFilter = process.env.CHECKIN_LEGACY_FILTER === 'true';
+
+  if (!useLegacyFilter) {
+    const fridgeObjectIds = await Fridge.distinct('_id', { cityId });
+    if (!fridgeObjectIds.length) {
+      return { fridgeId: '__none__' };
+    }
+    return { fridgeRef: { $in: fridgeObjectIds } };
+  }
 
   const fridges = await Fridge.find(
     { cityId },
@@ -149,13 +161,9 @@ async function getCheckinFilterForCity(cityId) {
   }
 
   const fridgeObjectIds = fridges.map((f) => f._id);
-  const legacyOr = fridges
-    .map((f) => buildCheckinFridgeIdMatchCondition(f))
-    .filter(Boolean);
-
-  const legacyClause = legacyOr.length === 1
-    ? legacyOr[0]
-    : { $or: legacyOr };
+  const legacyIds = expandCheckinFridgeIdsForInQuery(
+    fridges.flatMap((f) => buildCheckinFridgeIdCandidates(f)),
+  );
 
   return {
     $or: [
@@ -163,7 +171,7 @@ async function getCheckinFilterForCity(cityId) {
       {
         $and: [
           { $or: [{ fridgeRef: null }, { fridgeRef: { $exists: false } }] },
-          legacyClause,
+          { fridgeId: { $in: legacyIds } },
         ],
       },
     ],

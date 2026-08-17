@@ -160,8 +160,9 @@ export function getEquipmentMarkerColor(indicator: EquipmentIndicator): string {
   }
 }
 
-export function showSeasonalClosureCheckbox(type?: string | null): boolean {
-  return type === 'school' || type === 'restricted';
+/** Бухгалтер может отметить каникулы на любом объекте */
+export function showSeasonalClosureCheckbox(_type?: string | null): boolean {
+  return true;
 }
 
 export type WarehouseStatus = 'warehouse' | 'installed' | 'returned' | 'moved';

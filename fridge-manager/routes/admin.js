@@ -18,7 +18,6 @@ const {
   shouldCountAsWithoutCheckinsInPeriod,
   shouldCountAsNeverVisited,
   computeCityFridgeStatsCounts,
-  supportsSeasonalClosureFlag,
   buildDailyCheckinsAggregationStages,
   mapDailyCheckinsAggregationResult,
 } = require('../lib/fridgeVisitHelpers');
@@ -1927,11 +1926,6 @@ router.patch('/fridges/:id/status', authenticateToken, requireAdminOrAccountant,
     fridge.warehouseStatus = warehouseStatus;
 
     if (isSeasonalClosure !== undefined) {
-      if (!supportsSeasonalClosureFlag(fridge)) {
-        return res.status(400).json({
-          error: 'Флаг каникул доступен только для школ и режимных объектов',
-        });
-      }
       fridge.isSeasonalClosure = isSeasonalClosure === true || isSeasonalClosure === 'true';
     }
 
@@ -2018,14 +2012,9 @@ router.patch('/fridges/:id', authenticateToken, requireAdminOrAccountant, async 
     if (address !== undefined) fridge.address = address;
     if (description !== undefined) fridge.description = description;
     if (isSeasonalClosure !== undefined) {
-      if (!supportsSeasonalClosureFlag(fridge)) {
-        return res.status(400).json({
-          error: 'Флаг каникул доступен только для школ и режимных объектов',
-        });
-      }
       fridge.isSeasonalClosure = isSeasonalClosure === true || isSeasonalClosure === 'true';
     }
-    
+
     // Только админ может менять cityId и active
     if (req.user.role === 'admin') {
       if (cityId !== undefined) fridge.cityId = normalizeCityId(cityId);
