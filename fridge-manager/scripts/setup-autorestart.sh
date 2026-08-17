@@ -18,7 +18,10 @@ if command -v pm2 >/dev/null 2>&1; then
     pm2 start ecosystem.config.js
   fi
   pm2 save
-  env PATH="$PATH:/usr/bin" pm2 startup systemd -u root --hp /root 2>/dev/null | tail -1 | bash || true
+  startup_cmd="$(env PATH="$PATH:/usr/bin" pm2 startup systemd -u root --hp /root 2>&1 | grep -E '^sudo env' || true)"
+  if [[ -n "$startup_cmd" ]]; then
+    bash -c "$startup_cmd" || true
+  fi
   pm2 save
 else
   echo "[autorestart] WARNING: pm2 not found"
