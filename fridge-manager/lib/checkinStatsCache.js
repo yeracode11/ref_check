@@ -6,8 +6,9 @@ const {
   parseVisitTimeMs,
 } = require('./fridgeVisitHelpers');
 
-const TTL_MS = parseInt(process.env.CHECKIN_STATS_CACHE_TTL_MS || '60000', 10);
-const REF_MATCH_CHUNK = parseInt(process.env.CHECKIN_STATS_REF_CHUNK || '8000', 10);
+const TTL_MS = parseInt(process.env.CHECKIN_STATS_CACHE_TTL_MS || '120000', 10);
+const REF_MATCH_CHUNK = parseInt(process.env.CHECKIN_STATS_REF_CHUNK || '1500', 10);
+const { aggregateOptions } = require('./mongoQueryLimits');
 
 /** @type {Map<string, { stats: Map<string, object>, at: number }>} */
 const cacheByScope = new Map();
@@ -61,7 +62,7 @@ async function aggregateStatsByFridgeRef(fridgeObjectIds) {
           totalCheckins: { $sum: 1 },
         },
       },
-    ]).allowDiskUse(true);
+    ]).option(aggregateOptions());
 
     for (const row of rows) {
       byRef.set(String(row._id), {
@@ -93,7 +94,7 @@ async function aggregateLegacyStatsByFridgeId() {
         totalCheckins: { $sum: 1 },
       },
     },
-  ]).allowDiskUse(true);
+  ]).option(aggregateOptions());
 
   for (const row of rows) {
     if (row._id == null) continue;

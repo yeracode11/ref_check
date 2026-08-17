@@ -17,6 +17,7 @@ const {
   enrichCheckinsWithFridgeData,
 } = require('../lib/checkinService');
 const { invalidateCheckinStatsCache } = require('../lib/checkinStatsCache');
+const { applyFindMaxTime } = require('../lib/mongoQueryLimits');
 
 const router = express.Router();
 
@@ -138,7 +139,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const defaultLimit = req.user && req.user.role === 'admin' ? null : 300;
     const queryLimit = limit !== null ? limit : defaultLimit;
 
-    let itemsQuery = Checkin.find(filter).sort({ visitedAt: -1, id: -1 });
+    let itemsQuery = applyFindMaxTime(Checkin.find(filter).sort({ visitedAt: -1, id: -1 }));
     if (queryLimit !== null) {
       itemsQuery = itemsQuery.limit(queryLimit);
     }
@@ -151,7 +152,10 @@ router.get('/', authenticateToken, async (req, res) => {
     let distinctManagers;
 
     if (wantMeta) {
-      const tasks = [Checkin.countDocuments(filter), itemsQuery.lean().exec()];
+      const tasks = [
+        applyFindMaxTime(Checkin.countDocuments(filter)),
+        itemsQuery.lean().exec(),
+      ];
       if (req.user && req.user.role === 'admin') {
         tasks.push(Checkin.distinct('managerId', filter));
       }

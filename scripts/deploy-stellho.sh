@@ -22,7 +22,10 @@ git pull
 
 cd fridge-manager
 npm install --omit=dev
-chmod +x scripts/watchdog-health.sh scripts/setup-autorestart.sh 2>/dev/null || true
+chmod +x scripts/watchdog-health.sh scripts/setup-autorestart.sh scripts/tune-mongodb-memory.sh 2>/dev/null || true
+if command -v docker >/dev/null 2>&1; then
+  sudo MONGO_CACHE_GB=1 bash scripts/tune-mongodb-memory.sh || true
+fi
 bash scripts/setup-autorestart.sh
 
 cd ../fridge-frontend

@@ -137,12 +137,18 @@ async function start() {
       if (!Number.isFinite(n)) return null;
       return Math.min(max, Math.max(min, n));
     };
+    const parsePool = (v, min, max, fallback) => {
+      const n = parseInt(v, 10);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.min(max, Math.max(min, n));
+    };
     const sel = parseMs(process.env.MONGOOSE_SERVER_SELECTION_TIMEOUT_MS, 2000, 120000);
     const conn = parseMs(process.env.MONGOOSE_CONNECT_TIMEOUT_MS, 2000, 120000);
     const sock = parseMs(process.env.MONGOOSE_SOCKET_TIMEOUT_MS, 10000, 360000);
     mongooseOpts.serverSelectionTimeoutMS = sel != null ? sel : 10000;
     mongooseOpts.connectTimeoutMS = conn != null ? conn : 10000;
-    if (sock != null) mongooseOpts.socketTimeoutMS = sock;
+    mongooseOpts.socketTimeoutMS = sock != null ? sock : 120000;
+    mongooseOpts.maxPoolSize = parsePool(process.env.MONGOOSE_MAX_POOL_SIZE, 5, 50, 20);
 
     setupMongoConnectionMonitoring(mongoose);
 

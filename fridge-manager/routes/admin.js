@@ -750,28 +750,32 @@ router.post('/import-fridges', authenticateToken, requireAdminOrAccountant, (req
       });
     }
 
-    // Импортируем в базу данных
-    // Загружаем существующие коды для проверки дубликатов
-    console.log('[Import] Loading existing fridge codes for duplicate check...');
-    
-    const existingFridges = await Fridge.find({}, { code: 1, cityId: 1, number: 1 }).lean();
-    const existingCodes = new Set(existingFridges.map(f => f.code));
-    
-    // Проверяем дубликаты по number + cityId
+    // Импортируем в базу данных — проверка дубликатов только по кодам/номерам из файла (не все 40k+)
+    console.log('[Import] Loading existing codes for duplicate check (import scope only)...');
+
+    const importCodes = [...new Set(records.map((r) => r.code).filter(Boolean))];
+    const importNumbers = [...new Set(records.map((r) => r.number).filter(Boolean))];
+
+    const [existingByCodeDocs, existingInCityDocs] = await Promise.all([
+      importCodes.length
+        ? Fridge.find({ code: { $in: importCodes } }, { code: 1 }).lean()
+        : [],
+      importNumbers.length
+        ? Fridge.find(
+            { cityId: city._id, number: { $in: importNumbers } },
+            { code: 1, number: 1, cityId: 1 },
+          ).lean()
+        : [],
+    ]);
+
+    const existingCodes = new Set(existingByCodeDocs.map((f) => f.code));
+
     const existingByNumberAndCity = new Map();
-    existingFridges
-      .filter(f => {
-        // Проверяем, что есть number и cityId совпадает
-        if (!f.number) return false;
-        if (!f.cityId) return false;
-        // Сравниваем cityId как строки для надежности
-        const fCityId = f.cityId.toString ? f.cityId.toString() : String(f.cityId);
-        const targetCityId = city._id.toString ? city._id.toString() : String(city._id);
-        return fCityId === targetCityId;
-      })
-      .forEach(f => {
+    existingInCityDocs
+      .filter((f) => f.number)
+      .forEach((f) => {
         const key = `${f.number}|${city._id}`;
-        existingByNumberAndCity.set(key, f.code); // Сохраняем также code для логирования
+        existingByNumberAndCity.set(key, f.code);
       });
     
     console.log('[Import] Found', existingCodes.size, 'existing fridges total');

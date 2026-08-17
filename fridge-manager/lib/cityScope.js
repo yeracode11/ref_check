@@ -14,6 +14,8 @@ const ROLES_REQUIRING_CITY = ['manager', 'accountant', 'service_manager', 'sales
 const CITY_CHECKIN_IDS_TTL_MS = parseInt(process.env.CITY_CHECKIN_IDS_CACHE_TTL_MS || '300000', 10);
 /** @type {Map<string, { ids: string[], at: number }>} */
 const checkinIdsByCityCache = new Map();
+/** @type {Map<string, { ids: import('mongoose').Types.ObjectId[], at: number }>} */
+const fridgeObjectIdsByCityCache = new Map();
 
 function isCityScopedRole(role) {
   return CITY_SCOPED_ROLES.includes(role);
@@ -144,7 +146,17 @@ async function getCheckinFilterForCity(cityId) {
   const useLegacyFilter = process.env.CHECKIN_LEGACY_FILTER === 'true';
 
   if (!useLegacyFilter) {
+    const cacheKey = String(cityId);
+    const cached = fridgeObjectIdsByCityCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < CITY_CHECKIN_IDS_TTL_MS) {
+      if (!cached.ids.length) {
+        return { fridgeId: '__none__' };
+      }
+      return { fridgeRef: { $in: cached.ids } };
+    }
+
     const fridgeObjectIds = await Fridge.distinct('_id', { cityId });
+    fridgeObjectIdsByCityCache.set(cacheKey, { ids: fridgeObjectIds, at: Date.now() });
     if (!fridgeObjectIds.length) {
       return { fridgeId: '__none__' };
     }
@@ -180,10 +192,13 @@ async function getCheckinFilterForCity(cityId) {
 
 function invalidateCityCheckinIdsCache(cityId) {
   if (cityId) {
-    checkinIdsByCityCache.delete(String(cityId));
+    const key = String(cityId);
+    checkinIdsByCityCache.delete(key);
+    fridgeObjectIdsByCityCache.delete(key);
     return;
   }
   checkinIdsByCityCache.clear();
+  fridgeObjectIdsByCityCache.clear();
 }
 
 function isMongoObjectIdString(value) {
