@@ -41,9 +41,10 @@ async function main() {
   const filter = buildDeleteFilter(city._id);
   const fridges = await Fridge.find(filter).select('_id code name address').lean();
   const ids = fridges.map((f) => f._id);
+  const objectIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(String(id)));
 
   console.log(`[delete-almaty] City: ${city.name} (${city._id})`);
-  console.log(`[delete-almaty] Fridges matched: ${ids.length}`);
+  console.log(`[delete-almaty] Fridges matched: ${ids.length} (valid ObjectId: ${objectIds.length})`);
   console.log('[delete-almaty] Sample:', fridges.slice(0, 5).map((f) => `${f.code} | ${f.name}`));
 
   if (!ids.length) {
@@ -61,9 +62,11 @@ async function main() {
     return;
   }
 
-  const checkinDel = await Checkin.deleteMany({ fridgeRef: { $in: ids } });
-  const repairDel = await Repair.deleteMany({ fridgeId: { $in: ids } });
-  const fridgeDel = await Fridge.deleteMany({ _id: { $in: ids } });
+  const checkinDel = await Checkin.deleteMany({ fridgeRef: { $in: objectIds } });
+  const repairDel = await Repair.collection.deleteMany({
+    fridgeId: { $in: [...objectIds, ...fridges.map((f) => f.code).filter(Boolean)] },
+  });
+  const fridgeDel = await Fridge.deleteMany(filter);
 
   console.log('[delete-almaty] Deleted:', {
     checkins: checkinDel.deletedCount,
