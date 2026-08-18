@@ -52,7 +52,7 @@ async function main() {
   }
 
   const checkins = await Checkin.countDocuments({ fridgeRef: { $in: ids } });
-  const repairs = await Repair.countDocuments({ fridgeId: { $in: ids.map(String) } });
+  const repairs = await Repair.countDocuments({ fridgeId: { $in: ids } });
   console.log(`[delete-almaty] Related checkins: ${checkins}, repairs: ${repairs}`);
 
   if (DRY) {
@@ -62,12 +62,7 @@ async function main() {
   }
 
   const checkinDel = await Checkin.deleteMany({ fridgeRef: { $in: ids } });
-  const repairDel = await Repair.deleteMany({
-    $or: [
-      { fridgeRef: { $in: ids } },
-      { fridgeId: { $in: fridges.map((f) => f.code) } },
-    ],
-  });
+  const repairDel = await Repair.deleteMany({ fridgeId: { $in: ids } });
   const fridgeDel = await Fridge.deleteMany({ _id: { $in: ids } });
 
   console.log('[delete-almaty] Deleted:', {
