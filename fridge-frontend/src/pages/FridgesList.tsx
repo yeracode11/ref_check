@@ -75,6 +75,38 @@ export default function FridgesList() {
   const [total, setTotal] = useState(0);
   const observerTarget = useRef<HTMLDivElement | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openCodeHandled = useRef(false);
+
+  // QR для МХО / deep link: /fridges?open=CODE
+  useEffect(() => {
+    const openCode = searchParams.get('open')?.trim();
+    if (!openCode || openCodeHandled.current) return;
+
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get(`/api/fridges?code=${encodeURIComponent(openCode)}&simple=1`);
+        if (!alive) return;
+        const payload = res.data?.data ?? res.data;
+        const fridge = Array.isArray(payload) ? payload[0] : null;
+        if (fridge?._id) {
+          openCodeHandled.current = true;
+          setSelectedFridgeId(fridge._id);
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('open');
+            return next;
+          }, { replace: true });
+        }
+      } catch {
+        /* ignore — список остаётся обычным */
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [searchParams, setSearchParams]);
 
   // Загрузка городов
   useEffect(() => {

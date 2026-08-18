@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { LoadingSpinner } from './ui/Loading';
+import { saveAuthReturnTo } from '../utils/authRedirect';
 
 export default function ProtectedRoute() {
   const location = useLocation();
@@ -18,7 +19,8 @@ export default function ProtectedRoute() {
   }
 
   if (!user) {
-    // Сохраняем, откуда пришел пользователь (для возврата после логина)
+    const returnPath = `${location.pathname}${location.search}`;
+    saveAuthReturnTo(returnPath);
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 

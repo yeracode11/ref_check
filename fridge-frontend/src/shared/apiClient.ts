@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { buildLoginPath, saveAuthReturnTo } from '../utils/authRedirect';
 
 // Get API URL from environment variable or use production default
 // In Vite, environment variables are embedded at build time
@@ -117,11 +118,19 @@ api.interceptors.response.use(
 
     // Don't retry on 4xx errors (client errors)
     if (error.response?.status >= 400 && error.response?.status < 500) {
-      if (error.response.status === 401) {
-        // Don't redirect on login page - let LoginPage handle the error
-        if (!config.url?.includes('/auth/login')) {
-          localStorage.removeItem('token');
-          window.location.href = '/login';
+      const authError = String(error.response?.data?.error || '');
+      const isAuthFailure =
+        error.response.status === 401
+        || (error.response.status === 403
+          && /token|expired|User not found|disabled/i.test(authError)
+          && !config.url?.includes('/auth/login'));
+
+      if (isAuthFailure && !config.url?.includes('/auth/login')) {
+        localStorage.removeItem('token');
+        const returnTo = `${window.location.pathname}${window.location.search}`;
+        saveAuthReturnTo(returnTo);
+        if (!window.location.pathname.startsWith('/login')) {
+          window.location.href = buildLoginPath(returnTo);
         }
       }
       return Promise.reject(error);

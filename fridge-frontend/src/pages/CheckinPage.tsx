@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { api } from '../shared/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { getDisplayIdentifier } from '../utils/fridgeUtils';
 import { resolveUserCityId } from '../utils/userCityId';
+import { buildLoginPath, saveAuthReturnTo } from '../utils/authRedirect';
 import { Card, Button, Badge } from '../components/ui/Card';
 import { useDeviceGeolocation } from '../hooks/useDeviceGeolocation';
 
@@ -31,8 +32,9 @@ type RouteParams = {
 
 export default function CheckinPage() {
   const { code: rawCode } = useParams<RouteParams>();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Декодируем код из URL (на случай неправильной кодировки)
   const code = rawCode ? decodeURIComponent(rawCode) : null;
@@ -109,6 +111,14 @@ export default function CheckinPage() {
     };
   }, [code]);
 
+  // МХО: QR ведёт на карточку холодильника (ремонт), не на отметку ТП
+  useEffect(() => {
+    if (authLoading || !user || !code) return;
+    if (user.role === 'service_manager') {
+      navigate(`/fridges?open=${encodeURIComponent(code)}`, { replace: true });
+    }
+  }, [authLoading, user, code, navigate]);
+
   async function handleCheckin(e: React.FormEvent) {
     e.preventDefault();
     if (!code) {
@@ -184,6 +194,8 @@ export default function CheckinPage() {
   }
 
   if (!user) {
+    const returnPath = `${location.pathname}${location.search}`;
+    saveAuthReturnTo(returnPath);
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
         <Card className="max-w-md w-full">
@@ -191,9 +203,19 @@ export default function CheckinPage() {
           <p className="text-slate-600 text-sm mb-4">
             Для работы с холодильником необходимо войти в систему.
           </p>
-          <Button onClick={() => navigate('/login')} className="w-full">
+          <Button onClick={() => navigate(buildLoginPath(returnPath))} className="w-full">
             Войти
           </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (user.role === 'service_manager') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <Card className="max-w-md w-full">
+          <p className="text-slate-600 text-sm">Открываем карточку холодильника…</p>
         </Card>
       </div>
     );

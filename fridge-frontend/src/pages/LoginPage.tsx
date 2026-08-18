@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { resolveReturnPath } from '../utils/authRedirect';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -10,7 +11,9 @@ export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: Location })?.from?.pathname || '/';
+  const [searchParams] = useSearchParams();
+  const routerFrom = (location.state as { from?: Location })?.from?.pathname;
+  const from = resolveReturnPath(routerFrom, searchParams.get('returnTo'));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,7 +55,8 @@ export default function LoginPage() {
         }
       } else if (userData?.role === 'service_manager') {
         if (from.startsWith('/checkin/')) {
-          redirectTo = from;
+          const code = from.replace(/^\/checkin\//, '');
+          redirectTo = `/fridges?open=${encodeURIComponent(code)}`;
         } else if (from === '/' || from === '/new' || adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from) || salesOnlyPaths.includes(from)) {
           redirectTo = '/fridges';
         }
@@ -63,7 +67,10 @@ export default function LoginPage() {
           redirectTo = '/sales';
         }
       } else {
-        if (adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from) || salesOnlyPaths.includes(from)) {
+        // ТП (manager): после QR-скана вернуть на страницу отметки
+        if (from.startsWith('/checkin/')) {
+          redirectTo = from;
+        } else if (adminOnlyPaths.includes(from) || accountantOnlyPaths.includes(from) || salesOnlyPaths.includes(from)) {
           redirectTo = '/';
         }
       }
